@@ -1,0 +1,34 @@
+name: Design feedback
+description: Feedback on the proposed API, architecture, or scope while netchaos is still in the design stage.
+labels: ["design"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        netchaos has no implementation yet — see [docs/](../../docs/README.md) for the current design docs.
+        This template is for feedback on the design itself (API shape, architecture, scope), not for bug reports.
+
+  - type: dropdown
+    id: doc
+    attributes:
+      label: Which design doc does this relate to?
+      options:
+        - "01 - Vision"
+        - "02 - Comparison"
+        - "03 - Architecture"
+        - "04 - API Design"
+        - "05 - Fault Injection"
+        - "06 - Scope & Roadmap"
+        - "07 - Contributing"
+        - "Root README"
+        - "Other / not sure"
+    validations:
+      required: true
+
+  - type: textarea
+    id: feedback
+    attributes:
+      label: Feedback
+      description: What feels off, missing, or worth reconsidering? Concrete examples help.
+    validations:
+      required: true

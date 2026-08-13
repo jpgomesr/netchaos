@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Open-ended question or discussion
+    url: https://github.com/jpgomesr/netchaos/discussions
+    about: For anything that doesn't fit the design-feedback or use-case templates.
