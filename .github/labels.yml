@@ -1,0 +1,55 @@
+# Label definitions for this repo, synced via .github/workflows/labels.yml
+# (crazy-max/ghaction-github-labeler). Existing GitHub default labels are
+# kept here too so the sync doesn't delete them.
+
+- name: design
+  color: "5319e7"
+  description: Feedback on proposed API, architecture, or scope (design stage)
+
+- name: use-case
+  color: "0e8a16"
+  description: A real-world resilience-testing scenario, for validating v1 scope
+
+- name: needs-discussion
+  color: "fbca04"
+  description: Open question that needs resolution before it can move forward
+
+- name: bug
+  color: "d73a4a"
+  description: Something isn't working
+
+- name: enhancement
+  color: "a2eeef"
+  description: New feature or request
+
+- name: documentation
+  color: "0075ca"
+  description: Improvements or additions to documentation
+
+- name: good first issue
+  color: "7057ff"
+  description: Good for newcomers
+
+- name: help wanted
+  color: "008672"
+  description: Extra attention is needed
+
+- name: question
+  color: "d876e3"
+  description: Further information is requested
+
+- name: duplicate
+  color: "cfd3d7"
+  description: This issue or pull request already exists
+
+- name: invalid
+  color: "e4e669"
+  description: This doesn't seem right
+
+- name: wontfix
+  color: "ffffff"
+  description: This will not be worked on
+
+- name: accessibility
+  color: "f143ab"
+  description: Barrier affecting people with disabilities
