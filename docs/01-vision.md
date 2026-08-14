@@ -4,7 +4,7 @@
 
 **Deterministic network fault injection for Go, in-process, no infrastructure required.**
 
-`netchaos` provides simulated `net.Conn` and `net.Listener` implementations with deterministic fault injection — latency, packet loss, partitions, and (see [the open question](05-fault-injection.md#reordering-open-question)) possibly reordering. It's designed to be imported directly into `go test`: no external process, no proxy, no daemon.
+`netchaos` provides simulated `net.Conn` and `net.Listener` implementations with deterministic fault injection — latency, packet loss, and partitions. It's designed to be imported directly into `go test`: no external process, no proxy, no daemon.
 
 ## The `testing/synctest` analogy
 
