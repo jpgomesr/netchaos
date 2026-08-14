@@ -13,10 +13,13 @@ This folder expands on the pitch made in the root [`README.md`](../README.md) in
 | [05 — Fault Injection](05-fault-injection.md) | Deep dive on each fault type: latency, packet loss, partition, (and the open question of reordering) |
 | [06 — Scope & Roadmap](06-scope-and-roadmap.md) | v1 scope, why the boundaries exist, and what's deliberately deferred |
 | [07 — Contributing](07-contributing.md) | Project status and how to contribute at this stage |
+| [Task breakdown](tasks/README.md) | The v1 scope broken into executable tasks, grouped into milestones |
 
 ## Reading order
 
 If you're new to the project, read them in numeric order: 01 gives you the "why", 02 places netchaos relative to tools you may already know, 03–05 describe the design itself, and 06–07 cover scope and process.
+
+Once you've read those, [`tasks/`](tasks/README.md) turns the v1 scope checklist in [06](06-scope-and-roadmap.md) into sequenced, detailed tasks — read it when you want to know *what to build next*, not *what netchaos is*.
 
 ## Open question flagged in these docs
 
