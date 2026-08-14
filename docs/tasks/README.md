@@ -26,25 +26,34 @@ All six checklist lines from [06 — Scope & Roadmap](../06-scope-and-roadmap.md
 
 ## Dependency order
 
+Milestones gate each other in order — M0 → M1 → M2 → M3 → M4 — and within that, these are the exact edges. Each task file repeats them as its own `Depends on:` / `Blocks:` lines; if the two ever disagree, the task file is authoritative.
+
 ```
-M0  (decisions — gates API freeze)
- │
- ▼
-M1  M1-1 ─▶ M1-2 ─▶ M1-3
-     └─▶ M1-4 ─▶ M1-5 ─▶ M1-6 ─▶ M1-7 ─▶ M1-8
- │
- ▼
-M2  M2-1 (seeded RNG) ─┬─▶ M2-2 (latency)
-                       ├─▶ M2-3 (packet loss)
-                       └─▶ M2-4 (partition)
-                              └─▶ M2-5 ─▶ M2-6
- │
- ▼
-M3  M3-1 ─▶ M3-2 / M3-3 ─▶ M3-4
- │
- ▼
-M4  M4-1 ─▶ M4-2 ─▶ M4-3 ─▶ M4-4 ─▶ M4-5
+M0   M0-1, M0-2      ─▶ M0-5
+     M0-3            ─▶ M0-4 ─▶ M0-5
+     M0-3, M0-6      ─▶ M1-1
+     M0-5            ─▶ M1-4
+
+M1   M1-1, M1-4      ─▶ M1-2 ─▶ M1-3
+     M1-4            ─▶ M1-5 ─▶ M1-6
+     M1-2, M1-6      ─▶ M1-7 ─▶ M1-8
+
+M2   M0-4, M1-5, M1-7      ─▶ M2-1   (seeded RNG)
+     M1-3, M2-1            ─▶ M2-2   (latency)
+     M0-3, M2-1            ─▶ M2-3   (packet loss)
+     M1-4, M1-7, M1-8      ─▶ M2-4   (partition)
+     M2-2, M2-3, M2-4      ─▶ M2-5, M2-6
+
+M3   M1-8, M2-5      ─▶ M3-1
+     M2-2, M3-1      ─▶ M3-2
+     M2-1, M2-5, M3-1 ─▶ M3-3
+     M3-2, M3-3      ─▶ M3-4
+
+M4   M2-6, M3-1      ─▶ M4-1
+     M3-4, M4-1      ─▶ M4-2 ─▶ M4-3 ─▶ M4-4 ─▶ M4-5
 ```
+
+Note that **partition (M2-4) does not depend on the RNG task (M2-1)**. A partition is binary, not probabilistic, and M2-4 requires it to consume no random draws at all — otherwise partitioning one peer pair would shift the fault sequence on unrelated connections. It hangs off M1, not off M2-1.
 
 The two orderings that matter most, because getting them wrong causes rework:
 

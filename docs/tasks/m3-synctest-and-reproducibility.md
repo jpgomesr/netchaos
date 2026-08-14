@@ -20,7 +20,7 @@ Budget M3 as verification plus one harness, not as a build.
 **Status:** todo
 **Roadmap item:** *Integration with `testing/synctest` for virtual time*
 **Depends on:** M1-8, M2-5
-**Blocks:** M3-2, M3-3, M3-4
+**Blocks:** M3-2, M3-3, M4-1
 
 **Objective**
 Prove that every place netchaos can block a goroutine is **durably blocking**, so a bubble reaches idle and virtual time advances instead of the bubble panicking with a deadlock.

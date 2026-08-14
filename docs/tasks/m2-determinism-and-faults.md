@@ -67,7 +67,7 @@ A single shared `rand.Rand` behind a mutex is race-free but *not* deterministic:
 **Status:** todo
 **Roadmap item:** *Latency injection (fixed and ranged)* ([06](../06-scope-and-roadmap.md))
 **Depends on:** M1-1, M1-2, M1-3, M2-1
-**Blocks:** M2-5, M3-2
+**Blocks:** M2-5, M2-6, M3-2
 
 **Objective**
 Delay delivery of a write from one simulated peer to the other by a duration drawn from the seeded RNG, so tests can exercise timeout, deadline and backoff logic without real wall-clock cost.
@@ -113,7 +113,7 @@ Delay delivery of a write from one simulated peer to the other by a duration dra
 **Status:** todo
 **Roadmap item:** *Packet loss (probabilistic, seeded/deterministic)* ([06](../06-scope-and-roadmap.md))
 **Depends on:** M1-1, M1-2, M2-1, M0-3
-**Blocks:** M2-5
+**Blocks:** M2-5, M2-6
 
 **Objective**
 Probabilistically drop a unit instead of delivering it, using the seeded RNG so the exact sequence of delivered-vs-dropped is identical for a given seed — which is what lets a flaky-looking failure be pinned down and replayed ([05 — Fault Injection](../05-fault-injection.md#packet-loss)).
@@ -160,8 +160,8 @@ Probabilistically drop a unit instead of delivering it, using the seeded RNG so 
 
 **Status:** todo
 **Roadmap item:** *Network partition (drop all traffic between two simulated peers)* ([06](../06-scope-and-roadmap.md))
-**Depends on:** M1-4, M1-7, M1-8
-**Blocks:** M2-5
+**Depends on:** M1-4, M1-7, M1-8 — deliberately *not* the seeded-RNG task, since a partition is binary and must consume no random draws
+**Blocks:** M2-5, M2-6
 
 **Objective**
 Drop **all** traffic between two named peers — binary, not probabilistic — with both a construction-time form and mid-test control, per [05 — Fault Injection](../05-fault-injection.md#partition) and [04 — API Design](../04-api-design.md#dynamic-partition-control).
@@ -212,7 +212,7 @@ Drop **all** traffic between two named peers — binary, not probabilistic — w
 **Status:** todo
 **Roadmap item:** the fault-injection layer as a whole ([03 — Architecture](../03-architecture.md#fault-injection-layer))
 **Depends on:** M2-2, M2-3, M2-4
-**Blocks:** M3-3
+**Blocks:** M3-1, M3-3
 
 **Objective**
 Define and implement what happens when latency, packet loss and partition are configured together. The README's own example configures loss and latency simultaneously, so this is the default case, not an exotic one — and the order faults are applied in changes both the observable behaviour and the RNG draw sequence, so it must be fixed rather than emergent.

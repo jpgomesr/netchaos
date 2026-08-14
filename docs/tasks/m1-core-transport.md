@@ -19,7 +19,7 @@
 **Status:** todo
 **Roadmap item:** *Simulated `net.Conn` / `net.Listener` (TCP-shaped) with pluggable fault injection*
 **Depends on:** M0-3 (the fault unit determines what the queue holds), M0-6
-**Blocks:** M1-2, M2-2, M2-3, M2-4
+**Blocks:** M1-2, M2-2, M2-3
 
 **Objective**
 Build the delivery primitive: a one-directional buffered byte-stream channel where a producer can enqueue data and a consumer reads it in order, with a hook point between enqueue and delivery where the fault layer will later sit. Two of these back-to-back make a full-duplex connection.
@@ -107,7 +107,7 @@ Wrap two M1-1 pipes into a full-duplex type satisfying `net.Conn`, so code under
 **Status:** todo
 **Roadmap item:** *Simulated `net.Conn` / `net.Listener` (TCP-shaped) with pluggable fault injection*
 **Depends on:** M1-2
-**Blocks:** M2-2, M3-2
+**Blocks:** M2-2
 
 **Objective**
 Implement the deadline half of `net.Conn` properly. This is a task rather than a bullet on M1-2 because deadlines are where hand-rolled `net.Conn` implementations most often diverge from the real thing — and because netchaos exists to test timeout logic, so a wrong deadline implementation invalidates the library's primary use case.
@@ -190,7 +190,7 @@ Define what an address *is* inside a simulated network. [03 — Architecture](..
 **Status:** todo
 **Roadmap item:** *Simulated `net.Conn` / `net.Listener` (TCP-shaped) with pluggable fault injection*
 **Depends on:** M0-5, M1-4
-**Blocks:** M1-6, M1-7, M2-1
+**Blocks:** M1-6, M2-1
 
 **Objective**
 Build the `Network` type and the functional-options mechanism it is constructed with, per [04 — API Design](../04-api-design.md#functional-options) — the container that later holds the seeded RNG, the fault policy, and the topology.
@@ -271,7 +271,7 @@ Implement `Network.Listen(network, addr string) (net.Listener, error)` and the l
 **Status:** todo
 **Roadmap item:** *Simulated `net.Conn` / `net.Listener` (TCP-shaped) with pluggable fault injection*
 **Depends on:** M1-2, M1-6, M0-5
-**Blocks:** M1-8, M2-4
+**Blocks:** M1-8, M2-1, M2-4
 
 **Objective**
 Implement `Network.Dial(network, addr string) (net.Conn, error)` — resolve the address to a registered listener, create the M1-2 connection pair, hand one end to the dialer and enqueue the other for `Accept`. This closes the loop that makes a `Network` usable end to end.
@@ -315,7 +315,7 @@ Implement `Network.Dial(network, addr string) (net.Conn, error)` — resolve the
 **Status:** todo
 **Roadmap item:** *Simulated `net.Conn` / `net.Listener` (TCP-shaped) with pluggable fault injection*
 **Depends on:** M1-6, M1-7
-**Blocks:** M2-4
+**Blocks:** M2-4, M3-1
 
 **Objective**
 Make the edge cases behave like a real network stack, and make every error matchable with `errors.Is`. Code under test contains error-handling branches — that is usually *why* it is under test — so an error the caller cannot classify makes the branch untestable.

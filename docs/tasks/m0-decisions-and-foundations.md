@@ -15,7 +15,7 @@ Tasks M0-1 through M0-4 are **decision tasks**: they produce a written decision,
 **Status:** todo
 **Roadmap item:** open question flagged in [05 — Fault Injection](../05-fault-injection.md#reordering-open-question) and [06 — Scope & Roadmap](../06-scope-and-roadmap.md#reordering-in-or-out-of-v1)
 **Depends on:** —
-**Blocks:** M0-5, and the write-ordering guarantees in M1-1 and M2-2
+**Blocks:** M0-5 — and through it, the write-ordering guarantees in the delivery path
 
 **Objective**
 Settle the single documented contradiction in the design: the root `README.md` intro prose lists reordering as a fault netchaos injects, while the v1 checklist in the same file (and in [06](../06-scope-and-roadmap.md)) does not. Until this resolves, the delivery path in M1 cannot commit to a write-ordering guarantee.
@@ -43,7 +43,7 @@ In or out. This is the maintainer's call — `AGENTS.md` explicitly instructs ag
 **Status:** todo
 **Roadmap item:** open design question in [04 — API Design](../04-api-design.md)
 **Depends on:** —
-**Blocks:** M0-5, M2-2, M2-3, M2-5
+**Blocks:** M0-5 — and through it, the latency and packet-loss option surface
 
 **Objective**
 Decide whether the latency and packet-loss options configured on a `Network` apply to *every* simulated connection in it, or can be scoped to a specific peer pair (e.g. only the `client → server-b` link is lossy).
@@ -68,7 +68,7 @@ Global or per-pair for latency and packet loss in v1.
 **Status:** todo
 **Roadmap item:** open question in [05 — Fault Injection](../05-fault-injection.md) ("depending on how granular the v1 model ends up being")
 **Depends on:** —
-**Blocks:** M0-5, M1-1, M2-2, M2-3
+**Blocks:** M0-4, M0-5, M1-1, M2-3
 
 **Objective**
 Decide the unit that latency and loss are applied to. This is not a cosmetic choice — it determines the shape of the delivery queue built in M1-1, so it must be settled before that task starts.
@@ -122,7 +122,7 @@ The derivation scheme, and — whichever option is chosen — the *exact* wordin
 **Status:** todo
 **Roadmap item:** prerequisite for every code task in M1–M2
 **Depends on:** M0-1, M0-2, M0-3, M0-4
-**Blocks:** M1-5, M1-6, M1-7, M2-2, M2-3, M2-4
+**Blocks:** M1-2, M1-4, M1-5, M1-6, M1-7, M2-6
 
 **Objective**
 Turn [04 — API Design](../04-api-design.md)'s **PROPOSED / NOT YET IMPLEMENTED** sketch into an agreed set of signatures, so M1 and M2 implement against a fixed target instead of a moving one.
