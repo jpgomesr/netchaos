@@ -184,10 +184,10 @@ The module currently contains one Go file — `doc.go`, a package comment — an
 - [x] `go build ./...` succeeds — verified locally (go1.26.1, windows/amd64).
 - [x] `go vet ./...` reports nothing — verified locally.
 - [x] `gofmt -l .` prints nothing — verified for both files this task added (`netchaos.go`, `netchaos_test.go`). `doc.go` shows as unformatted locally, but that's `core.autocrlf=true` converting the git-stored LF content to CRLF on this Windows checkout, not a real formatting defect — confirm it's silent in CI's `ubuntu-latest` checkout, which doesn't do that conversion.
-- [x] `go test ./...` passes, running two real tests (not `[no test files]`) — verified locally, both tests observed red before being made to pass (see the `test:` commit message for the exact failure output). `-race` specifically could not be run locally: `CGO_ENABLED=0` and no `gcc` on PATH on this machine — confirm on CI (`ubuntu-latest`, which has cgo available).
-- [ ] `golangci-lint run` reports nothing — not run locally (`golangci-lint` not installed on this machine); confirm via the `golangci-lint.yml` workflow on the PR.
-- [ ] CI is green on both Go 1.25 and Go 1.26 — pending, confirm once `ci.yml` runs on the PR.
-- [x] `testing/synctest` is confirmed importable and resolves — verified locally on go1.26.1 via `TestSynctestAvailable`, which uses a goroutine blocked on `time.Sleep` and the main goroutine blocked on a channel receive (the documented pattern; an earlier attempt using `synctest.Wait()` directly deadlocked because `Wait` returns once other goroutines are durably blocked, not once virtual time has advanced past them — corrected before this landed). Go 1.25 is only exercised on CI; confirm there.
+- [x] `go test ./...` passes, running two real tests (not `[no test files]`) — verified locally, both tests observed red before being made to pass (see the `test:` commit message for the exact failure output). `-race` could not run locally (`CGO_ENABLED=0`, no `gcc` on PATH); confirmed passing on CI (`ubuntu-latest`, which has cgo available) via PR #7's `test (1.25)`/`test (1.26)` checks.
+- [x] `golangci-lint run` reports nothing — confirmed green via the `golangci-lint.yml` workflow on PR #7 (`lint` check).
+- [x] CI is green on both Go 1.25 and Go 1.26 — confirmed on PR #7 (`test (1.25)`, `test (1.26)` checks, both including `-race`).
+- [x] `testing/synctest` is confirmed importable and resolves — verified locally on go1.26.1 via `TestSynctestAvailable`, which uses a goroutine blocked on `time.Sleep` and the main goroutine blocked on a channel receive (the documented pattern; an earlier attempt using `synctest.Wait()` directly deadlocked because `Wait` returns once other goroutines are durably blocked, not once virtual time has advanced past them — corrected before this landed). Confirmed on Go 1.25 too via PR #7's `test (1.25)` check.
 
 **Tests**
 - The placeholder test itself is the deliverable.
