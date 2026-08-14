@@ -72,6 +72,8 @@ Whether **reordering** is in v1 is unresolved — flagged in [05 — Fault Injec
 
 ## Verification for every code task
 
+Work test-first: write the test before the production code it drives, run it and confirm it fails (red) — a compile error counts — then write the smallest change that makes it pass (green). Never commit production code without the failing test that motivated it in the same or an earlier commit, and never skip observing the red.
+
 From `AGENTS.md`, matching CI in `.github/workflows/`:
 
 ```

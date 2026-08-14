@@ -17,6 +17,10 @@ Since there's no implementation to build against yet, the highest-value contribu
 
 Implementation PRs (the actual `net.Conn`/`net.Listener` simulation, the fault-injection layer, the `Network` type) will make more sense once the core interfaces in [04 — API Design](04-api-design.md) have had a chance to settle from discussion. Landing implementation against an API that's still actively being debated risks churn and wasted work — so at this stage, design-shaping input is more valuable than code.
 
+## Working method
+
+Code contributions follow test-first development: write the test before the code it drives, confirm it fails, then implement until it passes. A pull request that adds production code without the test that motivated it will be asked to add one.
+
 ## License
 
 netchaos is licensed under [MIT](../LICENSE). Contributions are accepted under the same license.

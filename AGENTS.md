@@ -14,6 +14,10 @@ The [`docs/`](docs/README.md) set (`01-vision.md` through `07-contributing.md`) 
 - `docs/05-fault-injection.md` and `docs/06-scope-and-roadmap.md` flag a known-unresolved question (whether reordering is in v1). Don't silently resolve it — treat it as open.
 - Use `/architecture` (`.claude/commands/architecture.md`) to check a change against these docs before assuming consistency.
 
+## Test-first (red → green)
+
+Every code task follows a strict test-first cycle: write the test before the production code it drives, run it and confirm it fails (red) — a compile error because the identifier doesn't exist yet counts — then write the smallest change that makes it pass (green). A commit that adds production code must contain the test that motivated it; the test must never land in a later commit. Never skip observing the red — a test only ever seen green may be asserting nothing, and that defect is invisible afterwards.
+
 ## Build & verify
 
 Run before considering any Go change complete (matches CI in `.github/workflows/`):
