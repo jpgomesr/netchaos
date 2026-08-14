@@ -4,15 +4,19 @@ Instructions for AI coding agents working in this repository. Human-facing proce
 
 ## Project snapshot
 
-`netchaos` ([README](README.md)) is a Go library providing simulated `net.Conn`/`net.Listener` with deterministic fault injection. **Current stage: pre-implementation, design-only.** The module (`github.com/jpgomesr/netchaos`, `go 1.25`) contains nothing but a placeholder `doc.go` — there is no fault-injection logic, no `Network` type, no tests to extend. Do not assume any implementation exists; check before referencing one.
+`netchaos` ([README](README.md)) is a Go library providing simulated `net.Conn`/`net.Listener` with deterministic fault injection. **Current stage: pre-implementation, design-only.** The module (`github.com/jpgomesr/netchaos`, `go 1.25`) contains a placeholder `doc.go` and a toolchain-baseline test file (`netchaos_test.go`, from M0-6) — there is no fault-injection logic and no `Network` type yet. Do not assume any implementation exists; check before referencing one.
 
 ## Source of truth for design
 
 The [`docs/`](docs/README.md) set (`01-vision.md` through `07-contributing.md`) is the only design authority — there is no ADR or spec system in this repo. When implementing or discussing design:
 
 - Ground every claim in a specific doc section or in existing code — never invent rationale. If nothing covers a question, say so explicitly rather than guessing.
-- `docs/05-fault-injection.md` and `docs/06-scope-and-roadmap.md` flag a known-unresolved question (whether reordering is in v1). Don't silently resolve it — treat it as open.
+- The three open design questions gating implementation (reordering scope, fault scoping, fault granularity/determinism) were resolved as [M0](docs/tasks/m0-decisions-and-foundations.md) and recorded in `docs/03-06`. Reordering is **out of v1**; don't resolve it differently or reopen it without the maintainer.
 - Use `/architecture` (`.claude/commands/architecture.md`) to check a change against these docs before assuming consistency.
+
+## Test-first (red → green)
+
+Every code task follows a strict test-first cycle: write the test before the production code it drives, run it and confirm it fails (red) — a compile error because the identifier doesn't exist yet counts — then write the smallest change that makes it pass (green). A commit that adds production code must contain the test that motivated it; the test must never land in a later commit. Never skip observing the red — a test only ever seen green may be asserting nothing, and that defect is invisible afterwards.
 
 ## Build & verify
 

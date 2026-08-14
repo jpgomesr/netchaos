@@ -18,7 +18,9 @@ netchaos's v1 scope (per the root README's checklist) covers three fault categor
 
 **What it does:** Probabilistically drops a write instead of delivering it to the other simulated peer.
 
-**Configuration:** `WithPacketLoss(rate float64)` takes a probability in `[0.0, 1.0]`. For each write (or, depending on how granular the v1 model ends up, each simulated packet within a write), the `Network`'s seeded RNG decides whether it's delivered or dropped.
+**Configuration:** `WithPacketLoss(rate float64)` takes a probability in `[0.0, 1.0]`. The unit of loss is the `Write` call — for each `Write`, the `Network`'s seeded RNG decides whether it's delivered or dropped as a whole. This couples loss behaviour to how the caller happens to chunk its writes (one 64 KiB write and sixty-four one-KiB writes see different loss behaviour at the same configured rate); that's an accepted v1 trade-off in exchange for a much simpler delivery queue, not an oversight — see [04 — API Design](04-api-design.md#fault-unit-and-drop-semantics).
+
+**What a drop looks like to the reader:** A dropped write is a **silent gap**, not a visible error. The write is discarded, the peer's `Read` never observes those bytes, and — per `io.Writer`'s contract, which forbids returning a short count without a non-nil error — the call that issued the write still reports `n = len(p), nil`: full, successful delivery from the writer's point of view. This mirrors real packet loss, which is invisible to the sender at the socket layer.
 
 **Seeded and reproducible:** Because the loss decision is drawn from the seeded RNG, the exact sequence of "this write succeeds / this write is dropped" is identical across runs for a given seed — this is what lets a flaky-seeming failure be pinned down and replayed deterministically.
 
@@ -32,23 +34,8 @@ netchaos's v1 scope (per the root README's checklist) covers three fault categor
 
 **What it's for:** Testing circuit breakers and failover logic — does your code detect a fully-unreachable peer and open its circuit breaker, does it correctly fail over to another peer, does it recover once the partition heals (`Heal`) without requiring a process restart.
 
-## Reordering (open question)
+## Reordering (deferred, not in v1)
 
-The root README's introductory description lists reordering alongside latency, packet loss, and partition as a fault netchaos aims to inject:
-
-> "simulated `net.Conn` and `net.Listener` implementations with deterministic fault injection: latency, packet loss, partitions, and reordering"
-
-However, the v1 scope checklist in the same README only lists:
-
-- [ ] Latency injection (fixed and ranged)
-- [ ] Packet loss (probabilistic, seeded/deterministic)
-- [ ] Network partition (drop all traffic between two simulated peers)
-
-Reordering does **not** appear as a checklist item. This is flagged here rather than silently resolved one way or the other — see [06 — Scope & Roadmap](06-scope-and-roadmap.md#reordering-in-or-out-of-v1) for the same flag in the scope document. Two ways this could resolve:
-
-1. **Reordering is in v1**, and the checklist in the README is simply incomplete — it should be added as a fourth checklist item before implementation starts.
-2. **Reordering is out of v1**, and the introductory description should be trimmed to match the checklist (latency, packet loss, partition only), with reordering revisited post-v1 alongside the other deferred items in [06 — Scope & Roadmap](06-scope-and-roadmap.md).
-
-If reordering does end up in scope, the mechanic would conceptually be: instead of delivering queued writes to the other peer strictly in the order they were written, the fault-injection layer would hold a small window of pending writes and deliver them in a seeded-random permutation — meaningful primarily for protocols/clients that assume in-order delivery over what they believe is a reliable stream, which is a stronger assumption than TCP itself actually guarantees is preserved end-to-end at the application level in all real-world conditions (see e.g. TCP segments arriving out of order at the receiver's stack before reassembly).
+Reordering is **not** in v1 scope. It was flagged as an open question — the README's introductory prose used to list it alongside latency, packet loss, and partition while the v1 checklist never included it — and has been resolved out, decided as part of [M0-1](tasks/m0-decisions-and-foundations.md#m0-1--resolve-whether-reordering-is-in-v1). See [06 — Scope & Roadmap](06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1) for where it now lives on the deferred list, including the mechanic it would use if picked up post-v1.
 
 Next: [06 — Scope & Roadmap](06-scope-and-roadmap.md) covers why v1 is bounded the way it is, and what's explicitly deferred.

@@ -6,7 +6,7 @@
 
 1. **In-process.** No external process, proxy, daemon, or OS-level network manipulation (no netem, no iptables). Everything happens inside the Go process running the test.
 2. **Interface-compatible.** Code under test must be able to use netchaos's simulated connections through the standard `net.Conn` / `net.Listener` interfaces, without knowing it's not talking to a real socket.
-3. **Deterministic.** Given the same seed and the same sequence of operations, netchaos produces the same sequence of faults, every time, on every machine.
+3. **Deterministic.** Given the same seed and the same fixed order of `Dial`/`Listen`/`Partition`/`Heal` calls, netchaos produces the same sequence of faults on each connection, every time, on every machine — see the [determinism contract](04-api-design.md#determinism-contract) for the derivation model and its limits under concurrent, unordered calls.
 4. **Composable with virtual time.** When run inside `testing/synctest`, fault injection that involves delays (latency) should consume virtual time, not real wall-clock time.
 5. **Minimally invasive to adopt.** Swapping real dialing for simulated dialing should be a small, local change — typically replacing a `net.Dial` call (or whatever dependency-injection point the codebase already uses to obtain a `net.Conn`) with a call into netchaos.
 
@@ -39,14 +39,15 @@ To support server-side code (`net.Listener.Accept()`), the `Network` also needs 
 
 ### Fault-injection layer
 
-This is where the four fault categories from [05 — Fault Injection](05-fault-injection.md) are applied:
+This is where the three fault categories from [05 — Fault Injection](05-fault-injection.md) are applied — latency, packet loss, and partition; reordering was considered and [deferred out of v1](05-fault-injection.md#reordering-deferred-not-in-v1):
 
-- **Latency** — delays delivery of a write to the other end by some duration (fixed or ranged), drawn from the `Network`'s seeded RNG.
-- **Packet loss** — probabilistically drops a write instead of delivering it, using the seeded RNG to decide per write (or per simulated packet, depending on how granular the v1 model ends up being).
-- **Partition** — when two simulated peers are partitioned, all traffic between them is dropped (typically indefinitely, until the partition is healed), rather than probabilistically.
-- **Reordering** — see the [open question](05-fault-injection.md#reordering-open-question); if implemented, this would allow queued writes to be delivered out of the order they were written.
+- **Latency** — delays delivery of a write to the other end by some duration (fixed or ranged), drawn per `Write` call from the connection's derived RNG stream.
+- **Packet loss** — probabilistically drops a `Write` call in its entirety instead of delivering it, using the connection's derived RNG stream to decide per write.
+- **Partition** — when two simulated peers are partitioned, all traffic between them is dropped (typically indefinitely, until the partition is healed), rather than probabilistically, and consumes no random draws.
 
-Each of these is driven from the same seeded random source owned by the `Network`, which is what makes a full test run reproducible end to end: the same seed always produces the same sequence of injected faults, regardless of which machine or CI runner executes the test.
+Latency and packet loss apply globally to every connection the `Network` simulates; partition is scoped to the specific peer pair named in `WithPartition`/`Partition`/`Heal` — a deliberate asymmetry, see [04 — API Design](04-api-design.md#fault-scoping-global-vs-per-peer-pair).
+
+Each connection's random draws come from its own stream, derived from `(masterSeed, connectionOrdinal, direction, faultKind)` rather than from one `rand.Rand` shared across the `Network`. This is what keeps a full test run reproducible end to end without making one connection's fault sequence depend on how the Go scheduler happened to interleave it with unrelated connections — see the [determinism contract](04-api-design.md#determinism-contract) for the full model.
 
 ### Composing with `testing/synctest`
 

@@ -16,7 +16,7 @@
 
 ## What this is
 
-`netchaos` is a Go library that provides simulated `net.Conn` and `net.Listener` implementations with deterministic fault injection: latency, packet loss, partitions, and reordering. It's designed to be imported directly into `go test`, with no external process, no proxy, and no daemon — and to compose naturally with Go's own `testing/synctest` for virtual time.
+`netchaos` is a Go library that provides simulated `net.Conn` and `net.Listener` implementations with deterministic fault injection: latency, packet loss, and partitions. It's designed to be imported directly into `go test`, with no external process, no proxy, and no daemon — and to compose naturally with Go's own `testing/synctest` for virtual time.
 
 The goal is narrow and specific: let you write a **unit test** that proves your retry logic, timeout handling, or circuit breaker reacts correctly to a bad network — in milliseconds, deterministically, reproducibly, on any CI runner, with zero setup.
 
@@ -52,8 +52,10 @@ Go developers building distributed services (gRPC, HTTP between microservices, m
 package myservice_test
 
 import (
+	"context"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"github.com/jpgomesr/netchaos"
 )
@@ -68,7 +70,7 @@ func TestRetryOnPacketLoss(t *testing.T) {
 
 		client := myservice.NewClient(net.Dial)
 
-		err := client.FetchWithRetry(ctx, "resource-id")
+		err := client.FetchWithRetry(context.Background(), "resource-id")
 
 		if err != nil {
 			t.Fatalf("expected retry to succeed despite packet loss, got: %v", err)
@@ -88,7 +90,7 @@ To avoid the trap of "framework covering everything" — the same trap that turn
 - [ ] Seeded randomness for reproducible failure scenarios
 - [ ] Integration with `testing/synctest` for virtual time
 
-Explicitly out of scope for v1: disk fault injection, full syscall simulation, UDP support, protocol-level fault injection above the connection layer. These may be revisited once the core is solid.
+Explicitly out of scope for v1: reordering, disk fault injection, full syscall simulation, UDP support, protocol-level fault injection above the connection layer. These may be revisited once the core is solid — see [docs/06 — Scope & Roadmap](docs/06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1).
 
 ## Installation
 

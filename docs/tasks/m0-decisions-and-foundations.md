@@ -2,9 +2,9 @@
 
 > Gates every other milestone. See the [task index](README.md) for the milestone map and conventions.
 
-**Covers:** no v1 checklist item directly — this milestone resolves the open design questions that [06 — Scope & Roadmap](../06-scope-and-roadmap.md#reordering-in-or-out-of-v1) says must be settled *before the v1 API is finalized*, and establishes the test baseline the later milestones build on.
+**Covers:** no v1 checklist item directly — this milestone resolved the open design questions that had to be settled *before the v1 API could be finalized*, and established the test baseline the later milestones build on. **All six tasks below are done.**
 
-**Why it exists:** [07 — Contributing](../07-contributing.md) states that landing implementation against an API still being debated "risks churn and wasted work". Three questions currently change the public surface depending on how they resolve. M0 closes them, then freezes the API.
+**Why it exists:** [07 — Contributing](../07-contributing.md) states that landing implementation against an API still being debated "risks churn and wasted work". Three questions changed the public surface depending on how they resolved. M0 closed them, then froze the API — see [04 — API Design](../04-api-design.md) for the frozen result.
 
 Tasks M0-1 through M0-4 are **decision tasks**: they produce a written decision, not code, so they carry *Options considered / Decision required / Where it gets recorded* instead of acceptance criteria and tests.
 
@@ -12,8 +12,9 @@ Tasks M0-1 through M0-4 are **decision tasks**: they produce a written decision,
 
 ### M0-1 — Resolve whether reordering is in v1
 
-**Status:** todo
-**Roadmap item:** open question flagged in [05 — Fault Injection](../05-fault-injection.md#reordering-open-question) and [06 — Scope & Roadmap](../06-scope-and-roadmap.md#reordering-in-or-out-of-v1)
+**Status:** done
+**Decision:** Option 2 — **reordering is out of v1.** Recorded in [06 — Scope & Roadmap](../06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1) (deferred list, with the mechanic sketch preserved), [05 — Fault Injection](../05-fault-injection.md#reordering-deferred-not-in-v1), root `README.md`, [docs/README.md](../README.md), and [04 — API Design](../04-api-design.md#frozen-v1-surface). The recording list below turned out to be incomplete in practice — `docs/03-architecture.md` (the "four fault categories" framing and Reordering bullet), `docs/07-contributing.md`, `docs/01-vision.md`, `AGENTS.md`, and `docs/tasks/README.md` all also asserted or flagged reordering and needed the same sweep; a future decision task should widen this section's "where it gets recorded" list to a repo-wide grep rather than a fixed file list.
+**Roadmap item:** open question flagged in [05 — Fault Injection](../05-fault-injection.md#reordering-deferred-not-in-v1) and [06 — Scope & Roadmap](../06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1)
 **Depends on:** —
 **Blocks:** M0-5 — and through it, the write-ordering guarantees in the delivery path
 
@@ -40,7 +41,8 @@ In or out. This is the maintainer's call — `AGENTS.md` explicitly instructs ag
 
 ### M0-2 — Decide fault scoping: global vs. per-peer-pair
 
-**Status:** todo
+**Status:** done
+**Decision:** Option 1 — **global for v1.** `WithLatency`/`WithPacketLoss` apply to every connection; `WithPartition`/`Partition`/`Heal` stay pair-scoped, and the asymmetry is stated explicitly in [04 — API Design](../04-api-design.md#fault-scoping-global-vs-per-peer-pair) and referenced from [06](../06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1)'s deferred list.
 **Roadmap item:** open design question in [04 — API Design](../04-api-design.md)
 **Depends on:** —
 **Blocks:** M0-5 — and through it, the latency and packet-loss option surface
@@ -65,7 +67,9 @@ Global or per-pair for latency and packet loss in v1.
 
 ### M0-3 — Decide fault granularity: per-`Write` vs. per-simulated-packet
 
-**Status:** todo
+**Status:** done
+**Decision:** Option 1 — **per-`Write` call**, and a dropped write is a **silent gap**: it is discarded, the peer's `Read` never observes those bytes, and — because `io.Writer` forbids a short count without a non-nil error — the call that issued the write still reports `n = len(p), nil`. Recorded in [04 — API Design](../04-api-design.md#fault-unit-and-drop-semantics) and [05 — Fault Injection](../05-fault-injection.md).
+**Correction to this task's "where it gets recorded" line:** only the Packet loss section in `docs/05` carried a granularity hedge; the Latency section already asserted per-write unconditionally (twice) and needed no hedge removal, just confirmation of consistency.
 **Roadmap item:** open question in [05 — Fault Injection](../05-fault-injection.md) ("depending on how granular the v1 model ends up being")
 **Depends on:** —
 **Blocks:** M0-4, M0-5, M1-1, M2-3
@@ -90,7 +94,8 @@ The unit of fault application, plus — as part of the same decision — what a 
 
 ### M0-4 — Design the determinism-under-concurrency model
 
-**Status:** todo
+**Status:** done
+**Decision:** Option 1 — **per-connection derived streams**, from `(masterSeed, connectionOrdinal, direction, faultKind)`. The `faultKind` component beyond the option's own sketch was added so that adding `WithLatency` to an existing test cannot shift that test's packet-loss sequence. The exact guarantee and its limit (order of `Dial`/`Listen`/`Partition`/`Heal` calls must be fixed; concurrent, unordered *establishment* of connections is outside the guarantee) is recorded in [04 — API Design](../04-api-design.md#determinism-contract), with the architecture-level summary in [03 — Architecture](../03-architecture.md#fault-injection-layer) and design goal 3.
 **Roadmap item:** underpins "Seeded randomness for reproducible failure scenarios" ([06](../06-scope-and-roadmap.md))
 **Depends on:** M0-3 (the fault unit is what an RNG draw corresponds to)
 **Blocks:** M0-5, M2-1
@@ -119,7 +124,7 @@ The derivation scheme, and — whichever option is chosen — the *exact* wordin
 
 ### M0-5 — Freeze the v1 API surface
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** prerequisite for every code task in M1–M2
 **Depends on:** M0-1, M0-2, M0-3, M0-4
 **Blocks:** M1-2, M1-4, M1-5, M1-6, M1-7, M2-6
@@ -138,11 +143,17 @@ Turn [04 — API Design](../04-api-design.md)'s **PROPOSED / NOT YET IMPLEMENTED
 - [`docs/04-api-design.md`](../04-api-design.md) — replace the PROPOSED banner with the frozen surface; keep the usage sketch in sync.
 
 **Acceptance criteria**
-- [ ] Every exported identifier v1 will ship is listed with its final signature.
-- [ ] Each of M0-1..M0-4's decisions is visibly reflected in at least one signature or doc paragraph.
-- [ ] Error/no-op behaviour is specified for `Partition`, `Heal`, `Dial` to an unregistered address, and invalid options.
-- [ ] The `DialContext` question is answered either way, in writing.
-- [ ] The **PROPOSED / NOT YET IMPLEMENTED** banner is replaced by wording that distinguishes "API agreed" from "API implemented" — the latter is still false at this point.
+- [x] Every exported identifier v1 will ship is listed with its final signature — [04 — API Design § Frozen v1 surface](../04-api-design.md#frozen-v1-surface).
+- [x] Each of M0-1..M0-4's decisions is visibly reflected in at least one signature or doc paragraph — M0-1 in the Frozen v1 surface intro paragraph (the fault set is exactly three, reordering excluded), M0-2 in the fault-scoping section, M0-3 in `WithPacketLoss`'s godoc and the fault-unit section, M0-4 in the determinism contract.
+- [x] Error/no-op behaviour is specified for `Partition`, `Heal`, `Dial` to an unregistered address, and invalid options — [04 — API Design § Error and no-op behaviour](../04-api-design.md#error-and-no-op-behaviour).
+- [x] The `DialContext` question is answered either way, in writing — ships in v1; see the Dialing and listening section.
+- [x] The **PROPOSED / NOT YET IMPLEMENTED** banner is replaced by wording that distinguishes "API agreed" from "API implemented" — the latter is still false at this point.
+
+**Sub-decisions made** (none had options written down in this task before; see [04 — API Design § Error and no-op behaviour](../04-api-design.md#error-and-no-op-behaviour) for the full rationale):
+- `Partition`/`Heal` on an unregistered or non-partitioned pair: silent no-op, no error.
+- `Dial`/`DialContext` to an unregistered address: returns a connection-refused-shaped error.
+- Invalid option values (e.g. `WithPacketLoss` outside `[0,1]`): `NewNetwork` **panics** — this is the one sub-decision worth re-checking, since it fixes `Option`'s and `NewNetwork`'s signatures (no `error` return) for v1, and reversing it after tagging would be breaking.
+- `DialContext` ships in v1, delegated to by `Dial`.
 
 **Tests**
 None — documentation task. Once M1 exists, an `api_test.go` compile-time assertion (assigning `Network.Dial` to a `func(string, string) (net.Conn, error)` variable, asserting `*conn` satisfies `net.Conn`) is the mechanical guard that the frozen surface is honoured; that assertion is written in M1-2.
@@ -151,7 +162,7 @@ None — documentation task. Once M1 exists, an `api_test.go` compile-time asser
 
 ### M0-6 — Establish the test baseline
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** prerequisite for every code task
 **Depends on:** —
 **Blocks:** M1-1
@@ -170,13 +181,13 @@ The module currently contains one Go file — `doc.go`, a package comment — an
 - One new `_test.go` at the module root (replaced by real tests as M1 lands).
 
 **Acceptance criteria**
-- [ ] `go build ./...` succeeds.
-- [ ] `go vet ./...` reports nothing.
-- [ ] `gofmt -l .` prints nothing.
-- [ ] `go test -race ./...` passes, running at least one real test (not `[no test files]`).
-- [ ] `golangci-lint run` reports nothing.
-- [ ] CI is green on both Go 1.25 and Go 1.26.
-- [ ] `testing/synctest` is confirmed importable and `synctest.Test` / `synctest.Wait` resolve on both matrix versions.
+- [x] `go build ./...` succeeds — verified locally (go1.26.1, windows/amd64).
+- [x] `go vet ./...` reports nothing — verified locally.
+- [x] `gofmt -l .` prints nothing — verified for both files this task added (`netchaos.go`, `netchaos_test.go`). `doc.go` shows as unformatted locally, but that's `core.autocrlf=true` converting the git-stored LF content to CRLF on this Windows checkout, not a real formatting defect — confirm it's silent in CI's `ubuntu-latest` checkout, which doesn't do that conversion.
+- [x] `go test ./...` passes, running two real tests (not `[no test files]`) — verified locally, both tests observed red before being made to pass (see the `test:` commit message for the exact failure output). `-race` could not run locally (`CGO_ENABLED=0`, no `gcc` on PATH); confirmed passing on CI (`ubuntu-latest`, which has cgo available) via PR #7's `test (1.25)`/`test (1.26)` checks.
+- [x] `golangci-lint run` reports nothing — confirmed green via the `golangci-lint.yml` workflow on PR #7 (`lint` check).
+- [x] CI is green on both Go 1.25 and Go 1.26 — confirmed on PR #7 (`test (1.25)`, `test (1.26)` checks, both including `-race`).
+- [x] `testing/synctest` is confirmed importable and resolves — verified locally on go1.26.1 via `TestSynctestAvailable`, which uses a goroutine blocked on `time.Sleep` and the main goroutine blocked on a channel receive (the documented pattern; an earlier attempt using `synctest.Wait()` directly deadlocked because `Wait` returns once other goroutines are durably blocked, not once virtual time has advanced past them — corrected before this landed). Confirmed on Go 1.25 too via PR #7's `test (1.25)` check.
 
 **Tests**
 - The placeholder test itself is the deliverable.

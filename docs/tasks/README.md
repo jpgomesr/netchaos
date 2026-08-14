@@ -57,12 +57,12 @@ Note that **partition (M2-4) does not depend on the RNG task (M2-1)**. A partiti
 
 The two orderings that matter most, because getting them wrong causes rework:
 
-1. **M0 before any API-shaping code.** Three open questions (reordering, fault scoping, fault granularity) each change the public surface.
+1. **M0 before any API-shaping code.** Three open questions (reordering, fault scoping, fault granularity) each changed the public surface — all three are now resolved, see below.
 2. **M2-1 before M2-2 and M2-3.** Both faults draw from the seeded random source; building them against an ad-hoc RNG and retrofitting determinism later means rewriting both.
 
-## Open question that gates M0
+## M0's open questions are resolved
 
-Whether **reordering** is in v1 is unresolved — flagged in [05 — Fault Injection](../05-fault-injection.md#reordering-open-question), [06 — Scope & Roadmap](../06-scope-and-roadmap.md#reordering-in-or-out-of-v1), the [docs index](../README.md) and `AGENTS.md`. It is task **M0-1**. No task in this folder assumes an answer; every mention of reordering elsewhere is written conditionally. Do not silently resolve it while executing another task.
+M0's four decision tasks (M0-1 reordering, M0-2 fault scoping, M0-3 fault granularity, M0-4 determinism under concurrency) are done — see [M0 — Decisions & foundations](m0-decisions-and-foundations.md) for each decision and where it's recorded. Reordering is **out of v1**. Task files elsewhere in this folder that still read as conditional on these questions ("if reordering is in scope…") were written before M0 closed and have not been swept for that language; treat M0's task file as authoritative if the two disagree.
 
 ## Task ID scheme and status
 
@@ -71,6 +71,8 @@ Whether **reordering** is in v1 is unresolved — flagged in [05 — Fault Injec
 - A task is `done` only when every acceptance-criteria box is ticked and the verification block below passes.
 
 ## Verification for every code task
+
+Work test-first: write the test before the production code it drives, run it and confirm it fails (red) — a compile error counts — then write the smallest change that makes it pass (green). Never commit production code without the failing test that motivated it in the same or an earlier commit, and never skip observing the red.
 
 From `AGENTS.md`, matching CI in `.github/workflows/`:
 

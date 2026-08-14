@@ -1,8 +1,36 @@
 # 04 — API Design
 
-> **PROPOSED / NOT YET IMPLEMENTED.** Everything in this document is a design sketch for the v1 API surface. Signatures, names, and shapes are all subject to change once implementation begins. Nothing described here exists in code yet.
+> **API AGREED / NOT YET IMPLEMENTED.** [M0-5](tasks/m0-decisions-and-foundations.md#m0-5--freeze-the-v1-api-surface) froze the v1 API surface below — the signatures, names, and behaviour are the agreed target for M1–M4 to implement against, not a sketch subject to change during implementation. "Agreed" is not "implemented": nothing described here exists in code yet, and every exported identifier below is a specification for M1/M2 to build, not a description of existing code.
 
 This is a concrete elaboration of the code sample from the root [`README.md`](../README.md), scoped to the v1 fault types in [06 — Scope & Roadmap](06-scope-and-roadmap.md).
+
+## Frozen v1 surface
+
+The v1 fault set is exactly **three** categories — latency, packet loss, partition. Reordering was considered and decided out of v1 by [M0-1](tasks/m0-decisions-and-foundations.md#m0-1--resolve-whether-reordering-is-in-v1); see [06 — Scope & Roadmap](06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1) for where it now lives on the deferred list. No exported identifier below relates to reordering.
+
+Every exported identifier v1 ships, with its final signature:
+
+```go
+type Network struct{ /* unexported */ }
+
+func NewNetwork(opts ...Option) *Network
+
+type Option func(*networkConfig)
+
+func WithSeed(seed int64) Option
+func WithLatency(min, max time.Duration) Option
+func WithPacketLoss(rate float64) Option
+func WithPartition(peerA, peerB string) Option
+
+func (n *Network) Dial(network, addr string) (net.Conn, error)
+func (n *Network) DialContext(ctx context.Context, network, addr string) (net.Conn, error)
+func (n *Network) Listen(network, addr string) (net.Listener, error)
+
+func (n *Network) Partition(peerA, peerB string)
+func (n *Network) Heal(peerA, peerB string)
+```
+
+No exported identifier returns an `error` from `NewNetwork` or from any `Option` — see [Error and no-op behaviour](#error-and-no-op-behaviour) below for why, and for what happens instead on misuse.
 
 ## Package shape
 
@@ -36,17 +64,21 @@ Consistent with the idiomatic Go functional-options pattern, and with the shape 
 type Option func(*networkConfig)
 
 // WithSeed makes fault injection deterministic and reproducible: the same
-// seed, with the same sequence of Network operations, always produces the
-// same sequence of injected faults.
+// seed, with the same order of Dial/Listen/Partition/Heal calls, always
+// produces the same sequence of injected faults on each connection. Seeds a
+// per-connection stream derivation, not a single shared random source — see
+// the determinism contract for the exact guarantee and its limits.
 func WithSeed(seed int64) Option
 
 // WithLatency delays delivery of writes by a duration drawn uniformly from
 // [min, max]. Passing an equal min and max applies fixed latency.
 func WithLatency(min, max time.Duration) Option
 
-// WithPacketLoss drops writes with the given probability, in [0.0, 1.0].
-// The decision is drawn from the Network's seeded RNG, so it is
-// reproducible for a given seed.
+// WithPacketLoss drops whole Write calls with the given probability, in
+// [0.0, 1.0]. A dropped write is silent: it reports success to its caller
+// (n == len(p), nil error) and never arrives at the peer. The decision is
+// drawn from the Network's seeded RNG, so it is reproducible for a given
+// seed.
 func WithPacketLoss(rate float64) Option
 
 // WithPartition marks all traffic between the named peers as dropped,
@@ -56,7 +88,15 @@ func WithPacketLoss(rate float64) Option
 func WithPartition(peerA, peerB string) Option
 ```
 
-Open design question: whether fault options apply globally to every simulated connection in the `Network`, or can be scoped per-peer-pair (e.g., only the client→server-b link is lossy, not client→server-a). The README's example implies global application for v1; per-pair scoping is a plausible post-v1 refinement once real usage patterns are clearer.
+### Fault scoping: global vs. per-peer-pair
+
+Decided by [M0-2](tasks/m0-decisions-and-foundations.md#m0-2--decide-fault-scoping-global-vs-per-peer-pair): `WithLatency` and `WithPacketLoss` apply **globally**, to every simulated connection the `Network` handles. `WithPartition` (and its dynamic counterparts, `Network.Partition`/`Network.Heal`) are **pair-scoped** — they name the two peers affected. This is a deliberate asymmetry, not an oversight: partition is inherently a relationship between two peers, while latency and loss model conditions of the network as a whole for v1. Per-pair latency/loss scoping is a plausible post-v1 refinement once real usage patterns are clearer (see [06 — Scope & Roadmap](06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1)).
+
+### Fault unit and drop semantics
+
+Decided by [M0-3](tasks/m0-decisions-and-foundations.md#m0-3--decide-fault-granularity-per-write-vs-per-simulated-packet): the unit of fault application is the **`Write` call**, not a simulated packet. Each `Write` is delayed as a whole or dropped as a whole; there is no segmentation layer in v1. This couples fault behaviour to how the caller happens to chunk its writes — accepted as a v1 trade-off in exchange for a much simpler delivery queue, revisitable post-v1 if real usage shows it matters.
+
+A dropped write is a **silent gap**: the write is discarded, the peer's `Read` never observes those bytes, and the call that issued the write still reports full success. Concretely, given `io.Writer`'s contract — a non-nil error is required whenever `n < len(p)` — a silent drop cannot report a short count or an error, so it **must** return `n = len(p), nil`. This is not a stylistic choice; it is the only return value consistent with the drop being silent, and it mirrors what a real socket does when a packet is lost downstream — the sender's kernel doesn't know either.
 
 ## Dialing and listening
 
@@ -64,8 +104,17 @@ Open design question: whether fault options apply globally to every simulated co
 // Dial creates a simulated connection from the calling peer to addr within
 // this Network, subject to the Network's fault policy. It has the same
 // signature shape as net.Dial so it can be used as a drop-in for code that
-// accepts a dial function.
+// accepts a dial function. Dial(network, addr) is equivalent to
+// DialContext(context.Background(), network, addr).
 func (n *Network) Dial(network, addr string) (net.Conn, error)
+
+// DialContext is Dial with a context: the dial is aborted, returning
+// ctx.Err(), if ctx is cancelled before the simulated connection is
+// established. Ships in v1 (decided by M0-5) because http.Transport's
+// DialContext and grpc.WithContextDialer both expect this shape — a
+// library claiming drop-in transport compatibility needs it from the
+// start rather than adding it as a breaking follow-up.
+func (n *Network) DialContext(ctx context.Context, network, addr string) (net.Conn, error)
 
 // Listen registers a simulated listener at addr within this Network.
 // Connections dialed to addr from elsewhere in the Network are delivered
@@ -73,7 +122,7 @@ func (n *Network) Dial(network, addr string) (net.Conn, error)
 func (n *Network) Listen(network, addr string) (net.Listener, error)
 ```
 
-The intent is for `Network.Dial` to be usable anywhere calling code accepts a `func(network, addr string) (net.Conn, error)` — e.g., as the dial function passed into an HTTP transport, a gRPC dialer, or a hand-rolled client constructor. This is the "swap a `net.Dial` call for a factory" adoption path described in [03 — Architecture](03-architecture.md#design-goals-driving-the-architecture).
+The intent is for `Network.Dial` (and `Network.DialContext`) to be usable anywhere calling code accepts a `func(network, addr string) (net.Conn, error)` (or its context-aware equivalent) — e.g., as the dial function passed into an HTTP transport, a gRPC dialer, or a hand-rolled client constructor. This is the "swap a `net.Dial` call for a factory" adoption path described in [03 — Architecture](03-architecture.md#design-goals-driving-the-architecture).
 
 ## Dynamic partition control
 
@@ -88,6 +137,15 @@ func (n *Network) Partition(peerA, peerB string)
 func (n *Network) Heal(peerA, peerB string)
 ```
 
+## Error and no-op behaviour
+
+Decided by [M0-5](tasks/m0-decisions-and-foundations.md#m0-5--freeze-the-v1-api-surface), since none of these had options written down before:
+
+- **`Partition(peerA, peerB)` on peers that have never `Dial`ed or `Listen`ed** — no-op, no error. Peers are identified by address string; partitioning before either side has connected is legitimate test setup (e.g. "start partitioned"), and erroring here would force tests to order setup calls for no benefit.
+- **`Heal(peerA, peerB)` with no partition currently in effect for that pair** — silent no-op. Idempotent healing is what makes it safe to call from `defer` or test cleanup without tracking partition state separately.
+- **`Dial`/`DialContext` to an address nothing has `Listen`ed on** — returns an error, shaped like `*net.OpError` with a connection-refused-style underlying error, so code under test takes the same path it would against a real closed port. This is the point of being a `net.Conn`-compatible drop-in.
+- **Invalid option values** (e.g. `WithPacketLoss` outside `[0.0, 1.0]`, or `WithLatency` with `min > max`) — **`NewNetwork` panics.** `NewNetwork` returns no error and `Option` returns no error; both signatures are fixed above specifically so the README's and this doc's single-expression construction examples work as written. Invalid option values are programmer errors in test code, not runtime conditions a test needs to handle — a panic at construction time is the immediate, unambiguous signal, consistent with how the standard library treats similar construction-time misuse (e.g. `regexp.MustCompile`). Changing this to an `error` return later would be a breaking signature change to both `Option` and `NewNetwork`; it is being decided now, not deferred, because reversing it after v1 tags is expensive. (Implementation is M2-6's concern — this only fixes the *behaviour*, not the validation code.)
+
 ## Full usage sketch
 
 Restating the README's example with the API surface above made explicit:
@@ -96,6 +154,7 @@ Restating the README's example with the API surface above made explicit:
 package myservice_test
 
 import (
+    "context"
     "testing"
     "testing/synctest"
     "time"
@@ -113,7 +172,7 @@ func TestRetryOnPacketLoss(t *testing.T) {
 
         client := myservice.NewClient(net.Dial)
 
-        err := client.FetchWithRetry(ctx, "resource-id")
+        err := client.FetchWithRetry(context.Background(), "resource-id")
 
         if err != nil {
             t.Fatalf("expected retry to succeed despite packet loss, got: %v", err)
@@ -124,6 +183,18 @@ func TestRetryOnPacketLoss(t *testing.T) {
 
 ## Determinism contract
 
-The proposed determinism guarantee, which the implementation must uphold once built: for a fixed seed, a fixed sequence of `Network` method calls (`Dial`, `Listen`, `Partition`, `Heal`, and I/O on the resulting connections) in a fixed order produces an identical sequence of injected faults across runs and across machines. This is the property that lets a failing test be reproduced reliably from a seed value alone — analogous to how `go test -run` plus a fixed input reproduces a deterministic unit test failure.
+Decided by [M0-4](tasks/m0-decisions-and-foundations.md#m0-4--design-the-determinism-under-concurrency-model), because the naive approach — one shared `rand.Rand` behind a mutex — is deterministic only when a test's I/O is strictly sequential. The moment two goroutines do simulated I/O concurrently (a client writing while a server reads, two clients against one server), the *order in which goroutines reach a shared RNG* is decided by the Go scheduler, not by the seed — so the same seed and the same calls can produce a different fault sequence between runs. A mutex there makes the RNG race-free, not deterministic.
+
+**The model: per-connection derived streams.** `WithSeed` seeds a derivation function, not a shared `rand.Rand`. Each simulated connection gets its own RNG stream, derived from `(masterSeed, connectionOrdinal, direction, faultKind)`:
+
+- `connectionOrdinal` is assigned in the order `Dial`/`Listen` establish the connection — the same ordering the contract already fixes.
+- `direction` separates the two directions of a full-duplex connection, so peer A's writes and peer B's writes draw from independent streams.
+- `faultKind` separates latency draws from packet-loss draws on the same connection and direction, so that adding `WithLatency` to an existing test does not shift that test's packet-loss sequence, and vice versa.
+
+Because a connection's draw sequence depends only on its own ordinal, direction, and fault kind — never on what any other connection did, or on how the scheduler interleaved them — the fault sequence on that connection is reproducible independent of concurrent activity elsewhere in the `Network`. Partition consumes no random draws at all (see [05 — Fault Injection](05-fault-injection.md#partition)), so it doesn't perturb any stream.
+
+**The guarantee, precisely:** for a fixed seed and a fixed *order* in which `Dial`, `Listen`, `Partition`, and `Heal` are called, each resulting connection produces an identical sequence of injected faults across runs and across machines. This is the property that lets a failing test be reproduced reliably from a seed value alone — analogous to how `go test -run` plus a fixed input reproduces a deterministic unit test failure.
+
+**The limit, stated rather than implied:** the guarantee is about the *order of `Network` method calls*, not about wall-clock concurrency of the I/O itself. If a test races two goroutines to call `Dial` concurrently, which one gets which `connectionOrdinal` is nondeterministic, and the guarantee does not apply to that race — the fix is for the test to fix the dial order (e.g. by dialing sequentially before starting concurrent I/O), not for netchaos to guess an ordering. Concurrent I/O on **already-established** connections is fully covered; concurrent, unordered *establishment* of connections is not.
 
 Next: [05 — Fault Injection](05-fault-injection.md) details the mechanics behind each option above.
