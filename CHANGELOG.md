@@ -10,5 +10,6 @@ once the first release is tagged.
 
 - Project scaffolding: CI, linting, issue/PR templates, contributing/security/conduct policies.
 - Design documentation ([docs/](docs/README.md)) covering vision, architecture, API design, and scope.
+- Task breakdown ([docs/tasks/](docs/tasks/README.md)) sequencing the v1 scope into milestones.
 
 No implementation has been released yet.
