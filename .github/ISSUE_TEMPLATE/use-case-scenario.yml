@@ -1,0 +1,31 @@
+name: Use-case scenario
+description: Describe a real resilience-testing scenario that's hard to test today, to help validate the v1 scope.
+labels: ["use-case"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Concrete scenarios are the most useful input right now — they help validate whether the
+        [v1 scope](../../docs/06-scope-and-roadmap.md) actually covers the cases people need.
+
+  - type: textarea
+    id: scenario
+    attributes:
+      label: What are you trying to test?
+      description: e.g. a retry policy, a circuit breaker, a specific timeout behavior.
+    validations:
+      required: true
+
+  - type: textarea
+    id: why-hard
+    attributes:
+      label: Why is this hard to test today?
+      description: What do you currently have to do (external proxy, manual fault injection, skip the test entirely)?
+    validations:
+      required: true
+
+  - type: textarea
+    id: fault-types
+    attributes:
+      label: What fault types would you need?
+      description: Latency, packet loss, partition, reordering, etc.

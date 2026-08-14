@@ -10,6 +10,8 @@
 
 > **Status: early development.** API is unstable and will change. Not yet published as a tagged release.
 
+**Full design documentation:** [`docs/`](docs/README.md)
+
 ---
 
 ## What this is
@@ -87,10 +89,6 @@ To avoid the trap of "framework covering everything" — the same trap that turn
 - [ ] Integration with `testing/synctest` for virtual time
 
 Explicitly out of scope for v1: disk fault injection, full syscall simulation, UDP support, protocol-level fault injection above the connection layer. These may be revisited once the core is solid.
-
-## Why this exists
-
-Written up as part of deciding what comes after [NeuralVault](https://github.com/jpgomesr/neuralvault) — a deliberate choice to build something narrower, and to define its boundaries before writing the first line of implementation.
 
 ## Installation
 
