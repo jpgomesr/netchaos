@@ -5,7 +5,7 @@
 > `testing/synctest` virtualizes time. `netchaos` virtualizes network. Same philosophy: deterministic, in-process, zero extra infrastructure — the way the standard library would do it if it covered this layer too.
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/jpgomesr/netchaos.svg)](https://pkg.go.dev/github.com/jpgomesr/netchaos)
-[![Go Report Card](https://goreportcard.com/badge/github.com/jpgomesr/netchaos)](https://goreportcard.com/report/github.com/jpgomesr/netchaos)
+[![golangci-lint](https://github.com/jpgomesr/netchaos/actions/workflows/golangci-lint.yml/badge.svg)](https://github.com/jpgomesr/netchaos/actions/workflows/golangci-lint.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > **Status: early development.** API is unstable and will change. Not yet published as a tagged release.
