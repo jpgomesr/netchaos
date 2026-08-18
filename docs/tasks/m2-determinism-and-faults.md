@@ -67,7 +67,8 @@ A single shared `rand.Rand` behind a mutex is race-free but *not* deterministic:
 
 ### M2-2 — Latency injection (fixed and ranged)
 
-**Status:** todo
+**Status:** done
+**Decision:** implemented as a single live `time.AfterFunc`, armed for the head of a per-pipe `pending` FIFO whose entries are release-ordered by construction (`releaseAt = max(previous releaseAt, now+drawn)`) — not one timer per unit, which would let a later write's shorter draw jump the queue. `uniformDuration` (M2-1) always draws, even for `WithLatency(d, d)`, so the draw index tracks the unit index regardless of whether a given delay happened to be fixed. Reads deadlined shorter than the latency get `os.ErrDeadlineExceeded`; the data is not discarded and arrives on a later read with a longer deadline. Closing a conn discards any still-pending (undelivered) units rather than delivering them — they model bytes in flight on the wire, not bytes already in the peer's receive buffer, so this doesn't touch M1's "already-buffered data still drains" guarantee. Confirmed the M0-2 fault-scoping decision (global) rather than re-deciding it.
 **Roadmap item:** *Latency injection (fixed and ranged)* ([06](../06-scope-and-roadmap.md))
 **Depends on:** M1-1, M1-2, M1-3, M2-1
 **Blocks:** M2-5, M2-6, M3-2
@@ -78,10 +79,10 @@ Delay delivery of a write from one simulated peer to the other by a duration dra
 **Scope**
 - `WithLatency(min, max time.Duration) Option`, per [04 — API Design](../04-api-design.md#functional-options).
 - Equal `min` and `max` = a fixed delay on every unit; `min < max` = a duration drawn uniformly from `[min, max]` per unit, from the connection's M2-1 stream ([05 — Fault Injection](../05-fault-injection.md#latency)).
-- The delayed unit follows M0-3 (per write vs. per simulated packet).
+- The delayed unit is the whole `Write` call (M0-3, already decided — not a simulated packet).
 - Delay is implemented with standard `time` primitives — a timer on the delivery path — so `testing/synctest` virtualizes it. **Do not introduce a clock abstraction:** [03 — Architecture](../03-architecture.md#composing-with-testingsynctest) rules this out explicitly, and any custom clock would defeat the whole synctest integration.
-- Latency delays delivery; it must not reorder. Pending units on one direction are released in write order even when a later unit draws a shorter delay. (If M0-1 put reordering in v1, that is a separate, explicitly-configured fault — it must not fall out of latency as an accident.)
-- Per M0-2, apply globally or per peer pair as decided.
+- Latency delays delivery; it must not reorder. Pending units on one direction are released in write order even when a later unit draws a shorter delay. Reordering is out of v1 (M0-1, already decided).
+- Applies globally (M0-2, already decided).
 - Out of scope: interaction with loss (M2-5), the synctest test suite (M3-2).
 
 **Files**
@@ -90,15 +91,15 @@ Delay delivery of a write from one simulated peer to the other by a duration dra
 - `latency_test.go` (new)
 
 **Acceptance criteria**
-- [ ] `WithLatency(d, d)` delays every unit by exactly `d` of virtual time.
-- [ ] `WithLatency(min, max)` produces durations within `[min, max]` inclusive.
-- [ ] The same seed and call sequence produce an identical delay sequence across runs.
-- [ ] Units are delivered in write order regardless of drawn delays.
-- [ ] A read blocked waiting on a delayed write is **durably blocking** inside a `synctest` bubble — the bubble advances virtual time instead of deadlock-panicking.
-- [ ] A read deadline shorter than the latency returns `os.ErrDeadlineExceeded` (M1-3), not the delayed data; the data still arrives on a subsequent read with a longer deadline, or is discarded — whichever, it is documented.
-- [ ] Closing a conn with delayed writes in flight behaves per the M1-2 close decision, and that behaviour is tested here where it becomes observable.
-- [ ] Zero latency (the default, no option) adds no timer and no measurable overhead.
-- [ ] `-race` clean.
+- [x] `WithLatency(d, d)` delays every unit by exactly `d` of virtual time.
+- [x] `WithLatency(min, max)` produces durations within `[min, max]` inclusive.
+- [x] The same seed and call sequence produce an identical delay sequence across runs.
+- [x] Units are delivered in write order regardless of drawn delays.
+- [x] A read blocked waiting on a delayed write is **durably blocking** inside a `synctest` bubble — the bubble advances virtual time instead of deadlock-panicking.
+- [x] A read deadline shorter than the latency returns `os.ErrDeadlineExceeded` (M1-3), not the delayed data; the data still arrives on a subsequent read with a longer deadline — documented above and in `latency.go`'s godoc.
+- [x] Closing a conn with delayed writes in flight discards them rather than delivering them; tested (`TestLatencyCloseInFlight`).
+- [x] Zero latency (the default, no option) adds no timer and no measurable overhead — `deliver` stays `passThroughDeliver` (`TestNoLatencyByDefault`).
+- [x] `-race` clean (verified on CI; not runnable on this dev box, see M2-1).
 
 **Tests**
 - `TestLatencyFixed` / `TestLatencyRanged` — inside `synctest.Test`, asserting `time.Since(start)` equals the expected virtual duration
