@@ -214,7 +214,8 @@ Drop **all** traffic between two named peers — binary, not probabilistic — w
 
 ### M2-5 — Fault composition rules
 
-**Status:** todo
+**Status:** done
+**Decision:** the RNG-draw discipline is **unconditional**: a unit that clears the partition gate draws from every *configured* fault's stream regardless of what an earlier fault in the order already decided — a unit packet loss drops still draws (and discards) a latency duration. This is now the permanent rule in [04](../04-api-design.md#determinism-contract). Partition draws nothing, as M2-4 already required. Implemented as a single `faultPolicy` struct plus one `installFaultPolicy` function (`faults.go`) that replaces the three separate `install{Latency,Loss,Partition}` functions M2-2/M2-3/M2-4 had each been assigning to `pipe.deliver` directly (the last one installed had been silently winning — this is the bug M2-3's task entry flagged and deferred here). `faultPolicy.network` is nilable so pipe-level tests can exercise loss/latency composition without constructing a full `Network`.
 **Roadmap item:** the fault-injection layer as a whole ([03 — Architecture](../03-architecture.md#fault-injection-layer))
 **Depends on:** M2-2, M2-3, M2-4
 **Blocks:** M3-1, M3-3
@@ -235,19 +236,20 @@ Define and implement what happens when latency, packet loss and partition are co
 - `faults_test.go` (new)
 
 **Acceptance criteria**
-- [ ] There is exactly **one** place where fault policy is evaluated per unit — not three independent hooks that happen to run in an order.
-- [ ] The application order (partition → loss → latency) is implemented and documented in [05](../05-fault-injection.md) or [03](../03-architecture.md#fault-injection-layer).
-- [ ] The draw discipline for dropped units is decided, implemented, and written into the determinism contract in [04](../04-api-design.md#determinism-contract).
-- [ ] With all three configured, behaviour matches the documented order.
-- [ ] Partitioning an unrelated pair does not change any other connection's fault trace.
-- [ ] The same seed with all three faults configured reproduces an identical trace across runs.
-- [ ] `-race` clean.
+- [x] There is exactly **one** place where fault policy is evaluated per unit — not three independent hooks that happen to run in an order.
+- [x] The application order (partition → loss → latency) is implemented and documented in [05](../05-fault-injection.md) and [03](../03-architecture.md#fault-injection-layer).
+- [x] The draw discipline for dropped units is decided, implemented, and written into the determinism contract in [04](../04-api-design.md#determinism-contract).
+- [x] With all three configured, behaviour matches the documented order.
+- [x] Partitioning an unrelated pair does not change any other connection's fault trace.
+- [x] The same seed with all three faults configured reproduces an identical trace across runs.
+- [x] `-race` clean (verified on CI; not runnable on this dev box, see M2-1).
 
 **Tests**
 - `TestFaultOrderPartitionWinsOverLoss`, `TestFaultOrderLossWinsOverLatency`
 - `TestDrawDisciplineStable` — assert the documented rule directly against the trace
 - `TestAllFaultsDeterministic` — all three configured, same seed twice
 - `TestUnrelatedPartitionDoesNotPerturb`
+- `TestSingleDeliveryHookPerUnit`
 - Verify: `go build ./... && go vet ./... && gofmt -l . && go test -race ./... && golangci-lint run`
 
 ---
