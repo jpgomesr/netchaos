@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -122,7 +123,19 @@ func TestDrawDisciplineStable(t *testing.T) {
 }
 
 func TestAllFaultsDeterministic(t *testing.T) {
-	run := func() []faultEvent {
+	// The pending-queue clamp in installFaultPolicy computes effective
+	// delay from real gaps between successive writes (time.Now()), so
+	// comparing it across two runs is only deterministic under synctest's
+	// virtual time -- outside a bubble, real scheduling jitter between
+	// writes (worse under -race) makes effective (not drawn) differ
+	// between otherwise-identical runs.
+	// run takes the synctest-provided t explicitly rather than closing over
+	// the outer one: dialNamedPair registers t.Cleanup(conn.Close), and
+	// that Close must run before its bubble exits -- against the outer t,
+	// cleanup would fire only when the whole test function returns, by
+	// which point the bubble is long gone ("close of synctest channel from
+	// outside bubble").
+	run := func(t *testing.T) []faultEvent {
 		n := NewNetwork(WithSeed(21), WithPacketLoss(0.3), WithLatency(time.Millisecond, 20*time.Millisecond))
 		client, _ := dialNamedPair(t, n)
 
@@ -137,7 +150,10 @@ func TestAllFaultsDeterministic(t *testing.T) {
 		return client.(*conn).writePipe.trace.snapshot()
 	}
 
-	a, b := run(), run()
+	var a, b []faultEvent
+	synctest.Test(t, func(t *testing.T) { a = run(t) })
+	synctest.Test(t, func(t *testing.T) { b = run(t) })
+
 	if len(a) != len(b) {
 		t.Fatalf("trace lengths differ: %d vs %d", len(a), len(b))
 	}
@@ -152,7 +168,12 @@ func TestAllFaultsDeterministic(t *testing.T) {
 // with the full composed evaluator (loss + latency + partition all
 // configured), rather than loss alone.
 func TestUnrelatedPartitionDoesNotPerturb(t *testing.T) {
-	trace := func(partitionUnrelated bool) []faultEvent {
+	// See TestAllFaultsDeterministic: effective delay depends on real
+	// inter-write timing outside a synctest bubble, so this comparison
+	// needs virtual time to be reliable.
+	// trace takes the synctest-provided t explicitly; see run in
+	// TestAllFaultsDeterministic for why closing over the outer t panics.
+	trace := func(t *testing.T, partitionUnrelated bool) []faultEvent {
 		n := NewNetwork(WithSeed(6), WithPacketLoss(0.3), WithLatency(time.Millisecond, 20*time.Millisecond))
 		if partitionUnrelated {
 			n.Partition("someone-else", "unrelated")
@@ -167,7 +188,10 @@ func TestUnrelatedPartitionDoesNotPerturb(t *testing.T) {
 		return client.(*conn).writePipe.trace.snapshot()
 	}
 
-	a, b := trace(false), trace(true)
+	var a, b []faultEvent
+	synctest.Test(t, func(t *testing.T) { a = trace(t, false) })
+	synctest.Test(t, func(t *testing.T) { b = trace(t, true) })
+
 	if len(a) != len(b) {
 		t.Fatalf("trace lengths differ: %d vs %d", len(a), len(b))
 	}
