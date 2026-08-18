@@ -33,6 +33,9 @@ type Network struct {
 	latencyEnabled         bool
 	latencyMin, latencyMax time.Duration
 
+	lossEnabled bool
+	lossRate    float64
+
 	mu          sync.Mutex
 	listeners   map[string]*listener // key: peerName(addr)
 	nextOrdinal uint64
@@ -59,6 +62,8 @@ func NewNetwork(opts ...Option) *Network {
 		latencyEnabled: cfg.latencyEnabled,
 		latencyMin:     cfg.latencyMin,
 		latencyMax:     cfg.latencyMax,
+		lossEnabled:    cfg.lossEnabled,
+		lossRate:       cfg.lossRate,
 		listeners:      make(map[string]*listener),
 	}
 }
@@ -154,6 +159,10 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 	if n.latencyEnabled {
 		installLatency(client.writePipe, n.latencyMin, n.latencyMax)
 		installLatency(server.writePipe, n.latencyMin, n.latencyMax)
+	}
+	if n.lossEnabled {
+		installLoss(client.writePipe, n.lossRate)
+		installLoss(server.writePipe, n.lossRate)
 	}
 
 	if err := l.enqueue(server); err != nil {

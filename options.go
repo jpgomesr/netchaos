@@ -17,6 +17,12 @@ type networkConfig struct {
 	// WithLatency(0, 0) (an explicit, if degenerate, fixed-zero delay).
 	latencyEnabled         bool
 	latencyMin, latencyMax time.Duration
+
+	// lossEnabled distinguishes "WithPacketLoss was never given" from
+	// WithPacketLoss(0.0) (an explicit, if degenerate, always-deliver
+	// policy that still draws -- see WithPacketLoss's godoc).
+	lossEnabled bool
+	lossRate    float64
 }
 
 // Option configures a Network at construction time. No Option or NewNetwork
