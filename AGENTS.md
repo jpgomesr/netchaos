@@ -4,7 +4,7 @@ Instructions for AI coding agents working in this repository. Human-facing proce
 
 ## Project snapshot
 
-`netchaos` ([README](README.md)) is a Go library providing simulated `net.Conn`/`net.Listener` with deterministic fault injection. **Current stage: M1 (core simulated transport) done, M2 (determinism & faults) not started.** The module (`github.com/jpgomesr/netchaos`, `go 1.25`) has a working `Network` type (`NewNetwork`, `Dial`/`DialContext`, `Listen`, `WithSeed`) — but no fault-injection logic (latency, packet loss, partition) yet. Do not assume unimplemented work exists; check before referencing it.
+`netchaos` ([README](README.md)) is a Go library providing simulated `net.Conn`/`net.Listener` with deterministic fault injection. **Current stage: M1 (core simulated transport) and M2 (determinism & faults) done; M3 (synctest & reproducibility) not started.** The module (`github.com/jpgomesr/netchaos`, `go 1.25`) has a working `Network` type (`NewNetwork`, `Dial`/`DialContext`, `Listen`, `WithSeed`) with all three v1 faults implemented and composed: `WithLatency`, `WithPacketLoss`, and `WithPartition`/`Network.Partition`/`Network.Heal` (plus `WithPeerName`, added during M2-4 to make a dialer partition-targetable). Do not assume unimplemented work exists; check before referencing it.
 
 ## Source of truth for design
 

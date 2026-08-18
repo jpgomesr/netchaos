@@ -1,6 +1,9 @@
 package netchaos
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // pendingUnit is a write payload admitted into a pipe but held back by
 // latency (M2-2), not yet visible to readers.
@@ -11,7 +14,9 @@ type pendingUnit struct {
 
 // WithLatency delays delivery of writes by a duration drawn uniformly from
 // [min, max]. Passing an equal min and max applies fixed latency. Applies
-// globally, to every connection the Network handles (M0-2).
+// globally, to every connection the Network handles (M0-2). Both min and
+// max must be non-negative, and min must not exceed max; NewNetwork panics
+// otherwise, naming WithLatency and the offending value (M2-6).
 //
 // Latency delays delivery; it never reorders. Units on one connection
 // direction are released in write order even when a later unit draws a
@@ -21,6 +26,20 @@ func WithLatency(min, max time.Duration) Option {
 		c.latencyEnabled = true
 		c.latencyMin = min
 		c.latencyMax = max
+	}
+}
+
+// validateLatencyRange panics, naming WithLatency and the offending value,
+// if min or max is negative, or if min exceeds max.
+func validateLatencyRange(min, max time.Duration) {
+	if min < 0 {
+		panic(fmt.Sprintf("netchaos: WithLatency: min must be >= 0, got %v", min))
+	}
+	if max < 0 {
+		panic(fmt.Sprintf("netchaos: WithLatency: max must be >= 0, got %v", max))
+	}
+	if min > max {
+		panic(fmt.Sprintf("netchaos: WithLatency: min (%v) must be <= max (%v)", min, max))
 	}
 }
 

@@ -1,6 +1,6 @@
 # 03 — Architecture
 
-> **Status: design-stage.** No implementation exists yet. This document describes the intended internal structure so implementation work has a coherent design to follow — it is not a description of existing code.
+> **Status: implemented (M1–M2).** The transport (M1) and fault-injection layer (M2) described below are built. `testing/synctest` integration for the whole test suite is M3's concern.
 
 ## Design goals driving the architecture
 

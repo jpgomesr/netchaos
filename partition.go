@@ -1,5 +1,7 @@
 package netchaos
 
+import "fmt"
+
 // pairKey identifies an unordered pair of peers: Partition("a", "b") and
 // Partition("b", "a") name the same pair, so lookups and storage always go
 // through newPairKey rather than comparing raw (peerA, peerB) tuples.
@@ -13,12 +15,31 @@ func newPairKey(x, y string) pairKey {
 	return pairKey{y, x}
 }
 
+// partitionPair is a WithPartition call's raw, unresolved arguments, kept
+// around long enough for networkConfig.validate to check them before
+// NewNetwork turns them into a pairKey.
+type partitionPair struct{ peerA, peerB string }
+
 // WithPartition marks the named peers as partitioned from Network
 // construction onward. Static for the Network's lifetime; see
 // Network.Partition / Network.Heal for dynamic control during a test.
+//
+// peerA and peerB must be non-empty and distinct; NewNetwork panics
+// otherwise (M2-6).
 func WithPartition(peerA, peerB string) Option {
 	return func(c *networkConfig) {
-		c.staticPartitions = append(c.staticPartitions, newPairKey(peerName(peerA), peerName(peerB)))
+		c.staticPartitions = append(c.staticPartitions, partitionPair{peerA, peerB})
+	}
+}
+
+// validatePartitionPair panics, naming WithPartition and the offending
+// value, if p's peer names are empty or identical.
+func validatePartitionPair(p partitionPair) {
+	if p.peerA == "" || p.peerB == "" {
+		panic(fmt.Sprintf("netchaos: WithPartition: peer names must not be empty, got (%q, %q)", p.peerA, p.peerB))
+	}
+	if p.peerA == p.peerB {
+		panic(fmt.Sprintf("netchaos: WithPartition: peerA and peerB must differ, got %q for both", p.peerA))
 	}
 }
 

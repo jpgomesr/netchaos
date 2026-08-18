@@ -1,6 +1,6 @@
 # 04 — API Design
 
-> **API AGREED / NOT YET IMPLEMENTED.** [M0-5](tasks/m0-decisions-and-foundations.md#m0-5--freeze-the-v1-api-surface) froze the v1 API surface below — the signatures, names, and behaviour are the agreed target for M1–M4 to implement against, not a sketch subject to change during implementation. "Agreed" is not "implemented": nothing described here exists in code yet, and every exported identifier below is a specification for M1/M2 to build, not a description of existing code.
+> **API AGREED AND IMPLEMENTED (M1–M2).** [M0-5](tasks/m0-decisions-and-foundations.md#m0-5--freeze-the-v1-api-surface) froze the v1 API surface below; M1 and M2 have since built every exported identifier it lists, plus one addition made during M2-4 (`WithPeerName`, noted where it appears below). What remains is M3 (the `synctest`/reproducibility test suite) and M4 (polish and release), not further API surface.
 
 This is a concrete elaboration of the code sample from the root [`README.md`](../README.md), scoped to the v1 fault types in [06 — Scope & Roadmap](06-scope-and-roadmap.md).
 
