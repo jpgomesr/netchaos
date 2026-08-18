@@ -6,12 +6,6 @@ import (
 	"time"
 )
 
-func TestPlaceholderReady(t *testing.T) {
-	if !placeholderReady() {
-		t.Fatal("placeholderReady() = false, want true")
-	}
-}
-
 // TestSynctestAvailable proves testing/synctest resolves and virtualizes
 // time on this toolchain: the goroutine sleeps for an hour of virtual time,
 // the main goroutine blocks receiving from a channel it closes, and the
