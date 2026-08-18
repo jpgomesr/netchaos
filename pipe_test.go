@@ -167,7 +167,7 @@ func TestPipeBackPressure(t *testing.T) {
 		t.Fatalf("fill write = (%d, %v), want (8, nil)", n, err)
 	}
 
-	_, _, ch := p.tryWrite([]byte("x"))
+	_, ch, _ := p.tryWrite([]byte("x"))
 	if ch == nil {
 		t.Fatal("tryWrite at full bound did not report blocking")
 	}
@@ -177,7 +177,7 @@ func TestPipeBackPressure(t *testing.T) {
 		t.Fatalf("read: %v", err)
 	}
 
-	n, err, ch = p.tryWrite([]byte("x"))
+	n, ch, err = p.tryWrite([]byte("x"))
 	if ch != nil {
 		t.Fatal("tryWrite after drain still reports blocking")
 	}
@@ -192,7 +192,7 @@ func TestPipeOversizedWriteWaitsForEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Oversized relative to bound (4), but pipe is not yet empty: must block.
-	_, _, ch := p.tryWrite([]byte("0123456789"))
+	_, ch, _ := p.tryWrite([]byte("0123456789"))
 	if ch == nil {
 		t.Fatal("oversized tryWrite while pipe non-empty did not report blocking")
 	}
@@ -203,7 +203,7 @@ func TestPipeOversizedWriteWaitsForEmpty(t *testing.T) {
 	}
 
 	// Now empty: the oversized write must be admitted as one atomic unit.
-	n, err, ch := p.tryWrite([]byte("0123456789"))
+	n, ch, err := p.tryWrite([]byte("0123456789"))
 	if ch != nil {
 		t.Fatal("oversized tryWrite on empty pipe still reports blocking")
 	}

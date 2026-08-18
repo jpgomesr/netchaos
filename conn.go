@@ -105,7 +105,7 @@ func (c *conn) Read(b []byte) (int, error) {
 		}
 
 		dch := c.rd.channel() // snapshot before checking expired/tryRead, so no wakeup is missed
-		n, err, ch := c.readPipe.tryRead(b)
+		n, ch, err := c.readPipe.tryRead(b)
 		if ch == nil {
 			return n, err // err is nil or io.EOF, returned bare per net.Pipe/stdlib convention
 		}
@@ -136,7 +136,7 @@ func (c *conn) Write(b []byte) (int, error) {
 		}
 
 		dch := c.wd.channel()
-		n, err, ch := c.writePipe.tryWrite(data)
+		n, ch, err := c.writePipe.tryWrite(data)
 		if ch == nil {
 			if err != nil {
 				// The only error tryWrite reports is the pipe having been

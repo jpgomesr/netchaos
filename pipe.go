@@ -63,7 +63,7 @@ func (p *pipe) broadcastLocked() {
 // before retrying; it is snapshotted under the same lock as the "nothing to
 // read yet" determination, so no wakeup between the check and the wait can
 // be missed.
-func (p *pipe) tryRead(b []byte) (n int, err error, ch <-chan struct{}) {
+func (p *pipe) tryRead(b []byte) (n int, ch <-chan struct{}, err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -84,10 +84,10 @@ func (p *pipe) tryRead(b []byte) (n int, err error, ch <-chan struct{}) {
 	}
 
 	if p.closed {
-		return 0, io.EOF, nil
+		return 0, nil, io.EOF
 	}
 
-	return 0, nil, p.notify
+	return 0, p.notify, nil
 }
 
 // tryWrite attempts to admit data without blocking. If it can, ch is nil and
@@ -97,12 +97,12 @@ func (p *pipe) tryRead(b []byte) (n int, err error, ch <-chan struct{}) {
 // data must already be a private copy the caller will not mutate or retain
 // (conn.go copies the caller-supplied slice before calling this, per
 // io.Writer's non-retention convention).
-func (p *pipe) tryWrite(data []byte) (n int, err error, ch <-chan struct{}) {
+func (p *pipe) tryWrite(data []byte) (n int, ch <-chan struct{}, err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	if p.closed {
-		return 0, io.ErrClosedPipe, nil
+		return 0, nil, io.ErrClosedPipe
 	}
 
 	// A write larger than the bound can never fit "alongside" other data, so
@@ -114,7 +114,7 @@ func (p *pipe) tryWrite(data []byte) (n int, err error, ch <-chan struct{}) {
 		return len(data), nil, nil
 	}
 
-	return 0, nil, p.notify
+	return 0, p.notify, nil
 }
 
 // read blocks until it can return data, io.EOF, or a closed-pipe write error
@@ -122,7 +122,7 @@ func (p *pipe) tryWrite(data []byte) (n int, err error, ch <-chan struct{}) {
 // drained pipe.
 func (p *pipe) read(b []byte) (int, error) {
 	for {
-		n, err, ch := p.tryRead(b)
+		n, ch, err := p.tryRead(b)
 		if ch == nil {
 			return n, err
 		}
@@ -133,7 +133,7 @@ func (p *pipe) read(b []byte) (int, error) {
 // write blocks until data is admitted or the pipe is closed.
 func (p *pipe) write(data []byte) (int, error) {
 	for {
-		n, err, ch := p.tryWrite(data)
+		n, ch, err := p.tryWrite(data)
 		if ch == nil {
 			return n, err
 		}
