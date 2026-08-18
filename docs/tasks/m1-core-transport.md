@@ -16,7 +16,7 @@
 
 ### M1-1 — Buffered in-memory full-duplex pipe
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** *Simulated `net.Conn` / `net.Listener` (TCP-shaped) with pluggable fault injection*
 **Depends on:** M0-3 (the fault unit determines what the queue holds), M0-6
 **Blocks:** M1-2, M2-2, M2-3
@@ -38,16 +38,16 @@ Build the delivery primitive: a one-directional buffered byte-stream channel whe
 - `pipe_test.go` (new)
 
 **Acceptance criteria**
-- [ ] Data written on one side is read on the other, byte-for-byte, in order.
-- [ ] A read on an empty, open pipe blocks; it unblocks when data arrives.
-- [ ] A read on an empty, closed pipe returns `io.EOF`.
-- [ ] A write to a closed pipe returns an error (`io.ErrClosedPipe`, matching `net.Pipe`).
-- [ ] Closing while a read is blocked unblocks that read.
-- [ ] A short read buffer returns a partial payload; the remainder is returned by the next read.
-- [ ] Writes larger than the buffer bound block until space is available, rather than growing the buffer.
-- [ ] Double `Close` is safe and does not panic.
-- [ ] A blocked read is **durably blocking** inside a `synctest.Test` bubble — verified by a test that blocks a reader, calls `synctest.Wait()`, and observes the bubble reach idle rather than deadlock-panicking.
-- [ ] `go test -race` is clean under concurrent readers and writers.
+- [x] Data written on one side is read on the other, byte-for-byte, in order.
+- [x] A read on an empty, open pipe blocks; it unblocks when data arrives.
+- [x] A read on an empty, closed pipe returns `io.EOF`.
+- [x] A write to a closed pipe returns an error (`io.ErrClosedPipe`, matching `net.Pipe`).
+- [x] Closing while a read is blocked unblocks that read.
+- [x] A short read buffer returns a partial payload; the remainder is returned by the next read.
+- [x] Writes larger than the buffer bound block until space is available, rather than growing the buffer.
+- [x] Double `Close` is safe and does not panic.
+- [x] A blocked read is **durably blocking** inside a `synctest.Test` bubble — verified by a test that blocks a reader, calls `synctest.Wait()`, and observes the bubble reach idle rather than deadlock-panicking.
+- [x] `go test -race` is clean under concurrent readers and writers.
 
 **Tests**
 - `TestPipeRoundTrip`, `TestPipePartialRead`, `TestPipeCoalescedReads`
@@ -62,7 +62,7 @@ Build the delivery primitive: a one-directional buffered byte-stream channel whe
 
 ### M1-2 — `conn` implementing `net.Conn`
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** *Simulated `net.Conn` / `net.Listener` (TCP-shaped) with pluggable fault injection*
 **Depends on:** M1-1, M1-4, M0-5
 **Blocks:** M1-3, M1-7, M2-2, M2-3
@@ -84,14 +84,14 @@ Wrap two M1-1 pipes into a full-duplex type satisfying `net.Conn`, so code under
 - `api_test.go` (new) — compile-time assertions from M0-5
 
 **Acceptance criteria**
-- [ ] `var _ net.Conn = (*conn)(nil)` compiles.
-- [ ] Full-duplex: both ends can write and read simultaneously without interfering.
-- [ ] `LocalAddr`/`RemoteAddr` return the M1-4 addresses, mirrored between the two ends.
-- [ ] Closing one end makes the peer's reads return `io.EOF` after draining readable data.
-- [ ] Writing to a closed conn returns an error satisfying `errors.Is(err, net.ErrClosed)`.
-- [ ] `Write` never reports a short write without an error.
-- [ ] Close-with-data-in-flight behaviour is documented in the type's godoc, not just implied.
-- [ ] `-race` clean with concurrent `Read`/`Write`/`Close` on both ends.
+- [x] `var _ net.Conn = (*conn)(nil)` compiles.
+- [x] Full-duplex: both ends can write and read simultaneously without interfering.
+- [x] `LocalAddr`/`RemoteAddr` return the M1-4 addresses, mirrored between the two ends.
+- [x] Closing one end makes the peer's reads return `io.EOF` after draining readable data.
+- [x] Writing to a closed conn returns an error satisfying `errors.Is(err, net.ErrClosed)`.
+- [x] `Write` never reports a short write without an error.
+- [x] Close-with-data-in-flight behaviour is documented in the type's godoc, not just implied.
+- [x] `-race` clean with concurrent `Read`/`Write`/`Close` on both ends.
 
 **Tests**
 - `TestConnSatisfiesNetConn` (compile-time assertion plus a smoke round-trip)
@@ -104,7 +104,7 @@ Wrap two M1-1 pipes into a full-duplex type satisfying `net.Conn`, so code under
 
 ### M1-3 — Deadlines and concurrent-use safety
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** *Simulated `net.Conn` / `net.Listener` (TCP-shaped) with pluggable fault injection*
 **Depends on:** M1-2
 **Blocks:** M2-2
@@ -128,14 +128,14 @@ Implement the deadline half of `net.Conn` properly. This is a task rather than a
 - `deadline_test.go` (new)
 
 **Acceptance criteria**
-- [ ] A `Read` past its deadline returns an error where `errors.Is(err, os.ErrDeadlineExceeded)` is true and the error satisfies `net.Error` with `Timeout() == true`.
-- [ ] Same for `Write`.
-- [ ] Setting a past deadline unblocks an already-blocked `Read` from another goroutine.
-- [ ] A zero `time.Time` clears a previously set deadline.
-- [ ] `SetDeadline` sets both directions; the per-direction setters affect only their own.
-- [ ] After a timeout, a fresh deadline plus a new `Read` succeeds — the conn is not poisoned.
-- [ ] Deadlines advance on virtual time inside a `synctest` bubble, not wall-clock time.
-- [ ] `-race` clean when deadlines are set concurrently with I/O.
+- [x] A `Read` past its deadline returns an error where `errors.Is(err, os.ErrDeadlineExceeded)` is true and the error satisfies `net.Error` with `Timeout() == true`.
+- [x] Same for `Write`.
+- [x] Setting a past deadline unblocks an already-blocked `Read` from another goroutine.
+- [x] A zero `time.Time` clears a previously set deadline.
+- [x] `SetDeadline` sets both directions; the per-direction setters affect only their own.
+- [x] After a timeout, a fresh deadline plus a new `Read` succeeds — the conn is not poisoned.
+- [x] Deadlines advance on virtual time inside a `synctest` bubble, not wall-clock time.
+- [x] `-race` clean when deadlines are set concurrently with I/O.
 
 **Tests**
 - `TestReadDeadlineExceeded`, `TestWriteDeadlineExceeded` — assert both `errors.Is` and the `net.Error` type assertion
@@ -150,7 +150,7 @@ Implement the deadline half of `net.Conn` properly. This is a task rather than a
 
 ### M1-4 — Simulated addresses and the peer naming model
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** *Simulated `net.Conn` / `net.Listener` (TCP-shaped) with pluggable fault injection*
 **Depends on:** M0-5
 **Blocks:** M1-2, M1-5, M1-6, M2-4
@@ -170,12 +170,12 @@ Define what an address *is* inside a simulated network. [03 — Architecture](..
 - `addr_test.go` (new)
 
 **Acceptance criteria**
-- [ ] `var _ net.Addr = (*addr)(nil)` compiles.
-- [ ] The address ↔ peer-name relationship is documented and implemented as one function, used by both dial resolution and partition lookup — no second, divergent copy of the rule.
-- [ ] The dialing peer's identity is defined, with the mechanism written down.
-- [ ] `Network()` returns a stable, documented string.
-- [ ] `"udp"` is rejected with an error naming it as out of scope for v1.
-- [ ] `String()` output is stable and useful in test failure messages.
+- [x] `var _ net.Addr = (*addr)(nil)` compiles.
+- [x] The address ↔ peer-name relationship is documented and implemented as one function, used by both dial resolution and partition lookup — no second, divergent copy of the rule.
+- [x] The dialing peer's identity is defined, with the mechanism written down.
+- [x] `Network()` returns a stable, documented string.
+- [x] `"udp"` is rejected with an error naming it as out of scope for v1.
+- [x] `String()` output is stable and useful in test failure messages.
 
 **Tests**
 - `TestAddrSatisfiesNetAddr`, `TestAddrString`
@@ -187,7 +187,7 @@ Define what an address *is* inside a simulated network. [03 — Architecture](..
 
 ### M1-5 — `Network` skeleton and option plumbing
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** *Simulated `net.Conn` / `net.Listener` (TCP-shaped) with pluggable fault injection*
 **Depends on:** M0-5, M1-4
 **Blocks:** M1-6, M2-1
@@ -210,12 +210,12 @@ Build the `Network` type and the functional-options mechanism it is constructed 
 - `netchaos_test.go`, `options_test.go` (new)
 
 **Acceptance criteria**
-- [ ] `NewNetwork()` with no options returns a usable `*Network`.
-- [ ] Options are applied in argument order; a later option of the same kind overrides an earlier one.
-- [ ] `WithSeed` stores the seed and it is observable (via the replay mechanism decided above).
-- [ ] The default-seed decision is implemented and documented in `NewNetwork`'s godoc.
-- [ ] If the default seed is random, there is a documented way to recover it from a failing run.
-- [ ] `-race` clean with concurrent method calls.
+- [x] `NewNetwork()` with no options returns a usable `*Network`.
+- [x] Options are applied in argument order; a later option of the same kind overrides an earlier one.
+- [x] `WithSeed` stores the seed and it is observable (via the replay mechanism decided above).
+- [x] The default-seed decision is implemented and documented in `NewNetwork`'s godoc.
+- [x] If the default seed is random, there is a documented way to recover it from a failing run.
+- [x] `-race` clean with concurrent method calls.
 
 **Tests**
 - `TestNewNetworkDefaults`, `TestOptionOrderPrecedence`
@@ -226,7 +226,7 @@ Build the `Network` type and the functional-options mechanism it is constructed 
 
 ### M1-6 — `Network.Listen` and the simulated listener
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** *Simulated `net.Conn` / `net.Listener` (TCP-shaped) with pluggable fault injection*
 **Depends on:** M1-4, M1-5, M0-5
 **Blocks:** M1-7, M1-8
@@ -248,15 +248,15 @@ Implement `Network.Listen(network, addr string) (net.Listener, error)` and the l
 - `listener_test.go` (new)
 
 **Acceptance criteria**
-- [ ] `var _ net.Listener = (*listener)(nil)` compiles.
-- [ ] `Listen` on a free address succeeds; on a taken address it returns a descriptive error.
-- [ ] `Accept` on an empty queue blocks and is durably blocking inside a `synctest` bubble.
-- [ ] `Close` unblocks a blocked `Accept` with an `errors.Is(err, net.ErrClosed)` error.
-- [ ] `Accept` after `Close` returns immediately with the same error.
-- [ ] `Addr()` returns the registered address.
-- [ ] Closing a listener releases the address for re-registration.
-- [ ] Backlog-full behaviour is implemented and documented.
-- [ ] `-race` clean with concurrent `Accept` and `Close`.
+- [x] `var _ net.Listener = (*listener)(nil)` compiles.
+- [x] `Listen` on a free address succeeds; on a taken address it returns a descriptive error.
+- [x] `Accept` on an empty queue blocks and is durably blocking inside a `synctest` bubble.
+- [x] `Close` unblocks a blocked `Accept` with an `errors.Is(err, net.ErrClosed)` error.
+- [x] `Accept` after `Close` returns immediately with the same error.
+- [x] `Addr()` returns the registered address.
+- [x] Closing a listener releases the address for re-registration.
+- [x] Backlog-full behaviour is implemented and documented.
+- [x] `-race` clean with concurrent `Accept` and `Close`.
 
 **Tests**
 - `TestListenRegistersAddr`, `TestListenDuplicateAddr`
@@ -268,7 +268,7 @@ Implement `Network.Listen(network, addr string) (net.Listener, error)` and the l
 
 ### M1-7 — `Network.Dial` and connection establishment
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** *Simulated `net.Conn` / `net.Listener` (TCP-shaped) with pluggable fault injection*
 **Depends on:** M1-2, M1-6, M0-5
 **Blocks:** M1-8, M2-1, M2-4
@@ -290,15 +290,15 @@ Implement `Network.Dial(network, addr string) (net.Conn, error)` — resolve the
 - `api_test.go` — the assignability assertion
 
 **Acceptance criteria**
-- [ ] `Dial` to a registered address returns a working `net.Conn`, and its peer surfaces from `Accept`.
-- [ ] Data written by the dialer is read by the accepted end and vice versa.
-- [ ] `Dial` to an unregistered address returns a descriptive, matchable error.
-- [ ] `var _ func(string, string) (net.Conn, error) = n.Dial` compiles.
-- [ ] `Dial` to a `"udp"` network is rejected per M1-4.
-- [ ] Connection ordinals are assigned in `Dial` order and are stable across runs for the same call sequence.
-- [ ] `LocalAddr`/`RemoteAddr` are correct and mirrored on both ends.
-- [ ] If `DialContext` is in scope: a cancelled context returns `ctx.Err()` and leaks no goroutine or queue entry.
-- [ ] `-race` clean with concurrent dials to the same listener.
+- [x] `Dial` to a registered address returns a working `net.Conn`, and its peer surfaces from `Accept`.
+- [x] Data written by the dialer is read by the accepted end and vice versa.
+- [x] `Dial` to an unregistered address returns a descriptive, matchable error.
+- [x] `var _ func(string, string) (net.Conn, error) = n.Dial` compiles.
+- [x] `Dial` to a `"udp"` network is rejected per M1-4.
+- [x] Connection ordinals are assigned in `Dial` order and are stable across runs for the same call sequence.
+- [x] `LocalAddr`/`RemoteAddr` are correct and mirrored on both ends.
+- [x] If `DialContext` is in scope: a cancelled context returns `ctx.Err()` and leaks no goroutine or queue entry.
+- [x] `-race` clean with concurrent dials to the same listener.
 
 **Tests**
 - `TestDialAcceptRoundTrip`, `TestDialUnregisteredAddr`
@@ -312,7 +312,7 @@ Implement `Network.Dial(network, addr string) (net.Conn, error)` — resolve the
 
 ### M1-8 — Lifecycle and error semantics
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** *Simulated `net.Conn` / `net.Listener` (TCP-shaped) with pluggable fault injection*
 **Depends on:** M1-6, M1-7
 **Blocks:** M2-4, M3-1
@@ -333,12 +333,12 @@ Make the edge cases behave like a real network stack, and make every error match
 - `errors_test.go`, `leak_test.go` (new)
 
 **Acceptance criteria**
-- [ ] Every returned error is matchable with `errors.Is` against a documented sentinel or standard error.
-- [ ] Sentinels are listed together in `errors.go` with godoc explaining when each occurs.
-- [ ] The `Network.Close` question is decided, implemented if yes, and documented either way.
-- [ ] No goroutine outlives the conn, listener, or `Network` that owns it — asserted by a leak test.
-- [ ] A test that creates a `Network`, dials, writes, and closes runs to completion inside `synctest.Test` without the bubble reporting live goroutines.
-- [ ] Using a conn or listener after `Close` returns `net.ErrClosed`, never a panic.
+- [x] Every returned error is matchable with `errors.Is` against a documented sentinel or standard error.
+- [x] Sentinels are listed together in `errors.go` with godoc explaining when each occurs.
+- [x] The `Network.Close` question is decided, implemented if yes, and documented either way.
+- [x] No goroutine outlives the conn, listener, or `Network` that owns it — asserted by a leak test.
+- [x] A test that creates a `Network`, dials, writes, and closes runs to completion inside `synctest.Test` without the bubble reporting live goroutines.
+- [x] Using a conn or listener after `Close` returns `net.ErrClosed`, never a panic.
 
 **Tests**
 - `TestErrorSentinels` — table-driven over each failure mode, asserting `errors.Is`
