@@ -17,7 +17,8 @@ Everything here plugs into the delivery hook left as a pass-through in [M1-1](m1
 
 ### M2-1 — Seeded RNG core with per-connection derived streams
 
-**Status:** todo
+**Status:** done
+**Decision:** derivation is `sha256(domain-tag || masterSeed || ordinal || side || kind) → rand.NewChaCha8` seed, using only `stream.next() uint64` (the ChaCha8 byte stream, which is covered by Go's compatibility promise) as the primitive underneath `bernoulli` and `uniformDuration`. `math/rand/v2`'s convenience methods (`Float64`, `IntN`, `N`, ...) are deliberately not used directly, since their exact output for a given generator state is not part of the compatibility promise — only the raw `Uint64` stream is. `uniformDuration` always draws, even when `min == max`, so a fault kind's draw index tracks the unit index one-for-one regardless of whether a given draw happened to be fixed (this is the draw-discipline groundwork M2-5 builds on). The fault trace is always recorded, not opt-in, and stays unexported — no accessor is in the frozen v1 surface, so exporting one is deferred to a later milestone. A golden-vector test (`TestDeriveStreamGoldenVector`) pins concrete draw values for a fixed tuple, since none of the other tests would catch a derivation or generator change that preserved reproducibility within a run but altered it across versions.
 **Roadmap item:** *Seeded randomness for reproducible failure scenarios* ([06](../06-scope-and-roadmap.md))
 **Depends on:** M0-4 (the derivation model is decided there), M1-5, M1-7 (connection ordinals)
 **Blocks:** M2-2, M2-3, M3-3
@@ -43,21 +44,23 @@ A single shared `rand.Rand` behind a mutex is race-free but *not* deterministic:
 - `rand_test.go`, `trace_test.go` (new)
 
 **Acceptance criteria**
-- [ ] The same master seed and the same connection ordinal always produce the same draw sequence.
-- [ ] Different ordinals from the same master seed produce different, uncorrelated sequences.
-- [ ] A connection's draw sequence is unaffected by concurrent I/O on other connections — asserted by a test running N connections concurrently and comparing each connection's trace against its single-connection baseline.
-- [ ] No fault path reads a global/unseeded RNG (guarded by a test or lint rule).
-- [ ] Derived values are identical across GOOS/GOARCH — no platform-dependent constructs in the derivation path.
-- [ ] The uniform-duration helper covers `[min, max]` inclusive and handles `min == max` without dividing by zero.
-- [ ] The fault trace records decisions in per-connection order and is comparable between runs.
-- [ ] `-race` clean.
+- [x] The same master seed and the same connection ordinal always produce the same draw sequence.
+- [x] Different ordinals from the same master seed produce different, uncorrelated sequences.
+- [x] A connection's draw sequence is unaffected by concurrent I/O on other connections — asserted by a test running N connections concurrently and comparing each connection's trace against its single-connection baseline.
+- [x] No fault path reads a global/unseeded RNG (guarded by a test or lint rule).
+- [x] Derived values are identical across GOOS/GOARCH — no platform-dependent constructs in the derivation path.
+- [x] The uniform-duration helper covers `[min, max]` inclusive and handles `min == max` without dividing by zero.
+- [x] The fault trace records decisions in per-connection order and is comparable between runs.
+- [x] `-race` clean (verified on CI; this repo's Windows dev box has no C toolchain, so `-race` cannot run locally — a pre-existing limitation noted in `AGENTS.md`).
 
 **Tests**
-- `TestSeedReproducible`, `TestOrdinalsIndependent`
+- `TestSeedReproducible`, `TestOrdinalsIndependent`, `TestDirectionAndKindIndependent`
 - `TestConcurrencyDoesNotPerturbStreams` — the headline test: baseline each connection alone, then run all concurrently, assert traces match
 - `TestNoGlobalRandUsage`
-- `TestUniformDurationBounds`, `TestUniformDurationFixed`
-- `TestTraceComparable`
+- `TestUniformDurationBounds`, `TestUniformDurationFixed`, `TestUniformDurationFixedConsumesADraw`, `TestBernoulliBoundaries`
+- `TestDeriveStreamGoldenVector` — pins concrete draw values for a fixed tuple
+- `TestConnPairAttachesPerDirectionStreams`, `TestDialAttachesNetworkSeed` — attachment at connection creation, wired through `Network.seed`
+- `TestTraceRecordsInOrder`, `TestTraceComparable`, `TestTraceSnapshotIsACopy`
 - Verify: `go build ./... && go vet ./... && gofmt -l . && go test -race ./... && golangci-lint run`
 
 ---
