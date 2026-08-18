@@ -142,7 +142,7 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 		localName = fmt.Sprintf("ephemeral:%d", ordinal)
 	}
 
-	client, server := newConnPair(&addr{network: network, peer: localName}, &addr{network: network, peer: peer}, ordinal, network)
+	client, server := newConnPairWithSeed(&addr{network: network, peer: localName}, &addr{network: network, peer: peer}, ordinal, network, defaultPipeBound, n.seed)
 
 	if err := l.enqueue(server); err != nil {
 		return nil, n.dialOpError(network, dialAddr, err)
