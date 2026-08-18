@@ -36,6 +36,10 @@ type Network struct {
 	lossEnabled bool
 	lossRate    float64
 
+	partMu     sync.RWMutex
+	partitions map[pairKey]struct{}
+	partNotify chan struct{} // closed and replaced on every Partition/Heal
+
 	mu          sync.Mutex
 	listeners   map[string]*listener // key: peerName(addr)
 	nextOrdinal uint64
@@ -57,15 +61,21 @@ func NewNetwork(opts ...Option) *Network {
 	for _, opt := range opts {
 		opt(&cfg)
 	}
-	return &Network{
+	n := &Network{
 		seed:           cfg.seed,
 		latencyEnabled: cfg.latencyEnabled,
 		latencyMin:     cfg.latencyMin,
 		latencyMax:     cfg.latencyMax,
 		lossEnabled:    cfg.lossEnabled,
 		lossRate:       cfg.lossRate,
+		partitions:     make(map[pairKey]struct{}, len(cfg.staticPartitions)),
+		partNotify:     make(chan struct{}),
 		listeners:      make(map[string]*listener),
 	}
+	for _, k := range cfg.staticPartitions {
+		n.partitions[k] = struct{}{}
+	}
+	return n
 }
 
 // Listen registers a simulated listener at addr within n. Connections
@@ -118,15 +128,27 @@ func (n *Network) Dial(network, addr string) (net.Conn, error) {
 // within n. The dial is aborted, returning ctx.Err(), if ctx is cancelled
 // before the connection is established.
 //
-// Establishment in M1 is entirely synchronous — there is no blocking step
-// between validating the request and enqueuing the new connection on the
-// target listener (enqueue itself never blocks; a full backlog fails
+// If the calling peer named itself via WithPeerName and that name is
+// partitioned from addr, DialContext blocks until the partition is healed
+// or ctx is done — a partition drops the SYN, so a real dial into a
+// partitioned peer hangs the same way. A dialer that never calls
+// WithPeerName is never partition-targetable (see WithPeerName), so it
+// never blocks here regardless of any partition's state.
+//
+// Establishment is otherwise entirely synchronous — there is no blocking
+// step between validating the request and enqueuing the new connection on
+// the target listener (enqueue itself never blocks; a full backlog fails
 // immediately with ErrBacklogFull rather than waiting for room) — so
 // cancellation is checked once, up front, rather than raced against
 // enqueuing in the same select. Folding ctx.Done() into that select instead
 // would be a real bug: with a ready default case present, Go picks
 // pseudo-randomly among ready cases, so a cancelled-but-racing dial could
 // still enqueue.
+//
+// The partition wait happens before the connection ordinal is assigned, so
+// a dial that never establishes (blocked, then cancelled) does not burn an
+// ordinal — ordinal order tracks the order dials complete, not the order
+// they're attempted.
 func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (net.Conn, error) {
 	select {
 	case <-ctx.Done():
@@ -139,6 +161,13 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 	}
 	peer := peerName(dialAddr)
 
+	localName, named := peerNameFromContext(ctx)
+	if named && localName != "" {
+		if err := n.waitUnpartitioned(ctx, newPairKey(localName, peer)); err != nil {
+			return nil, err
+		}
+	}
+
 	n.mu.Lock()
 	l, ok := n.listeners[peer]
 	if !ok {
@@ -149,8 +178,7 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 	n.nextOrdinal++
 	n.mu.Unlock()
 
-	localName, ok := peerNameFromContext(ctx)
-	if !ok || localName == "" {
+	if !named || localName == "" {
 		localName = fmt.Sprintf("ephemeral:%d", ordinal)
 	}
 
@@ -164,11 +192,35 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 		installLoss(client.writePipe, n.lossRate)
 		installLoss(server.writePipe, n.lossRate)
 	}
+	// Partition wraps whatever was installed above so it always gates
+	// delivery first, regardless of what else is configured, and is always
+	// installed (unlike latency/loss) since Partition/Heal can be called at
+	// any point during a test, not just declared via WithPartition.
+	pair := newPairKey(localName, peer)
+	installPartition(client.writePipe, n, pair)
+	installPartition(server.writePipe, n, pair)
 
 	if err := l.enqueue(server); err != nil {
 		return nil, n.dialOpError(network, dialAddr, err)
 	}
 	return client, nil
+}
+
+// waitUnpartitioned blocks until k is not partitioned or ctx is done,
+// re-checking after every partition-state change (a single wakeup doesn't
+// necessarily mean k itself was healed).
+func (n *Network) waitUnpartitioned(ctx context.Context, k pairKey) error {
+	for {
+		partitioned, ch := n.checkPartition(k)
+		if !partitioned {
+			return nil
+		}
+		select {
+		case <-ch:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }
 
 func (n *Network) dialOpError(network, dialAddr string, err error) error {

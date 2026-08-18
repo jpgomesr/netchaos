@@ -1,8 +1,8 @@
 # 05 — Fault Injection
 
-> **Status: partially implemented.** Latency and packet loss (below) are implemented as of M2-2/M2-3. Partition describes the intended mechanics only — no implementation exists yet. See [04 — API Design](04-api-design.md) for the configuration surface.
+> **Status: implemented.** Latency, packet loss, and partition (below) are implemented as of M2-2/M2-3/M2-4. See [04 — API Design](04-api-design.md) for the configuration surface.
 >
-> **Known gap until M2-5:** configuring `WithLatency` and `WithPacketLoss` on the same `Network` today does not compose — whichever fault `Network.DialContext` wires up last silently replaces the other's delivery hook. Composing the two into one evaluator is M2-5's job.
+> **Known gap until M2-5:** configuring `WithLatency` and `WithPacketLoss` on the same `Network` today does not compose — whichever fault `Network.DialContext` wires up last silently replaces the other's delivery hook. Partition is unaffected by this gap: it always wraps whatever combination of latency/loss ended up installed, so partition composes correctly with either (or both, once M2-5 fixes their pairing) today. Composing latency and loss into one evaluator, in the documented `partition → loss → latency` order, is M2-5's job.
 
 netchaos's v1 scope (per the root README's checklist) covers three fault categories: latency, packet loss, and partition. Each connection direction draws from its own seeded stream, derived from the `Network`'s master seed (see [04 — API Design § Determinism contract](04-api-design.md#determinism-contract) and [03 — Architecture](03-architecture.md#fault-injection-layer)), which is what makes an entire test run reproducible from a single seed value without one connection's fault sequence depending on how the scheduler interleaved it with another.
 
@@ -38,9 +38,13 @@ netchaos's v1 scope (per the root README's checklist) covers three fault categor
 
 ## Partition
 
-**What it does:** Drops **all** traffic between two named simulated peers, unlike packet loss which drops probabilistically. A partition is binary and (per the [proposed API](04-api-design.md#dynamic-partition-control)) persists until explicitly healed.
+**What it does:** Drops **all** traffic between two named simulated peers, unlike packet loss which drops probabilistically. A partition is binary and (per the [API](04-api-design.md#dynamic-partition-control)) persists until explicitly healed. Unlike latency and packet loss, partition consumes no random draws — see [04 — API Design § Determinism contract](04-api-design.md#determinism-contract) — so partitioning one pair can never perturb another connection's fault sequence.
 
-**Static vs. dynamic:** `WithPartition(peerA, peerB)` establishes a partition at `Network` construction time, present for the whole test. `Network.Partition` / `Network.Heal` allow inducing and resolving a partition mid-test — useful for scenarios like "the connection was healthy, then the network split, then it recovered."
+**Static vs. dynamic:** `WithPartition(peerA, peerB)` establishes a partition at `Network` construction time, present for the whole test. `Network.Partition` / `Network.Heal` allow inducing and resolving a partition mid-test — useful for scenarios like "the connection was healthy, then the network split, then it recovered." Pairs are unordered: naming either peer first identifies the same partition.
+
+**Effect on dialing:** a `Dial`/`DialContext` call whose caller named itself via [`WithPeerName`](04-api-design.md#frozen-v1-surface) blocks — not fails fast — while its target peer is partitioned from it, returning once `Heal` clears the partition or the dial's context is done. This is the realistic choice: a partition drops the SYN, so a real dial hangs the same way, rather than surfacing a connection-refused-style error the way dialing an address nobody is listening on does. A dialer that never calls `WithPeerName` gets a synthesized identity no `Partition` call could ever target in advance, so it never blocks here.
+
+**Effect on established connections:** once a partition is in effect, writes into it are accepted and silently discarded — the same silent-gap model as packet loss (see above) — and reads block until their deadline. `Heal` restores traffic on the existing connection with no re-dial required. Data written while partitioned is discarded, not queued for delivery once healed; this matches what a real partition looks like to a sender, whose kernel accepts into the socket buffer and discovers nothing until a timeout.
 
 **What it's for:** Testing circuit breakers and failover logic — does your code detect a fully-unreachable peer and open its circuit breaker, does it correctly fail over to another peer, does it recover once the partition heals (`Heal`) without requiring a process restart.
 
