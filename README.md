@@ -83,7 +83,7 @@ func TestRetryOnPacketLoss(t *testing.T) {
 
 To avoid the trap of "framework covering everything" — the same trap that turned a previous project into an unfinishable moving target — v1 is scoped tightly:
 
-- [ ] Simulated `net.Conn` / `net.Listener` (TCP-shaped) with pluggable fault injection
+- [x] Simulated `net.Conn` / `net.Listener` (TCP-shaped) with pluggable fault injection
 - [ ] Latency injection (fixed and ranged)
 - [ ] Packet loss (probabilistic, seeded/deterministic)
 - [ ] Network partition (drop all traffic between two simulated peers)
