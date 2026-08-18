@@ -1,16 +1,22 @@
 # 05 — Fault Injection
 
-> **Status: design-stage.** Describes the intended mechanics for each fault type in netchaos's v1 scope. No implementation exists yet — see [04 — API Design](04-api-design.md) for the proposed configuration surface.
+> **Status: partially implemented.** Latency (below) is implemented as of M2-2. Packet loss and partition describe the intended mechanics only — no implementation exists yet. See [04 — API Design](04-api-design.md) for the configuration surface.
 
-netchaos's v1 scope (per the root README's checklist) covers three fault categories: latency, packet loss, and partition. All three are driven by the same seeded random source owned by a `Network` (see [03 — Architecture](03-architecture.md#fault-injection-layer)), which is what makes an entire test run reproducible from a single seed value.
+netchaos's v1 scope (per the root README's checklist) covers three fault categories: latency, packet loss, and partition. Each connection direction draws from its own seeded stream, derived from the `Network`'s master seed (see [04 — API Design § Determinism contract](04-api-design.md#determinism-contract) and [03 — Architecture](03-architecture.md#fault-injection-layer)), which is what makes an entire test run reproducible from a single seed value without one connection's fault sequence depending on how the scheduler interleaved it with another.
 
 ## Latency
 
 **What it does:** Delays delivery of a write from one simulated peer to the other by some duration, instead of delivering it immediately.
 
-**Fixed vs. ranged:** `WithLatency(min, max time.Duration)` supports both — passing equal `min` and `max` applies a fixed delay to every write; passing a range draws a duration uniformly from `[min, max]` per write, using the `Network`'s seeded RNG.
+**Fixed vs. ranged:** `WithLatency(min, max time.Duration)` supports both — passing equal `min` and `max` applies a fixed delay to every write; passing a range draws a duration uniformly from `[min, max]` per write, using the connection direction's own seeded stream. The draw happens even when `min == max`, so the draw sequence's length always tracks the number of writes, fixed delays included.
 
-**Interaction with virtual time:** When a test runs inside `testing/synctest`, the delay should be implemented using timer primitives that `synctest` already knows how to virtualize, so the test doesn't spend real wall-clock time waiting out the configured latency. See [03 — Architecture](03-architecture.md#composing-with-testingsynctest).
+**Ordering:** Latency delays delivery; it never reorders. A connection direction releases writes in the order they were made, even when a later write happens to draw a shorter delay than an earlier one still in flight.
+
+**Interaction with virtual time:** Implemented with a single live `time.AfterFunc` per connection direction (not one timer per write), a timer primitive `testing/synctest` already knows how to virtualize, so a test doesn't spend real wall-clock time waiting out the configured latency. See [03 — Architecture](03-architecture.md#composing-with-testingsynctest).
+
+**Interaction with read deadlines:** A read deadlined shorter than the latency returns `os.ErrDeadlineExceeded`, not the delayed data. The data is not discarded — a subsequent read with a longer deadline still receives it once its delay elapses.
+
+**Interaction with `Close`:** A write still held back by latency when its connection is closed is discarded, not delivered — it models bytes still in flight on the wire, not bytes already in the peer's receive buffer, so already-buffered (non-delayed) data still drains normally on close.
 
 **What it's for:** Testing timeout handling and deadline logic — does your code correctly time out a request that's taking too long, does it retry with appropriate backoff, does a context deadline propagate correctly through a slow simulated call.
 

@@ -3,6 +3,7 @@ package netchaos
 import (
 	"io"
 	"sync"
+	"time"
 )
 
 // defaultPipeBound is the buffer bound used by pipes when no other bound is
@@ -51,6 +52,15 @@ type pipe struct {
 	loss    *stream
 	latency *stream
 	trace   *traceRecorder
+
+	// pending holds units admitted but held back for latency (M2-2),
+	// release-ordered (each entry's releaseAt is >= every earlier entry's),
+	// so a single timer armed for the head always fires in write order
+	// regardless of the delay any individual unit drew. timer is that one
+	// live *time.AfterFunc, or nil when pending is empty. Both are nil for
+	// a pipe with no latency configured.
+	pending []pendingUnit
+	timer   *time.Timer
 }
 
 // newPipe returns an empty, open pipe with the given buffer bound.
@@ -155,6 +165,11 @@ func (p *pipe) write(data []byte) (int, error) {
 // close closes the pipe. It is idempotent and never returns a non-nil error;
 // subsequent reads drain any already-queued data and then return io.EOF,
 // and subsequent writes return io.ErrClosedPipe.
+//
+// Any units still held back by latency (pending, unreleased) are discarded,
+// not delivered: they model bytes still in flight on the wire, not bytes
+// already in the peer's receive buffer, so M1's "already-buffered data
+// still drains" guarantee is unaffected.
 func (p *pipe) close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -163,6 +178,11 @@ func (p *pipe) close() error {
 		return nil
 	}
 	p.closed = true
+	if p.timer != nil {
+		p.timer.Stop()
+		p.timer = nil
+	}
+	p.pending = nil
 	p.broadcastLocked()
 	return nil
 }
