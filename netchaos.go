@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 )
 
 // Network is a simulated network topology: a set of named peers that can
@@ -29,6 +30,9 @@ import (
 type Network struct {
 	seed int64
 
+	latencyEnabled         bool
+	latencyMin, latencyMax time.Duration
+
 	mu          sync.Mutex
 	listeners   map[string]*listener // key: peerName(addr)
 	nextOrdinal uint64
@@ -51,8 +55,11 @@ func NewNetwork(opts ...Option) *Network {
 		opt(&cfg)
 	}
 	return &Network{
-		seed:      cfg.seed,
-		listeners: make(map[string]*listener),
+		seed:           cfg.seed,
+		latencyEnabled: cfg.latencyEnabled,
+		latencyMin:     cfg.latencyMin,
+		latencyMax:     cfg.latencyMax,
+		listeners:      make(map[string]*listener),
 	}
 }
 
@@ -143,6 +150,11 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 	}
 
 	client, server := newConnPairWithSeed(&addr{network: network, peer: localName}, &addr{network: network, peer: peer}, ordinal, network, defaultPipeBound, n.seed)
+
+	if n.latencyEnabled {
+		installLatency(client.writePipe, n.latencyMin, n.latencyMax)
+		installLatency(server.writePipe, n.latencyMin, n.latencyMax)
+	}
 
 	if err := l.enqueue(server); err != nil {
 		return nil, n.dialOpError(network, dialAddr, err)

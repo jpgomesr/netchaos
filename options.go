@@ -1,5 +1,7 @@
 package netchaos
 
+import "time"
+
 // defaultSeed is the seed NewNetwork uses when WithSeed is not given. See
 // NewNetwork's godoc for why the default is fixed rather than random.
 const defaultSeed = 1
@@ -9,6 +11,12 @@ const defaultSeed = 1
 // here alongside seed.
 type networkConfig struct {
 	seed int64
+
+	// latencyEnabled distinguishes "WithLatency was never given" (no timer,
+	// no draw, byte-identical to M1's pass-through delivery) from
+	// WithLatency(0, 0) (an explicit, if degenerate, fixed-zero delay).
+	latencyEnabled         bool
+	latencyMin, latencyMax time.Duration
 }
 
 // Option configures a Network at construction time. No Option or NewNetwork
