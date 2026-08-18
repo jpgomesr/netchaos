@@ -15,8 +15,7 @@ var _ net.Conn = (*conn)(nil)
 // is accepted (an HTTP transport, a gRPC dialer, ...) without adapting it.
 func TestDialAssignableAsDialFunc(t *testing.T) {
 	n := NewNetwork()
-	dial := n.Dial
-	var _ func(network, addr string) (net.Conn, error) = dial
+	_ = (func(network, addr string) (net.Conn, error))(n.Dial)
 }
 
 func TestConnSatisfiesNetConn(t *testing.T) {
