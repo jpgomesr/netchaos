@@ -40,6 +40,17 @@ type pipe struct {
 	notify   chan struct{} // closed and replaced on every state change
 	bound    int
 	deliver  deliverFunc
+
+	// loss and latency are this pipe's per-fault-kind draw streams (M0-4),
+	// derived once at creation from the owning connection's ordinal and the
+	// side writing into this pipe. trace records the fault decisions made
+	// for this direction, in write order. All three are nil for a pipe
+	// created without fault wiring (e.g. by pipe-level tests); fault code
+	// added from M2-2 onward must handle that case, since M1 semantics
+	// (pass-through delivery) are still reachable with none of them set.
+	loss    *stream
+	latency *stream
+	trace   *traceRecorder
 }
 
 // newPipe returns an empty, open pipe with the given buffer bound.

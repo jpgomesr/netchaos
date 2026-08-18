@@ -58,10 +58,27 @@ func newConnPair(clientAddr, serverAddr *addr, ordinal uint64, network string) (
 
 // newConnPairWithBound is newConnPair with an explicit pipe buffer bound,
 // used directly by tests that need to force back-pressure at a size smaller
-// than defaultPipeBound.
+// than defaultPipeBound. Fault streams are derived from defaultSeed, since
+// callers of this helper are exercising transport behaviour, not fault
+// determinism.
 func newConnPairWithBound(clientAddr, serverAddr *addr, ordinal uint64, network string, bound int) (client, server *conn) {
+	return newConnPairWithSeed(clientAddr, serverAddr, ordinal, network, bound, defaultSeed)
+}
+
+// newConnPairWithSeed is newConnPairWithBound with an explicit master seed,
+// used by Network.DialContext to derive each pipe's fault streams (M0-4)
+// from the Network's own configured seed instead of the default.
+func newConnPairWithSeed(clientAddr, serverAddr *addr, ordinal uint64, network string, bound int, seed int64) (client, server *conn) {
 	clientToServer := newPipe(bound)
 	serverToClient := newPipe(bound)
+
+	clientToServer.loss = deriveStream(seed, ordinal, sideDialer, kindLoss)
+	clientToServer.latency = deriveStream(seed, ordinal, sideDialer, kindLatency)
+	clientToServer.trace = &traceRecorder{}
+
+	serverToClient.loss = deriveStream(seed, ordinal, sideAcceptor, kindLoss)
+	serverToClient.latency = deriveStream(seed, ordinal, sideAcceptor, kindLatency)
+	serverToClient.trace = &traceRecorder{}
 
 	client = &conn{
 		local:     clientAddr,
