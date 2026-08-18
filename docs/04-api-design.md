@@ -28,9 +28,13 @@ func (n *Network) Listen(network, addr string) (net.Listener, error)
 
 func (n *Network) Partition(peerA, peerB string)
 func (n *Network) Heal(peerA, peerB string)
+
+func WithPeerName(ctx context.Context, name string) context.Context
 ```
 
 No exported identifier returns an `error` from `NewNetwork` or from any `Option` — see [Error and no-op behaviour](#error-and-no-op-behaviour) below for why, and for what happens instead on misuse.
+
+**`WithPeerName` is an addition made during [M2-4](tasks/m2-determinism-and-faults.md#m2-4--network-partition-static-and-dynamic), not a change of an earlier decision.** M0-5 froze the surface above it without an exported way for a dialer to declare its own peer identity — `Dial`'s signature has no room for one, and the identity is what `Partition`/`Heal` need to target a specific connection's dialing side. Without it, every dialer gets a synthesized, unpartitionable `ephemeral:N` identity (see `DialContext`'s godoc), which would make the root README's own `client` ↔ `server-a` partition example impossible to implement. `WithPeerName(ctx, name)` closes that gap: a caller passes `n.DialContext(netchaos.WithPeerName(ctx, "client"), "tcp", "server-a")` to make `"client"` targetable by `n.Partition("client", "server-a")`.
 
 ## Package shape
 
@@ -137,6 +141,12 @@ func (n *Network) Partition(peerA, peerB string)
 func (n *Network) Heal(peerA, peerB string)
 ```
 
+Pairs are unordered: `Partition("a", "b")` and `Partition("b", "a")` name the same pair, and either heals the other.
+
+**Effect on connection establishment (decided in [M2-4](tasks/m2-determinism-and-faults.md#m2-4--network-partition-static-and-dynamic)):** `Dial`/`DialContext` **blocks** for the duration of the partition, returning `ctx.Err()` only once the context is done — a partition drops the SYN, so a real dial into a partitioned peer hangs the same way rather than failing fast. `Dial` (which uses `context.Background()`) therefore hangs forever against a partitioned peer; give it a context with a deadline if that's not the intended behaviour. Only a dialer that named itself via `WithPeerName` can be blocked this way — an unnamed dialer's synthesized `ephemeral:N` identity can never appear in a `Partition` call made before the dial completes, so it never blocks on this check regardless of any partition's state. The wait happens **before** the connection's ordinal is assigned, so a dial that never establishes does not burn an ordinal; see the [determinism contract](#determinism-contract)'s note on this.
+
+**Effect on already-established connections:** writes into a partitioned pair are accepted and silently discarded (the same silent-gap model as packet loss — see [Fault unit and drop semantics](#fault-unit-and-drop-semantics)); reads block until their deadline. `Heal` restores traffic without requiring a re-dial. Data written while partitioned is **discarded**, not buffered for delivery on `Heal` — matching what a real partition looks like to a sender (the kernel doesn't retain it either).
+
 ## Error and no-op behaviour
 
 Decided by [M0-5](tasks/m0-decisions-and-foundations.md#m0-5--freeze-the-v1-api-surface), since none of these had options written down before:
@@ -187,7 +197,7 @@ Decided by [M0-4](tasks/m0-decisions-and-foundations.md#m0-4--design-the-determi
 
 **The model: per-connection derived streams.** `WithSeed` seeds a derivation function, not a shared `rand.Rand`. Each simulated connection gets its own RNG stream, derived from `(masterSeed, connectionOrdinal, direction, faultKind)`:
 
-- `connectionOrdinal` is assigned in the order `Dial`/`Listen` establish the connection — the same ordering the contract already fixes.
+- `connectionOrdinal` is assigned in the order `Dial`/`Listen` establish the connection — the same ordering the contract already fixes. A `Dial` blocked on a partition (see [Dynamic partition control](#dynamic-partition-control)) has not yet established, so it has not yet consumed an ordinal; the ordinal is assigned only once the wait clears and the listener lookup succeeds, so a dial that never establishes never burns one.
 - `direction` separates the two directions of a full-duplex connection, so peer A's writes and peer B's writes draw from independent streams.
 - `faultKind` separates latency draws from packet-loss draws on the same connection and direction, so that adding `WithLatency` to an existing test does not shift that test's packet-loss sequence, and vice versa.
 

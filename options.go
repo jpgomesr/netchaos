@@ -23,6 +23,10 @@ type networkConfig struct {
 	// policy that still draws -- see WithPacketLoss's godoc).
 	lossEnabled bool
 	lossRate    float64
+
+	// staticPartitions accumulates the pairs named by WithPartition, applied
+	// to Network.partitions at construction (partition.go).
+	staticPartitions []pairKey
 }
 
 // Option configures a Network at construction time. No Option or NewNetwork

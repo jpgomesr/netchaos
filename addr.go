@@ -49,14 +49,24 @@ func validateNetwork(network string) error {
 // ride through DialContext's context.Context instead, the one input that
 // signature already has room for.
 //
-// No exported setter ships in M1: nothing consumes it until M2-4 adds
+// WithPeerName (below) is the exported setter, added in M2-4 for
 // Network.Partition, which is what actually needs a dialer to have a
-// stable, partition-targetable name. DialContext already reads it (see
-// netchaos.go); a dialer that never sets it gets a synthesized ephemeral
-// identity, usable for I/O like any other connection but not nameable by a
-// future Partition call — analogous to an OS-assigned ephemeral client
-// port.
+// stable, partition-targetable name. A dialer that never calls WithPeerName
+// gets a synthesized ephemeral identity, usable for I/O like any other
+// connection but not nameable by a Partition call — analogous to an
+// OS-assigned ephemeral client port — and, as a consequence, never blocks
+// on dial-time partition checks either, since no partition could ever be
+// declared against a name that isn't known until the dial that produces it
+// completes.
 type peerNameCtxKey struct{}
+
+// WithPeerName returns a copy of ctx that declares name as the calling
+// peer's own identity for a subsequent DialContext call — the identity
+// Network.Partition and Network.Heal target. Without it, a dialer gets a
+// synthesized, unpartitionable ephemeral identity (see peerNameCtxKey).
+func WithPeerName(ctx context.Context, name string) context.Context {
+	return context.WithValue(ctx, peerNameCtxKey{}, name)
+}
 
 // peerNameFromContext returns the peer name a dialer declared for itself via
 // ctx, if any.
