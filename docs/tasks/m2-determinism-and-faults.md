@@ -160,7 +160,8 @@ Probabilistically drop a unit instead of delivering it, using the seeded RNG so 
 
 ### M2-4 — Network partition (static and dynamic)
 
-**Status:** todo
+**Status:** done
+**Decision:** **dial blocks** while the caller's declared peer name is partitioned from the target, returning `ctx.Err()` only once the context is done — a partition drops the SYN, so a real dial hangs the same way (documented in [04](../04-api-design.md#dynamic-partition-control) and [05](../05-fault-injection.md#partition)). This required an addition to the frozen v1 surface: **`WithPeerName(ctx, name) context.Context`**, an exported setter for the context key `DialContext` already read but nothing could write — without it, no dialer could ever be partition-targetable, which would make the README's own example unimplementable. An unnamed dialer's synthesized `ephemeral:N` identity is never nameable by a `Partition` call made before the dial completes, so it never blocks on this check. The ordinal is now assigned *after* the partition wait clears, so a dial that never establishes doesn't burn one — the [determinism contract](../04-api-design.md#determinism-contract) is updated to say so. Already-established connections: writes into a partitioned pair are accepted and silently discarded (reusing the M2-3 silent-gap drop path — `bufBytes` un-accounted, traced, no error to the writer); reads block until their deadline; `Heal` restores traffic with no re-dial; data written while partitioned is discarded on heal, not buffered, matching M0-3's drop-semantics precedent. `Heal`/`Partition` on an unpartitioned/unknown pair are silent no-ops per M0-5. Implemented as a **wrapping** decorator (`installPartition` wraps whatever `p.deliver` already was, rather than replacing it) specifically so partition always composes correctly with latency/loss regardless of the M2-3-noted gap between those two — partition sits outside both, matching the `partition → loss → latency` order M2-5 will make explicit for the whole stack.
 **Roadmap item:** *Network partition (drop all traffic between two simulated peers)* ([06](../06-scope-and-roadmap.md))
 **Depends on:** M1-4, M1-7, M1-8 — deliberately *not* the seeded-RNG task, since a partition is binary and must consume no random draws
 **Blocks:** M2-5, M2-6
@@ -186,25 +187,27 @@ Drop **all** traffic between two named peers — binary, not probabilistic — w
 - `partition_test.go` (new)
 
 **Acceptance criteria**
-- [ ] `WithPartition` prevents traffic between the pair from `Network` construction onward.
-- [ ] `Partition` mid-test stops traffic on an already-established connection.
-- [ ] `Heal` restores traffic on that same connection without requiring a re-dial — the recovery case [05](../05-fault-injection.md#partition) names.
-- [ ] Pair keys are order-independent.
-- [ ] Traffic between *unpartitioned* peers is unaffected while another pair is partitioned.
-- [ ] The dial-under-partition behaviour is implemented as decided and documented.
-- [ ] The in-flight-data-on-heal behaviour is implemented as decided and documented.
-- [ ] Partition consumes **no** RNG draws — it is deterministic by nature, and drawing from the stream would perturb latency/loss sequences on the same connection.
-- [ ] `Heal` on an unpartitioned pair behaves per M0-5, without panicking.
-- [ ] The full partition → heal → recover cycle runs inside `synctest.Test` with virtual time.
-- [ ] `-race` clean with `Partition`/`Heal` called concurrently with I/O.
+- [x] `WithPartition` prevents traffic between the pair from `Network` construction onward.
+- [x] `Partition` mid-test stops traffic on an already-established connection.
+- [x] `Heal` restores traffic on that same connection without requiring a re-dial — the recovery case [05](../05-fault-injection.md#partition) names.
+- [x] Pair keys are order-independent.
+- [x] Traffic between *unpartitioned* peers is unaffected while another pair is partitioned.
+- [x] The dial-under-partition behaviour is implemented as decided and documented.
+- [x] The in-flight-data-on-heal behaviour is implemented as decided and documented.
+- [x] Partition consumes **no** RNG draws — it is deterministic by nature, and drawing from the stream would perturb latency/loss sequences on the same connection.
+- [x] `Heal` on an unpartitioned pair behaves per M0-5, without panicking.
+- [x] The full partition → heal → recover cycle runs inside `synctest.Test` with virtual time.
+- [x] `-race` clean with `Partition`/`Heal` called concurrently with I/O (verified on CI; not runnable on this dev box, see M2-1).
 
 **Tests**
 - `TestStaticPartition`, `TestDynamicPartitionThenHeal`
 - `TestPartitionPairOrderIndependent`, `TestPartitionIsolatedToPair`
-- `TestDialUnderPartition`
+- `TestDialUnderPartition`, `TestDialUnblocksOnHeal`
+- `TestHealUnpartitionedPairIsNoop`, `TestPartitionUnknownPeerIsNoop`
 - `TestPartitionConsumesNoRandomness` — compare traces with and without a partition on an unrelated pair
 - `TestCircuitBreakerScenario` — partition, observe failure, heal, observe recovery, inside `synctest.Test`
 - `TestPartitionRace`
+- `TestPartitionedWriteDiscardedSilently`
 - Verify: `go build ./... && go vet ./... && gofmt -l . && go test -race ./... && golangci-lint run`
 
 ---
