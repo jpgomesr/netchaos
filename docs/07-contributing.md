@@ -2,11 +2,11 @@
 
 ## Current project status
 
-netchaos is in **early design**. There is no fault-injection implementation yet — the repository consists of the root [`README.md`](../README.md), this `docs/` design-doc set, project/CI scaffolding, and a toolchain-baseline test file. The [04 — API Design](04-api-design.md) surface was frozen by [M0](tasks/m0-decisions-and-foundations.md): the open design questions that used to leave it unstable (reordering scope, fault scoping, fault granularity, determinism under concurrency) are resolved, so the API shape itself is settled ahead of implementation, even though the implementation may still surface issues the design docs didn't anticipate.
+netchaos has a working core transport (M1) and all three v1 fault types — latency, packet loss, partition — implemented and composed (M2). The [04 — API Design](04-api-design.md) surface frozen by [M0](tasks/m0-decisions-and-foundations.md) is fully built, plus one addition made during M2-4 (`WithPeerName`). What remains is M3 (a `testing/synctest`-based reproducibility test suite exercising the whole package together) and M4 (API polish and release).
 
 ## What's useful to contribute right now
 
-Since there's no implementation to build against yet, the highest-value contributions at this stage are about **shaping the design before code gets written**:
+With the core implemented, the highest-value contributions are shifting from design discussion toward exercising and hardening what's there:
 
 - **Discussion on API shape.** Does the [frozen `Network`/`Option` API](04-api-design.md) feel right for real usage? Are there ergonomics issues or naming concerns worth raising before implementation makes the surface expensive to change? (Note: the surface is frozen for v1, not immutable — a strong enough case can still reopen a decision, but that's now a deliberate change, not a pending open question.)
 - **Issues describing real-world scenarios.** If you have a concrete resilience-testing scenario (a retry policy, a circuit breaker, a specific timeout behavior) that's hard to test today, describing it as an issue helps validate that the v1 scope in [06 — Scope & Roadmap](06-scope-and-roadmap.md) actually covers the cases people need.
@@ -14,7 +14,7 @@ Since there's no implementation to build against yet, the highest-value contribu
 
 ## Implementation contributions
 
-Implementation PRs (the actual `net.Conn`/`net.Listener` simulation, the fault-injection layer, the `Network` type) can now build against the frozen interfaces in [04 — API Design](04-api-design.md) — [M0](tasks/m0-decisions-and-foundations.md) closed the open questions specifically to avoid the churn of landing implementation against an API that was still being debated. See [Task breakdown](tasks/README.md) for the sequenced milestones (M1 onward) that implementation PRs should map to.
+`net.Conn`/`net.Listener` simulation, the fault-injection layer, and the `Network` type are implemented (M1–M2), built against the frozen interfaces in [04 — API Design](04-api-design.md). See [Task breakdown](tasks/README.md) for the remaining milestones (M3 onward) that new implementation PRs should map to.
 
 ## Working method
 

@@ -12,11 +12,11 @@ The operating principle: **ship a narrow, solid core first** (simulated TCP-shap
 
 ## v1 scope
 
-- [ ] Simulated `net.Conn` / `net.Listener` (TCP-shaped) with pluggable fault injection
-- [ ] Latency injection (fixed and ranged)
-- [ ] Packet loss (probabilistic, seeded/deterministic)
-- [ ] Network partition (drop all traffic between two simulated peers)
-- [ ] Seeded randomness for reproducible failure scenarios
+- [x] Simulated `net.Conn` / `net.Listener` (TCP-shaped) with pluggable fault injection
+- [x] Latency injection (fixed and ranged)
+- [x] Packet loss (probabilistic, seeded/deterministic)
+- [x] Network partition (drop all traffic between two simulated peers)
+- [x] Seeded randomness for reproducible failure scenarios
 - [ ] Integration with `testing/synctest` for virtual time
 
 Each item is covered in depth elsewhere: the connection/listener simulation and `synctest` integration in [03 — Architecture](03-architecture.md), the fault mechanics in [05 — Fault Injection](05-fault-injection.md), and the proposed configuration surface in [04 — API Design](04-api-design.md).

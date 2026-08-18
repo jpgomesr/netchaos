@@ -256,7 +256,8 @@ Define and implement what happens when latency, packet loss and partition are co
 
 ### M2-6 — Option validation
 
-**Status:** todo
+**Status:** done
+**Decision:** the reporting mechanism was **already settled by M0-5 as panic** — this task's scope text below predates that closure and still presents it as a three-way open choice; not re-litigated here. Validation runs **once**, in `NewNetwork` after every `Option` has been applied (`networkConfig.validate`, called from `options.go`), not inside each `Option`'s own closure — so an invalid intermediate value later overridden by a valid one of the same kind does not panic (`TestOptionValidationUsesFinalValue`). The one exception is `WithPartition`: its peer-name checks (non-empty, `peerA != peerB`) are also deferred to the same `validate()` pass rather than checked eagerly inside `WithPartition` itself, for mechanism uniformity, even though partition pairs accumulate in a list rather than being overridden. **Unknown peer names are deliberately not validated** — M0-5 makes "partition before either side has `Dial`ed/`Listen`ed" legitimate setup, and this task's own scope line listing "empty *or unknown*" peer names was stale on that point. An unsupported `network` string was already handled by `validateNetwork` (`addr.go`) since M1, as a returned error rather than a panic — this task didn't touch it, since it isn't an `Option`.
 **Roadmap item:** supports all four M2 checklist items
 **Depends on:** M2-2, M2-3, M2-4, M0-5
 **Blocks:** M4-1
@@ -265,10 +266,10 @@ Define and implement what happens when latency, packet loss and partition are co
 Reject invalid configuration loudly. A silently clamped or ignored option produces a test that passes for the wrong reason — the worst possible failure mode for a testing library, since it manufactures false confidence in the code under test.
 
 **Scope**
-- Validate: packet-loss rate outside `[0.0, 1.0]` (including `NaN`); latency `min > max`; negative durations; empty or unknown peer names in `WithPartition`; an unsupported `network` string.
-- Implement the reporting mechanism decided in M0-5. `NewNetwork` currently returns only `*Network` ([04](../04-api-design.md#network)), so an invalid option has nowhere to go — the realistic choices are to panic (defensible in a *test-only* library, where a misconfigured test should fail immediately and loudly), or to change the signature to return an error, or to defer the error to the first `Dial`/`Listen`. Panicking is the option most consistent with test-only usage and with `NewNetwork`'s current signature; whichever is chosen must be applied consistently across every option.
-- Whatever the mechanism, the message must name the offending option and the offending value.
-- Out of scope: runtime I/O errors (M1-8).
+- Validate: packet-loss rate outside `[0.0, 1.0]` (including `NaN`, `+Inf`, `-Inf`); latency `min > max`; negative durations; empty or identical peer names in `WithPartition`.
+- The reporting mechanism is panic, decided by M0-5; this task only implements the validation checks themselves.
+- The message must name the offending option and the offending value.
+- Out of scope: runtime I/O errors (M1-8); unknown (as opposed to empty/identical) peer names in `WithPartition`, which are legitimate per M0-5; the `network` string, validated elsewhere since M1.
 
 **Files**
 - `options.go` — validation
@@ -276,15 +277,16 @@ Reject invalid configuration loudly. A silently clamped or ignored option produc
 - `options_test.go` — validation table
 
 **Acceptance criteria**
-- [ ] Every invalid input listed above is rejected, table-driven.
-- [ ] `NaN` and infinite loss rates are rejected, not silently compared.
-- [ ] The failure mechanism is uniform across options and matches M0-5.
-- [ ] Every message names the option and the value.
-- [ ] Valid boundary values are accepted: rate exactly `0.0` and `1.0`, `min == max` latency, zero latency.
-- [ ] Godoc on each option states its valid range and what happens outside it.
+- [x] Every invalid input listed above is rejected, table-driven.
+- [x] `NaN` and infinite loss rates are rejected, not silently compared.
+- [x] The failure mechanism is uniform across options and matches M0-5.
+- [x] Every message names the option and the value.
+- [x] Valid boundary values are accepted: rate exactly `0.0` and `1.0`, `min == max` latency, zero latency.
+- [x] Godoc on each option states its valid range and what happens outside it.
 
 **Tests**
 - `TestOptionValidation` — table over invalid inputs, asserting the failure mechanism
+- `TestOptionValidationUsesFinalValue` — an invalid intermediate value overridden by a later valid one does not panic
 - `TestOptionBoundaryValuesAccepted`
 - `TestValidationMessagesNameTheOption`
 - Verify: `go build ./... && go vet ./... && gofmt -l . && go test -race ./... && golangci-lint run`

@@ -84,10 +84,10 @@ func TestRetryOnPacketLoss(t *testing.T) {
 To avoid the trap of "framework covering everything" — the same trap that turned a previous project into an unfinishable moving target — v1 is scoped tightly:
 
 - [x] Simulated `net.Conn` / `net.Listener` (TCP-shaped) with pluggable fault injection
-- [ ] Latency injection (fixed and ranged)
-- [ ] Packet loss (probabilistic, seeded/deterministic)
-- [ ] Network partition (drop all traffic between two simulated peers)
-- [ ] Seeded randomness for reproducible failure scenarios
+- [x] Latency injection (fixed and ranged)
+- [x] Packet loss (probabilistic, seeded/deterministic)
+- [x] Network partition (drop all traffic between two simulated peers)
+- [x] Seeded randomness for reproducible failure scenarios
 - [ ] Integration with `testing/synctest` for virtual time
 
 Explicitly out of scope for v1: reordering, disk fault injection, full syscall simulation, UDP support, protocol-level fault injection above the connection layer. These may be revisited once the core is solid — see [docs/06 — Scope & Roadmap](docs/06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1).

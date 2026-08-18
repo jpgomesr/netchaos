@@ -1,6 +1,6 @@
 # netchaos design docs
 
-> **Status: design-stage.** `netchaos` has no implementation yet — these documents describe the intended design and API so that future implementation work has a stable base to build from. Anything marked **PROPOSED** is a design sketch, not a commitment.
+> **Status: M1 and M2 implemented.** The core transport and all three v1 fault types (latency, packet loss, partition) are built and tested. `testing/synctest` integration for the full suite (M3) and release polish (M4) remain.
 
 This folder expands on the pitch made in the root [`README.md`](../README.md) into full design documentation, organized by topic:
 
@@ -9,7 +9,7 @@ This folder expands on the pitch made in the root [`README.md`](../README.md) in
 | [01 — Vision](01-vision.md) | What netchaos is, what it deliberately is not, who it's for, and the philosophy behind it |
 | [02 — Comparison](02-comparison.md) | Detailed comparison against Toxiproxy, gosim, Chaos Mesh/Litmus, and Antithesis |
 | [03 — Architecture](03-architecture.md) | How the in-process simulated network is structured conceptually |
-| [04 — API Design](04-api-design.md) | The frozen v1 Go API surface (interfaces, structs, functional options) — agreed, not yet implemented |
+| [04 — API Design](04-api-design.md) | The frozen v1 Go API surface (interfaces, structs, functional options) — agreed and implemented |
 | [05 — Fault Injection](05-fault-injection.md) | Deep dive on each fault type: latency, packet loss, partition |
 | [06 — Scope & Roadmap](06-scope-and-roadmap.md) | v1 scope, why the boundaries exist, and what's deliberately deferred |
 | [07 — Contributing](07-contributing.md) | Project status and how to contribute at this stage |
