@@ -61,6 +61,8 @@ func NewNetwork(opts ...Option) *Network {
 	for _, opt := range opts {
 		opt(&cfg)
 	}
+	cfg.validate()
+
 	n := &Network{
 		seed:           cfg.seed,
 		latencyEnabled: cfg.latencyEnabled,
@@ -72,8 +74,8 @@ func NewNetwork(opts ...Option) *Network {
 		partNotify:     make(chan struct{}),
 		listeners:      make(map[string]*listener),
 	}
-	for _, k := range cfg.staticPartitions {
-		n.partitions[k] = struct{}{}
+	for _, p := range cfg.staticPartitions {
+		n.partitions[newPairKey(peerName(p.peerA), peerName(p.peerB))] = struct{}{}
 	}
 	return n
 }

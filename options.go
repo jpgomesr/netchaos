@@ -24,16 +24,34 @@ type networkConfig struct {
 	lossEnabled bool
 	lossRate    float64
 
-	// staticPartitions accumulates the pairs named by WithPartition, applied
-	// to Network.partitions at construction (partition.go).
-	staticPartitions []pairKey
+	// staticPartitions accumulates the raw peer-name pairs named by
+	// WithPartition, kept unresolved (not yet a pairKey) until validate()
+	// has checked them and NewNetwork applies them to Network.partitions.
+	staticPartitions []partitionPair
 }
 
 // Option configures a Network at construction time. No Option or NewNetwork
 // call returns an error: an Option given an invalid value (e.g. a
-// WithPacketLoss rate outside [0,1], added in M2) makes NewNetwork panic,
-// analogous to regexp.MustCompile.
+// WithPacketLoss rate outside [0,1]) makes NewNetwork panic, analogous to
+// regexp.MustCompile.
 type Option func(*networkConfig)
+
+// validate panics, naming the offending option and value, if any option
+// applied to c is invalid. It runs once, in NewNetwork, after every Option
+// has been applied — so a later, valid option of a given kind rescues an
+// earlier, invalid one of the same kind (WithPacketLoss(-1),
+// WithPacketLoss(0.5) does not panic; only the final value is checked).
+func (c *networkConfig) validate() {
+	if c.lossEnabled {
+		validateLossRate(c.lossRate)
+	}
+	if c.latencyEnabled {
+		validateLatencyRange(c.latencyMin, c.latencyMax)
+	}
+	for _, p := range c.staticPartitions {
+		validatePartitionPair(p)
+	}
+}
 
 // WithSeed sets the seed a Network's per-connection random streams are
 // derived from (wired up starting M2-1). The same seed, with the same order
