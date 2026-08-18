@@ -114,7 +114,8 @@ Delay delivery of a write from one simulated peer to the other by a duration dra
 
 ### M2-3 — Packet loss (probabilistic, seeded)
 
-**Status:** todo
+**Status:** done
+**Decision:** the drop model was **already settled by [M0-3](m0-decisions-and-foundations.md#m0-3--decide-fault-granularity-per-write-vs-per-simulated-packet) as model 1, silent gap** — this task's original scope text below presented it as a three-way open choice recommending model 2 (stall); that text predates M0's closure and was stale (per `docs/tasks/README.md`, M0's task file is authoritative on conflict). Implemented as: a dropped unit's `bufBytes` accounting is undone (it was admitted, so it must be un-accounted, or repeated drops permanently inflate `bufBytes` and wedge the writer — guarded by `TestLossDoesNotWedgeWriterOnRepeatedDrops`), the unit never reaches `readable`, and `conn.Write` already returns `n = len(p), nil` on admission regardless of what `deliver` does with the data afterward, so no `conn.go` change was needed for the writer side. `bernoulli` always draws, even at rate `0.0` or `1.0`, matching `uniformDuration`'s discipline. **Known gap, deferred to M2-5:** `installLoss` and `installLatency` both assign `p.deliver` directly, so configuring `WithLatency` and `WithPacketLoss` on the same `Network` today means whichever is installed last in `DialContext` wins outright — the other's `deliverFunc` is silently replaced, not composed. This is explicitly M2-5's job.
 **Roadmap item:** *Packet loss (probabilistic, seeded/deterministic)* ([06](../06-scope-and-roadmap.md))
 **Depends on:** M1-1, M1-2, M2-1, M0-3
 **Blocks:** M2-5, M2-6
@@ -124,15 +125,11 @@ Probabilistically drop a unit instead of delivering it, using the seeded RNG so 
 
 **Scope**
 - `WithPacketLoss(rate float64) Option`, rate in `[0.0, 1.0]`, per [04](../04-api-design.md#functional-options).
-- A Bernoulli trial per unit from the connection's M2-1 stream; the unit follows M0-3.
-- **Define what a drop means to a byte-stream reader.** This is the substantive design content of the task, not a detail. `net.Conn` is a stream: if a write is silently dropped, the reader sees the surrounding bytes concatenated with no indication that anything is missing — the stream is silently corrupted, which real TCP never does. Real TCP retransmits, so a lossy link manifests as *latency and eventual timeout*, not missing bytes. Three coherent models to choose between, and the choice must be recorded in [05](../05-fault-injection.md#packet-loss):
-  1. **Silent gap** — the dropped bytes simply never arrive. Simplest, but hands the code under test a corrupted stream, which tests a scenario TCP does not produce.
-  2. **Stall** — the dropped unit is never delivered and never retransmitted, so the reader blocks until its deadline fires. This is what [05](../05-fault-injection.md#packet-loss) implies when it says retry logic detects loss "via timeout or connection-level signal", and it matches how a lossy link actually looks to an application.
-  3. **Connection error** — the drop surfaces as a connection-level failure to the reader.
-  Model 2 is the one consistent with the stated purpose (testing retry and timeout logic); models 1 and 3 are viable but change what the fault teaches.
-- Rate `0.0` drops nothing and adds no overhead; rate `1.0` drops everything (equivalent in effect to a one-directional partition — note the relationship in godoc).
-- Per M0-2, apply globally or per peer pair as decided.
-- Out of scope: rate validation (M2-6), composition with latency (M2-5).
+- A Bernoulli trial per unit from the connection's M2-1 stream; the unit is the whole `Write` call (M0-3, already decided).
+- The drop model is **silent gap** (M0-3, already decided): the dropped bytes simply never arrive, the reader sees the surrounding bytes concatenated with no indication anything is missing, and the write still reports full success. This is not re-litigated here; see [04](../04-api-design.md#fault-unit-and-drop-semantics) and [05](../05-fault-injection.md#packet-loss).
+- Rate `0.0` drops nothing; rate `1.0` drops everything (equivalent in effect to a one-directional partition, but distinct in intent and in draw consumption — partition draws nothing, loss at rate `1.0` still draws — noted in godoc).
+- Applies globally (M0-2, already decided).
+- Out of scope: rate validation (M2-6), composition with latency (M2-5, and see the known gap noted above).
 
 **Files**
 - `loss.go` (new)
@@ -140,22 +137,23 @@ Probabilistically drop a unit instead of delivering it, using the seeded RNG so 
 - `loss_test.go` (new)
 
 **Acceptance criteria**
-- [ ] The drop model (1/2/3 above) is chosen, implemented, and documented in [05](../05-fault-injection.md#packet-loss) and in godoc.
-- [ ] The same seed produces a byte-identical delivered/dropped sequence across runs.
-- [ ] Over a large sample, the observed drop rate converges on the configured rate within a stated tolerance.
-- [ ] Rate `0.0` delivers everything; rate `1.0` delivers nothing.
-- [ ] Under the chosen model, a client with a retry loop and a read deadline completes successfully at a moderate loss rate — the scenario [05](../05-fault-injection.md#packet-loss) names as the point of the feature.
-- [ ] The drop decisions appear in the M2-1 fault trace.
-- [ ] Loss on one connection does not perturb another connection's draw sequence.
-- [ ] `-race` clean.
+- [x] The drop model (silent gap, per M0-3) is implemented and documented in [05](../05-fault-injection.md#packet-loss) and in godoc.
+- [x] The same seed produces a byte-identical delivered/dropped sequence across runs.
+- [x] Over a large sample, the observed drop rate converges on the configured rate within a stated tolerance (5 percentage points at N=5000).
+- [x] Rate `0.0` delivers everything; rate `1.0` delivers nothing.
+- [x] A client with a retry loop and a read deadline completes successfully at a moderate loss rate — the scenario [05](../05-fault-injection.md#packet-loss) names as the point of the feature.
+- [x] The drop decisions appear in the M2-1 fault trace.
+- [x] Loss on one connection does not perturb another connection's draw sequence.
+- [x] `-race` clean (verified on CI; not runnable on this dev box, see M2-1).
 
 **Tests**
 - `TestLossDeterministic` — same seed twice, identical drop sequence
 - `TestLossRateConverges` — large N, assert within tolerance
 - `TestLossZeroRate`, `TestLossFullRate`
-- `TestLossDropModel` — asserts the chosen model's observable behaviour (e.g. for model 2: the reader blocks and hits its deadline)
+- `TestLossDropModelConcatenatesSurvivors` — asserts the silent-gap model directly: survivors arrive concatenated, no error, no gap marker
 - `TestRetrySucceedsUnderLoss` — the end-to-end scenario
 - `TestLossIsolatedPerConnection`
+- `TestLossDoesNotWedgeWriterOnRepeatedDrops` — the `bufBytes` accounting regression
 - Verify: `go build ./... && go vet ./... && gofmt -l . && go test -race ./... && golangci-lint run`
 
 ---
