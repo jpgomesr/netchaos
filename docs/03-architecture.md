@@ -49,6 +49,8 @@ Latency and packet loss apply globally to every connection the `Network` simulat
 
 Each connection's random draws come from its own stream, derived from `(masterSeed, connectionOrdinal, direction, faultKind)` rather than from one `rand.Rand` shared across the `Network`. This is what keeps a full test run reproducible end to end without making one connection's fault sequence depend on how the Go scheduler happened to interleave it with unrelated connections — see the [determinism contract](04-api-design.md#determinism-contract) for the full model.
 
+When more than one fault is configured on the same connection direction, there is exactly **one** evaluation point per unit, not three hooks chained or overwriting one another — a unit is checked against partition, then loss, then latency, in that fixed order, with the draw discipline (which faults draw unconditionally vs. not at all) spelled out in the [determinism contract](04-api-design.md#determinism-contract).
+
 ### Composing with `testing/synctest`
 
 `testing/synctest` already virtualizes time within a goroutine bubble: `time.Sleep`, timers, and context deadlines advance instantly as far as wall-clock time is concerned, while still behaving correctly relative to each other. netchaos's latency injection is designed to ride on top of this rather than duplicate it — when a simulated write needs to be delayed, netchaos uses the standard time APIs (e.g., timers) that `testing/synctest` already knows how to virtualize, rather than inventing its own clock abstraction.

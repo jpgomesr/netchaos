@@ -184,21 +184,20 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 
 	client, server := newConnPairWithSeed(&addr{network: network, peer: localName}, &addr{network: network, peer: peer}, ordinal, network, defaultPipeBound, n.seed)
 
-	if n.latencyEnabled {
-		installLatency(client.writePipe, n.latencyMin, n.latencyMax)
-		installLatency(server.writePipe, n.latencyMin, n.latencyMax)
+	// A single composed evaluator per direction (M2-5) — the only place
+	// fault policy is evaluated per unit, in the fixed order documented on
+	// installFaultPolicy: partition, then loss, then latency.
+	fp := faultPolicy{
+		network:        n,
+		pair:           newPairKey(localName, peer),
+		lossEnabled:    n.lossEnabled,
+		lossRate:       n.lossRate,
+		latencyEnabled: n.latencyEnabled,
+		latencyMin:     n.latencyMin,
+		latencyMax:     n.latencyMax,
 	}
-	if n.lossEnabled {
-		installLoss(client.writePipe, n.lossRate)
-		installLoss(server.writePipe, n.lossRate)
-	}
-	// Partition wraps whatever was installed above so it always gates
-	// delivery first, regardless of what else is configured, and is always
-	// installed (unlike latency/loss) since Partition/Heal can be called at
-	// any point during a test, not just declared via WithPartition.
-	pair := newPairKey(localName, peer)
-	installPartition(client.writePipe, n, pair)
-	installPartition(server.writePipe, n, pair)
+	installFaultPolicy(client.writePipe, fp)
+	installFaultPolicy(server.writePipe, fp)
 
 	if err := l.enqueue(server); err != nil {
 		return nil, n.dialOpError(network, dialAddr, err)

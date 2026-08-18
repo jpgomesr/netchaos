@@ -1,10 +1,10 @@
 # 05 — Fault Injection
 
-> **Status: implemented.** Latency, packet loss, and partition (below) are implemented as of M2-2/M2-3/M2-4. See [04 — API Design](04-api-design.md) for the configuration surface.
->
-> **Known gap until M2-5:** configuring `WithLatency` and `WithPacketLoss` on the same `Network` today does not compose — whichever fault `Network.DialContext` wires up last silently replaces the other's delivery hook. Partition is unaffected by this gap: it always wraps whatever combination of latency/loss ended up installed, so partition composes correctly with either (or both, once M2-5 fixes their pairing) today. Composing latency and loss into one evaluator, in the documented `partition → loss → latency` order, is M2-5's job.
+> **Status: implemented.** Latency, packet loss, and partition (below) are implemented as of M2-2/M2-3/M2-4, and compose correctly together as of M2-5. See [04 — API Design](04-api-design.md) for the configuration surface.
 
 netchaos's v1 scope (per the root README's checklist) covers three fault categories: latency, packet loss, and partition. Each connection direction draws from its own seeded stream, derived from the `Network`'s master seed (see [04 — API Design § Determinism contract](04-api-design.md#determinism-contract) and [03 — Architecture](03-architecture.md#fault-injection-layer)), which is what makes an entire test run reproducible from a single seed value without one connection's fault sequence depending on how the scheduler interleaved it with another.
+
+**Composition (M2-5):** when more than one fault is configured on the same connection direction, a single evaluator decides the outcome for each unit, in a fixed order — **partition, then packet loss, then latency** — rather than three hooks that happen to run in whatever order they were installed. Partition short-circuits before any draw happens, so it never perturbs the loss/latency streams. A unit that isn't partitioned draws from every *configured* fault's stream regardless of what an earlier fault in the order decided — a unit packet loss drops still draws (and discards) a latency duration. This keeps each fault's draw index locked to the unit index, which is what makes two runs' traces diffable position-for-position. See the [determinism contract](04-api-design.md#determinism-contract) for the exact, permanent rule.
 
 ## Latency
 
