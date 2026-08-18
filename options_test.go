@@ -78,7 +78,7 @@ func TestOptionValidation(t *testing.T) {
 		{"loss rate NaN", WithPacketLoss(math.NaN()), []string{"WithPacketLoss"}},
 		{"loss rate +Inf", WithPacketLoss(math.Inf(1)), []string{"WithPacketLoss"}},
 		{"loss rate -Inf", WithPacketLoss(math.Inf(-1)), []string{"WithPacketLoss"}},
-		{"latency min greater than max", WithLatency(2 * time.Second, time.Second), []string{"WithLatency"}},
+		{"latency min greater than max", WithLatency(2*time.Second, time.Second), []string{"WithLatency"}},
 		{"latency negative min", WithLatency(-time.Millisecond, time.Millisecond), []string{"WithLatency"}},
 		{"latency negative max", WithLatency(0, -time.Millisecond), []string{"WithLatency"}},
 		{"partition empty peerA", WithPartition("", "b"), []string{"WithPartition"}},
@@ -112,7 +112,7 @@ func TestOptionBoundaryValuesAccepted(t *testing.T) {
 	}{
 		{"loss rate exactly 0.0", WithPacketLoss(0.0)},
 		{"loss rate exactly 1.0", WithPacketLoss(1.0)},
-		{"latency min == max", WithLatency(50 * time.Millisecond, 50*time.Millisecond)},
+		{"latency min == max", WithLatency(50*time.Millisecond, 50*time.Millisecond)},
 		{"zero latency", WithLatency(0, 0)},
 		{"valid partition", WithPartition("a", "b")},
 	}
