@@ -24,36 +24,6 @@ func WithLatency(min, max time.Duration) Option {
 	}
 }
 
-// installLatency replaces p's deliver function with one that holds each
-// admitted unit for a duration drawn from p.latency (the pipe's own,
-// per-direction stream — M0-4) before making it visible to readers.
-//
-// The single-timer-for-the-head design is what keeps delivery in write
-// order: N independent timers, one per unit, would let a later write's
-// shorter draw jump ahead of an earlier write's longer one. Instead, each
-// unit's releaseAt is clamped to be no earlier than the previous unit's,
-// so p.pending is release-ordered by construction, and only ever one timer
-// — armed for the current head — is live at a time.
-func installLatency(p *pipe, min, max time.Duration) {
-	p.deliver = func(p *pipe, data []byte) {
-		drawn := p.latency.uniformDuration(min, max)
-		now := time.Now()
-		releaseAt := now.Add(drawn)
-		if n := len(p.pending); n > 0 {
-			if prev := p.pending[n-1].releaseAt; releaseAt.Before(prev) {
-				releaseAt = prev
-			}
-		}
-
-		if p.trace != nil {
-			p.trace.record(faultEvent{drawn: drawn, effective: releaseAt.Sub(now)})
-		}
-
-		p.pending = append(p.pending, pendingUnit{data: data, releaseAt: releaseAt})
-		p.armLatencyTimerLocked()
-	}
-}
-
 // armLatencyTimerLocked (re)arms the single live latency timer for the
 // current pending head, or clears it if pending is empty. Must be called
 // with p.mu held.

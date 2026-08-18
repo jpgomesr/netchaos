@@ -90,28 +90,3 @@ func (n *Network) checkPartition(k pairKey) (partitioned bool, ch <-chan struct{
 	_, ok := n.partitions[k]
 	return ok, n.partNotify
 }
-
-// installPartition wraps p's current deliver function so that a unit bound
-// for a partitioned pair is discarded before whatever fault policy (loss,
-// latency) is already installed ever sees it, and consumes no random draw
-// in doing so. It always wraps, even when nothing else is configured,
-// since Partition/Heal can be called at any time during a test, not just
-// declared up front via WithPartition.
-func installPartition(p *pipe, n *Network, key pairKey) {
-	inner := p.deliver
-	p.deliver = func(p *pipe, data []byte) {
-		if n.isPartitioned(key) {
-			// Admission already accounted these bytes; since a partitioned
-			// unit never reaches readable (nor any fault beneath this
-			// wrapper), that accounting must be undone here, exactly as a
-			// packet-loss drop does (loss.go).
-			p.bufBytes -= len(data)
-			if p.trace != nil {
-				p.trace.record(faultEvent{partitioned: true})
-			}
-			p.broadcastLocked()
-			return
-		}
-		inner(p, data)
-	}
-}

@@ -340,7 +340,7 @@ func TestLossDoesNotWedgeWriterOnRepeatedDrops(t *testing.T) {
 	defer func() { _ = client.Close() }()
 	defer func() { _ = server.Close() }()
 
-	installLoss(client.writePipe, 1.0)
+	installFaultPolicy(client.writePipe, faultPolicy{lossEnabled: true, lossRate: 1.0})
 
 	done := make(chan error, 1)
 	go func() {
