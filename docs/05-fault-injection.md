@@ -1,6 +1,8 @@
 # 05 — Fault Injection
 
-> **Status: partially implemented.** Latency (below) is implemented as of M2-2. Packet loss and partition describe the intended mechanics only — no implementation exists yet. See [04 — API Design](04-api-design.md) for the configuration surface.
+> **Status: partially implemented.** Latency and packet loss (below) are implemented as of M2-2/M2-3. Partition describes the intended mechanics only — no implementation exists yet. See [04 — API Design](04-api-design.md) for the configuration surface.
+>
+> **Known gap until M2-5:** configuring `WithLatency` and `WithPacketLoss` on the same `Network` today does not compose — whichever fault `Network.DialContext` wires up last silently replaces the other's delivery hook. Composing the two into one evaluator is M2-5's job.
 
 netchaos's v1 scope (per the root README's checklist) covers three fault categories: latency, packet loss, and partition. Each connection direction draws from its own seeded stream, derived from the `Network`'s master seed (see [04 — API Design § Determinism contract](04-api-design.md#determinism-contract) and [03 — Architecture](03-architecture.md#fault-injection-layer)), which is what makes an entire test run reproducible from a single seed value without one connection's fault sequence depending on how the scheduler interleaved it with another.
 
@@ -28,7 +30,9 @@ netchaos's v1 scope (per the root README's checklist) covers three fault categor
 
 **What a drop looks like to the reader:** A dropped write is a **silent gap**, not a visible error. The write is discarded, the peer's `Read` never observes those bytes, and — per `io.Writer`'s contract, which forbids returning a short count without a non-nil error — the call that issued the write still reports `n = len(p), nil`: full, successful delivery from the writer's point of view. This mirrors real packet loss, which is invisible to the sender at the socket layer.
 
-**Seeded and reproducible:** Because the loss decision is drawn from the seeded RNG, the exact sequence of "this write succeeds / this write is dropped" is identical across runs for a given seed — this is what lets a flaky-seeming failure be pinned down and replayed deterministically.
+**Seeded and reproducible:** Because the loss decision is drawn from the seeded RNG, the exact sequence of "this write succeeds / this write is dropped" is identical across runs for a given seed — this is what lets a flaky-seeming failure be pinned down and replayed deterministically. The Bernoulli trial is drawn even at rate `0.0` or `1.0`, so the draw sequence's length always tracks the number of writes.
+
+**Relationship to partition:** rate `1.0` is behaviourally similar to partitioning the same peer pair — both drop every unit — but the two are distinct in intent and in draw consumption: loss at rate `1.0` still draws from the seeded stream on every unit, while partition (M2-4) consumes no draws at all.
 
 **What it's for:** Testing retry logic — does your code detect a dropped write (via timeout or connection-level signal) and retry appropriately, does it eventually give up and return the right error after exhausting retries, does at-least-once vs. at-most-once semantics hold up.
 
