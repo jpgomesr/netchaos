@@ -17,7 +17,7 @@ Budget M3 as verification plus one harness, not as a build.
 
 ### M3-1 — Verify bubble-compatibility of every blocking path
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** *Integration with `testing/synctest` for virtual time*
 **Depends on:** M1-8, M2-5
 **Blocks:** M3-2, M3-3, M4-1
@@ -42,20 +42,25 @@ The consequence for netchaos: a `Read` waiting for data, an `Accept` waiting for
 - Fixes in `pipe.go`, `conn.go`, `listener.go`, `latency.go` as needed
 
 **Acceptance criteria**
-- [ ] Every blocking point is enumerated in the test file, one test each.
-- [ ] No blocked netchaos call parks on a mutex — verified by review and by a bubble-idleness test per blocking point.
-- [ ] A test blocking on `Read`, then calling `synctest.Wait()`, observes the bubble reach idle.
-- [ ] Same for `Accept`.
-- [ ] A full dial → write → read → close cycle completes inside `synctest.Test` with no deadlock panic.
-- [ ] No goroutine outlives the bubble.
-- [ ] No package-level `sync.WaitGroup` exists in the package.
-- [ ] The "construct the `Network` inside the bubble" requirement is confirmed and recorded for M4-1.
-- [ ] Tests pass on both Go 1.25 and 1.26 in CI.
+- [x] Every blocking point is enumerated in the test file, one test each.
+- [x] No blocked netchaos call parks on a mutex — verified by review and by a bubble-idleness test per blocking point.
+- [x] A test blocking on `Read`, then calling `synctest.Wait()`, observes the bubble reach idle.
+- [x] Same for `Accept`.
+- [x] A full dial → write → read → close cycle completes inside `synctest.Test` with no deadlock panic.
+- [x] No goroutine outlives the bubble.
+- [x] No package-level `sync.WaitGroup` exists in the package.
+- [x] The "construct the `Network` inside the bubble" requirement is confirmed and recorded for M4-1.
+- [x] Tests pass on both Go 1.25 and 1.26 in CI.
+
+**Decision:** the "construct the `Network` inside the bubble" requirement was already documented at `netchaos.go`'s `Network` godoc before M3-1 began; M3-1 verified it by test (every test in `synctest_test.go` constructs its `Network` inside the enclosing `synctest.Test`) rather than rewriting the paragraph, and records the M4-1 obligation to surface it in user-facing docs.
+
+**Decision:** the leak criterion is carried by `TestCloseWithInFlightWorkInBubble`, not by goroutine counting. `time.AfterFunc` spawns no goroutine until it fires, so `runtime.NumGoroutine` cannot observe an unstopped latency timer; `TestNoLatencyTimerLeaks` is retained as a backstop and its docstring says so explicitly.
 
 **Tests**
 - `TestBubbleIdleOnBlockedRead`, `TestBubbleIdleOnBlockedAccept`, `TestBubbleIdleOnBlockedWrite`
-- `TestFullCycleInBubble`
-- `TestNoGoroutinesOutliveBubble`
+- `TestBubbleIdleOnLatencyDelivery`, `TestBubbleIdleOnDeadlineWait`, `TestBubbleIdleOnPartitionDialWait`
+- `TestCloseWithInFlightWorkInBubble`, `TestFullCycleInBubble`
+- `TestNoGoroutinesOutliveBubble`, `TestNoLatencyTimerLeaks`
 - Verify: `go build ./... && go vet ./... && gofmt -l . && go test -race ./... && golangci-lint run`
 
 ---

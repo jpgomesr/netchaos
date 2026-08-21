@@ -11,9 +11,14 @@ import (
 // TestNoGoroutineLeaks drives a full dial/accept/write/read/close cycle,
 // including a deadline (so deadline.go's time.AfterFunc-backed goroutine is
 // actually exercised), and confirms goroutine count returns to its baseline
-// afterward. netchaos spawns no goroutine of its own except a deadline
-// timer's callback, which self-terminates once it fires or is stopped (see
-// Network's godoc) — this test is the audit that backs that claim.
+// afterward. netchaos spawns no goroutine of its own except two
+// time.AfterFunc callbacks (deadline.go and latency.go), each of which
+// self-terminates once it fires or is stopped (see Network's godoc) — this
+// test is the audit that backs that claim for the deadline timer.
+// TestNoLatencyTimerLeaks (synctest_test.go) is the equivalent audit for
+// the latency timer; TestCloseWithInFlightWorkInBubble (synctest_test.go)
+// is the stronger, bubble-based proof that a still-pending latency timer
+// never outlives its conn's Close.
 func TestNoGoroutineLeaks(t *testing.T) {
 	before := runtime.NumGoroutine()
 

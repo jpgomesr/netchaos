@@ -13,12 +13,16 @@ import (
 // (added in M2 — latency, packet loss, and partition are not yet
 // implemented).
 //
-// Network intentionally has no Close method in M1: every internal
-// goroutine netchaos spawns (only deadline.go's time.AfterFunc callbacks)
-// terminates on the close of the conn that owns it, so there is nothing for
-// a Network-wide Close to reap yet (see leak_test.go). Revisit this once a
-// milestone introduces a resource not scoped to a single conn — M2-2's
-// latency delivery timers are the likely trigger.
+// Network intentionally has no Close method: netchaos spawns no goroutines
+// of its own. The only asynchronous work is two time.AfterFunc callbacks —
+// a deadline timer (deadline.go) and a per-pipe latency delivery timer
+// (latency.go) — and both are owned by a single conn and stopped by
+// conn.Close/pipe.close, so nothing outlives the conn that created it and
+// there is nothing for a Network-wide Close to reap (see leak_test.go and
+// synctest_test.go). These callbacks are also the only place a
+// netchaos-internal goroutine acquires a sync.Mutex; the window is bounded
+// because no lock is ever held across a blocking operation. Revisit this
+// only if a resource appears that is not scoped to a single conn.
 //
 // A Network must be constructed inside the testing/synctest bubble that
 // will use it: synctest panics if a channel or timer created inside a
