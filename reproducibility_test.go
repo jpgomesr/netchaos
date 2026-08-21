@@ -216,7 +216,10 @@ func (ct canonicalTrace) diff(other canonicalTrace) string {
 	if len(other) < n {
 		n = len(other)
 	}
+	for i := 0; i < n; i++ {
+		if ct[i] != other[i] {
 			return fmt.Sprintf("line %d differs:\n  got:  %+v\n  want: %+v", i+1, ct[i], other[i])
+		}
 	}
 	if len(ct) != len(other) {
 		return fmt.Sprintf("trace lengths differ: got %d, want %d", len(ct), len(other))
