@@ -1,0 +1,23 @@
+# netchaos-trace v1
+# scenario=composed-basic seed=42
+# fields: ord side seq part drop drawn_ns eff_ns
+ord=0 side=dialer   seq=0 part=0 drop=0 drawn=2209754 eff=2209754
+ord=0 side=dialer   seq=1 part=0 drop=0 drawn=9261222 eff=9261222
+ord=0 side=dialer   seq=2 part=0 drop=0 drawn=14853444 eff=14853444
+ord=0 side=dialer   seq=3 part=0 drop=0 drawn=16797598 eff=16797598
+ord=0 side=dialer   seq=4 part=0 drop=0 drawn=15530998 eff=16797598
+ord=0 side=dialer   seq=5 part=0 drop=0 drawn=6118284 eff=16797598
+ord=0 side=dialer   seq=6 part=0 drop=1 drawn=3713260 eff=0
+ord=0 side=dialer   seq=7 part=0 drop=0 drawn=8632848 eff=16797598
+ord=0 side=dialer   seq=8 part=0 drop=0 drawn=18564485 eff=18564485
+ord=0 side=dialer   seq=9 part=0 drop=0 drawn=2352051 eff=18564485
+ord=0 side=dialer   seq=10 part=1 drop=0 drawn=0 eff=0
+ord=0 side=dialer   seq=11 part=1 drop=0 drawn=0 eff=0
+ord=0 side=dialer   seq=12 part=1 drop=0 drawn=0 eff=0
+ord=0 side=dialer   seq=13 part=1 drop=0 drawn=0 eff=0
+ord=0 side=dialer   seq=14 part=1 drop=0 drawn=0 eff=0
+ord=0 side=dialer   seq=15 part=1 drop=0 drawn=0 eff=0
+ord=0 side=dialer   seq=16 part=1 drop=0 drawn=0 eff=0
+ord=0 side=dialer   seq=17 part=1 drop=0 drawn=0 eff=0
+ord=0 side=dialer   seq=18 part=1 drop=0 drawn=0 eff=0
+ord=0 side=dialer   seq=19 part=1 drop=0 drawn=0 eff=0
