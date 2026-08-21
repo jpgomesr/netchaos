@@ -67,7 +67,7 @@ The consequence for netchaos: a `Read` waiting for data, an `Accept` waiting for
 
 ### M3-2 — Virtual-time latency tests
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** *Integration with `testing/synctest` for virtual time*
 **Depends on:** M2-2, M3-1
 **Blocks:** M3-4
@@ -87,17 +87,24 @@ Prove the value proposition in [03 — Architecture](../03-architecture.md#compo
 - `latency_synctest_test.go` (new)
 
 **Acceptance criteria**
-- [ ] A round trip with `WithLatency(d, d)` advances the bubble clock by exactly `d`.
-- [ ] A test with 30 s of configured virtual latency completes in negligible real time.
-- [ ] A `context.WithTimeout` shorter than the injected latency cancels; longer, and the call succeeds.
-- [ ] A conn read deadline shorter than the injected latency yields `os.ErrDeadlineExceeded`.
-- [ ] Multiple connections at different latencies interleave correctly in one bubble.
-- [ ] Tests pass on Go 1.25 and 1.26.
+- [x] A one-way delivery with `WithLatency(d, d)` advances the bubble clock by exactly `d`.
+- [x] A test with 30 s of configured virtual latency completes in negligible real time.
+- [x] A `context.WithTimeout` shorter than the injected latency cancels; longer, and the call succeeds.
+- [x] A conn read deadline shorter than the injected latency yields `os.ErrDeadlineExceeded`.
+- [x] Multiple connections at different latencies interleave correctly in one bubble.
+- [x] Tests pass on Go 1.25 and 1.26.
+
+**Decision:** "advances the bubble clock by exactly `d`" is asserted two ways. For a one-way delivery this criterion was already satisfied by `TestLatencyFixed` (`latency_test.go`, predates M3) — not duplicated here. Latency is per-direction, so a full round trip advances `2d`; that reading is new and covered by `TestRoundTripAdvancesTwiceLatency`.
+
+**Decision:** the conn-read-deadline-under-latency criterion was already fully covered, including the longer-deadline success case, by `TestLatencyVsReadDeadline` (`latency_test.go`, predates M3) — not duplicated here.
+
+**Decision:** the wall-clock cost assertion is taken **outside** the bubble (`TestLatencyCostsNoRealTime`) — inside one, `time.Since` reports virtual time and cannot demonstrate real-time cheapness. The bound is loose (<1s real for 30s virtual) because the claim is "virtual time is not real time," not a performance target.
 
 **Tests**
-- `TestLatencyCostsNoRealTime`, `TestLatencyAdvancesVirtualClockExactly`
-- `TestContextTimeoutUnderLatency`, `TestReadDeadlineUnderLatency`
+- `TestLatencyCostsNoRealTime`, `TestRoundTripAdvancesTwiceLatency`
+- `TestContextTimeoutUnderLatency`
 - `TestMultipleLatenciesInOneBubble`
+- (already covered pre-M3: `TestLatencyFixed`, `TestLatencyVsReadDeadline`, both in `latency_test.go`)
 - Verify: `go build ./... && go vet ./... && gofmt -l . && go test -race ./... && golangci-lint run`
 
 ---
