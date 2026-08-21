@@ -10,6 +10,7 @@ once the first release is tagged.
 
 - Core simulated transport: `Network`, `Dial`/`DialContext`, `Listen`, deadlines, and address/peer naming (M1).
 - Deterministic fault injection: seeded per-connection RNG streams, latency (`WithLatency`), packet loss (`WithPacketLoss`), and network partition (`WithPartition`, `Network.Partition`/`Heal`, `WithPeerName`), composed into a single evaluation order with option validation (M2).
+- `testing/synctest` integration and reproducibility (M3): verified bubble-compatibility of every blocking path, virtual-time latency tests proving injected latency costs no real wall-clock time, a fault-trace reproducibility harness with checked-in golden traces, and end-to-end scenarios for retry under packet loss, timeout/backoff under latency, circuit breaker across partition and heal, and multi-peer failover.
 - Project scaffolding: CI, linting, issue/PR templates, contributing/security/conduct policies.
 - Design documentation ([docs/](docs/README.md)) covering vision, architecture, API design, and scope.
 - Task breakdown ([docs/tasks/](docs/tasks/README.md)) sequencing the v1 scope into milestones.

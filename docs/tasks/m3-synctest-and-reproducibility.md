@@ -159,7 +159,7 @@ Turn the determinism contract in [04 — API Design](../04-api-design.md#determi
 
 ### M3-4 — End-to-end scenario tests
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** validates all six v1 checklist items together
 **Depends on:** M3-2, M3-3
 **Blocks:** M4-2
@@ -184,17 +184,24 @@ Three scenarios, each with a small in-test client implementing the behaviour und
 - `scenario_test.go` (new)
 
 **Acceptance criteria**
-- [ ] The retry-under-loss scenario passes and fails for the right reasons at both a moderate and a punishing loss rate.
-- [ ] The timeout-under-latency scenario asserts on virtual elapsed time.
-- [ ] The circuit-breaker scenario completes the full open → heal → close cycle on the same `Network` with no restart and no re-construction.
-- [ ] A three-peer failover scenario passes with one peer partitioned and the other reachable.
-- [ ] Every scenario is deterministic under M3-3.
-- [ ] The whole scenario suite runs in negligible real wall-clock time despite large configured latencies.
-- [ ] `-race` clean.
+- [x] The retry-under-loss scenario passes and fails for the right reasons at both a moderate and a punishing loss rate.
+- [x] The timeout-under-latency scenario asserts on virtual elapsed time.
+- [x] The circuit-breaker scenario completes the full open → heal → close cycle on the same `Network` with no restart and no re-construction.
+- [x] A three-peer failover scenario passes with one peer partitioned and the other reachable.
+- [x] Every scenario is deterministic under M3-3.
+- [x] The whole scenario suite runs in negligible real wall-clock time despite large configured latencies.
+- [x] `-race` clean.
+
+**Decision:** `TestCircuitBreakerScenario` (`partition_test.go`) and `TestRetrySucceedsUnderLoss` (`loss_test.go`) were moved here and grown to full M3-4 shape (fixed seed, run through the M3-3 harness, and — for the circuit breaker — a real closed/open/half-open state machine instead of an inline boolean). One home per scenario; both original files retain a one-line pointer.
+
+**Decision:** the punishing loss rate is `1.0`, not a value below it. Below 1.0 the exhaustion outcome is seed-dependent and brittle; at 1.0 every write is dropped by construction, so the test asserts the correct wrapped error (`os.ErrDeadlineExceeded`) rather than a probability.
+
+**Decision:** `backoffClient` (the timeout/backoff scenario) writes its request once and retries only the *read*, with a doubling deadline, rather than re-sending a fresh request each attempt. Re-sending while an earlier attempt's response is still in flight would leave that stale response sitting in the pipe for a later attempt's `Read` to consume by mistake — discovered empirically while writing `TestScenarioTimeoutAndBackoffUnderLatency`, whose first version silently accepted a stale echo and reported a successful round trip 600ms earlier than the real one. Retrying the read instead of the write sidesteps the whole class of bug, and still demonstrates docs/05's "does a context deadline propagate correctly through a slow simulated call" via `ctx.Deadline()` feeding `SetReadDeadline` directly.
 
 **Tests**
-- `TestScenarioRetryUnderPacketLoss`, `TestScenarioRetryExhaustsBudget`
+- `TestScenarioRetryUnderPacketLoss`, `TestScenarioRetryExhaustsBudget`, `TestScenarioRetryUnderLossGolden`
 - `TestScenarioTimeoutAndBackoffUnderLatency`
 - `TestScenarioCircuitBreakerPartitionHeal`
 - `TestScenarioFailoverBetweenPeers`
+- `TestScenariosAreReproducible`, `TestScenarioSuiteCostsNoRealTime`
 - Verify: `go build ./... && go vet ./... && gofmt -l . && go test -race ./... && golangci-lint run`

@@ -260,72 +260,11 @@ func TestPartitionConsumesNoRandomness(t *testing.T) {
 	}
 }
 
-func TestCircuitBreakerScenario(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		n := NewNetwork()
-		l, err := n.Listen("tcp", "server")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer func() { _ = l.Close() }()
-
-		accepted := make(chan net.Conn, 1)
-		go func() {
-			c, err := l.Accept()
-			if err == nil {
-				accepted <- c
-			}
-		}()
-
-		ctx := WithPeerName(context.Background(), "client")
-		client, err := n.DialContext(ctx, "tcp", "server")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer func() { _ = client.Close() }()
-		server := <-accepted
-		defer func() { _ = server.Close() }()
-
-		go func() {
-			buf := make([]byte, 4)
-			for {
-				nr, err := server.Read(buf)
-				if err != nil {
-					return
-				}
-				if _, err := server.Write(buf[:nr]); err != nil {
-					return
-				}
-			}
-		}()
-
-		ping := func() error {
-			if err := client.SetDeadline(time.Now().Add(50 * time.Millisecond)); err != nil {
-				return err
-			}
-			if _, err := client.Write([]byte("ping")); err != nil {
-				return err
-			}
-			buf := make([]byte, 4)
-			_, err := client.Read(buf)
-			return err
-		}
-
-		if err := ping(); err != nil {
-			t.Fatalf("initial ping failed: %v", err)
-		}
-
-		n.Partition("client", "server")
-		if err := ping(); err == nil {
-			t.Fatal("ping succeeded while partitioned, want a deadline failure (circuit breaker should trip here)")
-		}
-
-		n.Heal("client", "server")
-		if err := ping(); err != nil {
-			t.Fatalf("ping after Heal failed: %v (circuit breaker should recover without a re-dial)", err)
-		}
-	})
-}
+// TestCircuitBreakerScenario was grown into
+// TestScenarioCircuitBreakerPartitionHeal (scenario_test.go, M3-4) and moved
+// there -- see that file for the full M3-4 shape (a real closed/open/
+// half-open breaker, fixed seed, run through the M3-3 reproducibility
+// harness).
 
 func TestPartitionRace(t *testing.T) {
 	n := NewNetwork()
