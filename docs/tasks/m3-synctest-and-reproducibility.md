@@ -111,7 +111,7 @@ Prove the value proposition in [03 — Architecture](../03-architecture.md#compo
 
 ### M3-3 — Reproducibility harness
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** *Seeded randomness for reproducible failure scenarios* + *Integration with `testing/synctest`* ([06](../06-scope-and-roadmap.md))
 **Depends on:** M2-1, M2-5, M3-1
 **Blocks:** M3-4
@@ -133,19 +133,25 @@ Turn the determinism contract in [04 — API Design](../04-api-design.md#determi
 - `testdata/traces/*.golden` (new)
 
 **Acceptance criteria**
-- [ ] Repeated runs of the same scenario with the same seed produce identical traces.
-- [ ] Identical traces hold for a scenario with N concurrent goroutines, across N repetitions.
-- [ ] Different seeds produce different traces (sensitivity check).
-- [ ] Golden traces are checked in and asserted against, on both Go 1.25 and 1.26.
-- [ ] The regeneration procedure for golden files is documented in the test file (e.g. a `-update` flag).
-- [ ] The failure → seed → replay workflow is demonstrated by a test.
-- [ ] The harness exercises all three faults composed, not just one.
-- [ ] `-race` clean; the concurrent case runs under `-race` specifically.
+- [x] Repeated runs of the same scenario with the same seed produce identical traces.
+- [x] Identical traces hold for a scenario with N concurrent goroutines, across N repetitions.
+- [x] Different seeds produce different traces (sensitivity check).
+- [x] Golden traces are checked in and asserted against, on both Go 1.25 and 1.26.
+- [x] The regeneration procedure for golden files is documented in the test file (e.g. a `-update` flag).
+- [x] The failure → seed → replay workflow is demonstrated by a test.
+- [x] The harness exercises all three faults composed, not just one.
+- [x] `-race` clean; the concurrent case runs under `-race` specifically.
+
+**Decision:** the "reporting half" of the failure → seed → replay loop is **moot**. M1-5 shipped a fixed `defaultSeed` with no accessor, by design (`NewNetwork`'s godoc) — there is nothing to report from a failing run and no recovery step to demonstrate. `TestReplayFromReportedSeed` therefore reduces to explicit-`WithSeed` replay: a scenario run under a given seed reproduces byte-identically when re-run with that same seed, because `WithSeed`'s argument *is* the reporting mechanism.
+
+**Decision:** golden traces serialize durations as integer nanoseconds, never `time.Duration.String()`, removing formatting from the cross-version stability surface. Traces are generated and asserted **inside** a `synctest` bubble in every case, including the golden-file test: `faultEvent.effective` (`faults.go`'s pending-queue clamp) depends on the real elapsed time between two writes whenever clamping fires, which is deterministic inside a bubble and wall-clock noise outside one.
+
+**Decision:** the harness's `scenario` type merges what the task originally sketched as separate `build`/`run` closures into a single closure that dials (sequentially) and drives traffic, returning every conn end for capture. Nothing in these scenarios benefits from the split, and it would force an awkward choice about how a `run` closure reaches the `*Network` a dynamic `Partition`/`Heal` call needs — `scenarioComposedBasic` toggles a partition mid-scenario, which a single closure captures naturally via its own lexical scope.
 
 **Tests**
 - `TestSameSeedSameTrace`, `TestSameSeedSameTraceUnderConcurrency`
 - `TestDifferentSeedDifferentTrace`
-- `TestGoldenTraces`
+- `TestGoldenTraces` (with `TestComposedBasicExercisesAllThreeFaults` and `TestClampingScenarioExercisesClampPath` as sensitivity checks on the scenarios golden files are built from)
 - `TestReplayFromReportedSeed`
 - Verify: `go build ./... && go vet ./... && gofmt -l . && go test -race ./... && golangci-lint run`
 

@@ -1,0 +1,33 @@
+# netchaos-trace v1
+# scenario=clamping seed=7
+# fields: ord side seq part drop drawn_ns eff_ns
+ord=0 side=dialer   seq=0 part=0 drop=0 drawn=277564337 eff=277564337
+ord=0 side=dialer   seq=1 part=0 drop=0 drawn=204035370 eff=277564337
+ord=0 side=dialer   seq=2 part=0 drop=0 drawn=20921948 eff=277564337
+ord=0 side=dialer   seq=3 part=0 drop=0 drawn=128632817 eff=277564337
+ord=0 side=dialer   seq=4 part=0 drop=0 drawn=294206793 eff=294206793
+ord=0 side=dialer   seq=5 part=0 drop=0 drawn=210435552 eff=294206793
+ord=0 side=dialer   seq=6 part=0 drop=0 drawn=153120264 eff=294206793
+ord=0 side=dialer   seq=7 part=0 drop=0 drawn=60070469 eff=294206793
+ord=0 side=dialer   seq=8 part=0 drop=0 drawn=93091580 eff=294206793
+ord=0 side=dialer   seq=9 part=0 drop=0 drawn=374290014 eff=374290014
+ord=0 side=dialer   seq=10 part=0 drop=0 drawn=225033426 eff=374290014
+ord=0 side=dialer   seq=11 part=0 drop=0 drawn=389652580 eff=389652580
+ord=0 side=dialer   seq=12 part=0 drop=0 drawn=230337004 eff=389652580
+ord=0 side=dialer   seq=13 part=0 drop=0 drawn=114406040 eff=389652580
+ord=0 side=dialer   seq=14 part=0 drop=0 drawn=427237316 eff=427237316
+ord=0 side=dialer   seq=15 part=0 drop=0 drawn=383781155 eff=427237316
+ord=0 side=dialer   seq=16 part=0 drop=0 drawn=349987406 eff=427237316
+ord=0 side=dialer   seq=17 part=0 drop=0 drawn=144878189 eff=427237316
+ord=0 side=dialer   seq=18 part=0 drop=0 drawn=393027672 eff=427237316
+ord=0 side=dialer   seq=19 part=0 drop=0 drawn=138438580 eff=427237316
+ord=0 side=dialer   seq=20 part=0 drop=0 drawn=137763199 eff=427237316
+ord=0 side=dialer   seq=21 part=0 drop=0 drawn=130215523 eff=427237316
+ord=0 side=dialer   seq=22 part=0 drop=0 drawn=106060765 eff=427237316
+ord=0 side=dialer   seq=23 part=0 drop=0 drawn=170827757 eff=427237316
+ord=0 side=dialer   seq=24 part=0 drop=0 drawn=85961120 eff=427237316
+ord=0 side=dialer   seq=25 part=0 drop=0 drawn=79248106 eff=427237316
+ord=0 side=dialer   seq=26 part=0 drop=0 drawn=460580646 eff=460580646
+ord=0 side=dialer   seq=27 part=0 drop=0 drawn=405082354 eff=460580646
+ord=0 side=dialer   seq=28 part=0 drop=0 drawn=41273879 eff=460580646
+ord=0 side=dialer   seq=29 part=0 drop=0 drawn=362627875 eff=460580646
