@@ -403,11 +403,19 @@ func scenarioConcurrentIO(writesPerDirection int) scenario {
 			client1, server1 := dial("client-1", "server-1")
 			client2, server2 := dial("client-2", "server-2")
 
+			// Errors from these goroutines are collected on errs and reported
+			// by the calling (test) goroutine after wg.Wait(), never via
+			// t.Fatal from inside the goroutine itself: t.Fatal calls
+			// runtime.Goexit, which only unwinds the goroutine that calls
+			// it, not the test -- a failure reported this way could be
+			// silently lost instead of failing the test (staticcheck SA2002).
+			errs := make(chan error, 8)
 			writeSeq := func(wg *sync.WaitGroup, w net.Conn, tag byte) {
 				defer wg.Done()
 				for i := 0; i < writesPerDirection; i++ {
 					if _, err := w.Write([]byte{tag, byte(i % 256)}); err != nil {
-						t.Fatal(err)
+						errs <- err
+						return
 					}
 				}
 			}
@@ -416,7 +424,8 @@ func scenarioConcurrentIO(writesPerDirection int) scenario {
 				buf := make([]byte, 2)
 				for i := 0; i < writesPerDirection; i++ {
 					if _, err := r.Read(buf); err != nil {
-						t.Fatal(err)
+						errs <- err
+						return
 					}
 				}
 			}
@@ -432,6 +441,10 @@ func scenarioConcurrentIO(writesPerDirection int) scenario {
 			go writeSeq(&wg, server2, 0x21)
 			go readSeq(&wg, client2)
 			wg.Wait()
+			close(errs)
+			for err := range errs {
+				t.Fatal(err)
+			}
 
 			return []net.Conn{client1, server1, client2, server2}
 		},
