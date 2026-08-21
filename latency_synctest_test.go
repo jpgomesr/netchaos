@@ -76,8 +76,8 @@ func TestRoundTripAdvancesTwiceLatency(t *testing.T) {
 			t.Fatal(err)
 		}
 		buf := make([]byte, 4)
-		if _, err := server.Read(buf); err != nil {
-			t.Fatal(err)
+		if n, err := server.Read(buf); err != nil || n != 4 || string(buf[:n]) != "ping" {
+			t.Fatalf("server.Read = (%d, %q, %v), want (4, %q, nil)", n, buf[:n], err, "ping")
 		}
 		if _, err := server.Write([]byte("pong")); err != nil {
 			t.Fatal(err)

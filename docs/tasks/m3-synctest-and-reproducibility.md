@@ -87,7 +87,7 @@ Prove the value proposition in [03 — Architecture](../03-architecture.md#compo
 - `latency_synctest_test.go` (new)
 
 **Acceptance criteria**
-- [x] A round trip with `WithLatency(d, d)` advances the bubble clock by exactly `d`.
+- [x] A one-way delivery with `WithLatency(d, d)` advances the bubble clock by exactly `d`.
 - [x] A test with 30 s of configured virtual latency completes in negligible real time.
 - [x] A `context.WithTimeout` shorter than the injected latency cancels; longer, and the call succeeds.
 - [x] A conn read deadline shorter than the injected latency yields `os.ErrDeadlineExceeded`.
