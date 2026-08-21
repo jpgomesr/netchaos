@@ -1,5 +1,0 @@
-# netchaos-trace v1
-# scenario=retry-under-loss seed=1
-# fields: ord side seq part drop drawn_ns eff_ns
-ord=0 side=dialer   seq=0 part=0 drop=0 drawn=0 eff=0
-ord=0 side=acceptor seq=0 part=0 drop=0 drawn=0 eff=0

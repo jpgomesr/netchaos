@@ -97,13 +97,49 @@ func scenarioRetryUnderLoss(rate float64, budget int) scenario {
 	}
 }
 
-// TestScenarioRetryUnderPacketLoss grows the moved TestRetrySucceedsUnderLoss:
-// rate and seed are unchanged from that test (already empirically known to
-// succeed well within budget), so no new guessing is introduced here.
+func scenarioRetryExhaustsBudget(rate float64, budget int) scenario {
+	return scenario{
+		name: "retry-exhausts-budget",
+		fn: func(t *testing.T, seed int64) []net.Conn {
+			n := NewNetwork(WithSeed(seed), WithPacketLoss(rate))
+			client, server := dialNamedPair(t, n)
+			startEcho(t, server)
+
+			c := retryClient{budget: budget}
+			err := c.send(client, []byte("ping"))
+			if err == nil {
+				t.Fatalf("retry succeeded despite %v packet loss; want the retry budget to exhaust", rate)
+			}
+			if !errors.Is(err, os.ErrDeadlineExceeded) {
+				t.Fatalf("exhausted-budget error = %v, want it to wrap os.ErrDeadlineExceeded", err)
+			}
+			return []net.Conn{client, server}
+		},
+	}
+}
+
 func TestScenarioRetryUnderPacketLoss(t *testing.T) {
+	const seed = 2
+	var trace canonicalTrace
 	synctest.Test(t, func(t *testing.T) {
-		scenarioRetryUnderLoss(0.3, 100).fn(t, 1)
+		trace = runScenario(t, scenarioRetryUnderLoss(0.3, 100), seed)
 	})
+
+	var dialerWrites canonicalTrace
+	for _, line := range trace {
+		if line.side == sideDialer {
+			dialerWrites = append(dialerWrites, line)
+		}
+	}
+	if len(dialerWrites) < 2 {
+		t.Fatalf("expected at least 2 client attempts, got %d", len(dialerWrites))
+	}
+	if !dialerWrites[0].dropped {
+		t.Fatalf("first client attempt drop = %v, want true", dialerWrites[0].dropped)
+	}
+	if dialerWrites[1].dropped {
+		t.Fatalf("second client attempt drop = %v, want false", dialerWrites[1].dropped)
+	}
 }
 
 // TestScenarioRetryExhaustsBudget uses rate 1.0, not a value below it: below
@@ -125,6 +161,16 @@ func TestScenarioRetryExhaustsBudget(t *testing.T) {
 		if !errors.Is(err, os.ErrDeadlineExceeded) {
 			t.Fatalf("exhausted-budget error = %v, want it to wrap os.ErrDeadlineExceeded (every attempt should time out waiting for an echo that never arrives)", err)
 		}
+
+		trace := captureTrace([]net.Conn{client})
+		if len(trace) != c.budget {
+			t.Fatalf("client attempts = %d, want exactly retry budget %d", len(trace), c.budget)
+		}
+		for i, line := range trace {
+			if !line.dropped {
+				t.Fatalf("attempt %d dropped = %v, want true at rate 1.0", i, line.dropped)
+			}
+		}
 	})
 }
 
@@ -135,7 +181,7 @@ func TestScenarioRetryExhaustsBudget(t *testing.T) {
 //	go test -run TestScenarioRetryUnderLossGolden -update .
 func TestScenarioRetryUnderLossGolden(t *testing.T) {
 	sc := scenarioRetryUnderLoss(0.3, 100)
-	const seed = 1
+	const seed = 2
 
 	var trace canonicalTrace
 	synctest.Test(t, func(t *testing.T) {
@@ -244,10 +290,20 @@ func scenarioTimeoutBackoffUnderLatency(latency, initialTimeout time.Duration, m
 func TestScenarioTimeoutAndBackoffUnderLatency(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const latency = 150 * time.Millisecond
-		n := NewNetwork(WithSeed(1), WithLatency(latency, latency))
-		client, server := dialNamedPair(t, n)
-		startEcho(t, server)
+		makePair := func() (net.Conn, net.Conn) {
+			n := NewNetwork(WithSeed(1), WithLatency(latency, latency))
+			client, server := dialNamedPair(t, n)
+			startEcho(t, server)
+			return client, server
+		}
 
+		clientFail, _ := makePair()
+		failOnly := backoffClient{initialTimeout: 120 * time.Millisecond, maxAttempts: 1}
+		if _, err := failOnly.send(clientFail, []byte("ping")); !errors.Is(err, os.ErrDeadlineExceeded) {
+			t.Fatalf("single-attempt timeout/backoff error = %v, want it to wrap os.ErrDeadlineExceeded", err)
+		}
+
+		client, _ := makePair()
 		c := backoffClient{initialTimeout: 120 * time.Millisecond, maxAttempts: 2}
 		elapsed, err := c.send(client, []byte("ping"))
 		if err != nil {
@@ -452,6 +508,7 @@ func TestScenarioFailoverBetweenPeers(t *testing.T) {
 func TestScenariosAreReproducible(t *testing.T) {
 	scenarios := []scenario{
 		scenarioRetryUnderLoss(0.3, 100),
+		scenarioRetryExhaustsBudget(1.0, 5),
 		scenarioTimeoutBackoffUnderLatency(150*time.Millisecond, 120*time.Millisecond, 2),
 		scenarioCircuitBreakerPartitionHeal(),
 		scenarioFailoverBetweenPeers(),

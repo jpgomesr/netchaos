@@ -88,7 +88,7 @@ To avoid the trap of "framework covering everything" — the same trap that turn
 - [x] Packet loss (probabilistic, seeded/deterministic)
 - [x] Network partition (drop all traffic between two simulated peers)
 - [x] Seeded randomness for reproducible failure scenarios
-- [ ] Integration with `testing/synctest` for virtual time
+- [x] Integration with `testing/synctest` for virtual time
 
 Explicitly out of scope for v1: reordering, disk fault injection, full syscall simulation, UDP support, protocol-level fault injection above the connection layer. These may be revisited once the core is solid — see [docs/06 — Scope & Roadmap](docs/06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1).
 
