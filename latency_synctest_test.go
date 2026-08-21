@@ -115,7 +115,7 @@ func TestContextTimeoutUnderLatency(t *testing.T) {
 		const latency = 100 * time.Millisecond
 		_, client, server := newLatencyTestNetwork(t, latency, latency)
 
-		attempt := func(timeout time.Duration) (elapsed time.Duration, ctxErr error, join func() readResult) {
+		attempt := func(timeout time.Duration) (elapsed time.Duration, join func() readResult, ctxErr error) {
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
 
@@ -132,15 +132,15 @@ func TestContextTimeoutUnderLatency(t *testing.T) {
 
 			select {
 			case r := <-done:
-				return time.Since(start), nil, func() readResult { return r }
+				return time.Since(start), func() readResult { return r }, nil
 			case <-ctx.Done():
-				return time.Since(start), ctx.Err(), func() readResult { return <-done }
+				return time.Since(start), func() readResult { return <-done }, ctx.Err()
 			}
 		}
 
 		// Timeout shorter than the latency: cancels, then the read still
 		// completes on its own once the latency elapses.
-		elapsed, ctxErr, join := attempt(50 * time.Millisecond)
+		elapsed, join, ctxErr := attempt(50 * time.Millisecond)
 		if !errors.Is(ctxErr, context.DeadlineExceeded) {
 			t.Fatalf("ctxErr = %v, want context.DeadlineExceeded", ctxErr)
 		}
@@ -153,7 +153,7 @@ func TestContextTimeoutUnderLatency(t *testing.T) {
 
 		// Timeout longer than the latency: succeeds, elapsed equals the
 		// latency rather than the timeout.
-		elapsed, ctxErr, join = attempt(200 * time.Millisecond)
+		elapsed, join, ctxErr = attempt(200 * time.Millisecond)
 		if ctxErr != nil {
 			t.Fatalf("ctxErr = %v, want nil (timeout exceeds latency)", ctxErr)
 		}
