@@ -216,65 +216,9 @@ func readFull(c net.Conn, buf []byte) (int, error) {
 	return total, nil
 }
 
-func TestRetrySucceedsUnderLoss(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		n := NewNetwork(WithSeed(1), WithPacketLoss(0.3))
-		l, err := n.Listen("tcp", "server")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer func() { _ = l.Close() }()
-
-		accepted := make(chan net.Conn, 1)
-		go func() {
-			c, err := l.Accept()
-			if err == nil {
-				accepted <- c
-			}
-		}()
-
-		client, err := n.Dial("tcp", "server")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer func() { _ = client.Close() }()
-		server := <-accepted
-		defer func() { _ = server.Close() }()
-
-		go func() {
-			buf := make([]byte, 4)
-			for {
-				nr, err := server.Read(buf)
-				if err != nil {
-					return
-				}
-				if _, err := server.Write(buf[:nr]); err != nil {
-					return
-				}
-			}
-		}()
-
-		const maxAttempts = 100
-		succeeded := false
-		for attempt := 0; attempt < maxAttempts && !succeeded; attempt++ {
-			if _, err := client.Write([]byte("ping")); err != nil {
-				t.Fatal(err)
-			}
-			if err := client.SetReadDeadline(time.Now().Add(50 * time.Millisecond)); err != nil {
-				t.Fatal(err)
-			}
-			buf := make([]byte, 4)
-			nr, err := client.Read(buf)
-			if err == nil && string(buf[:nr]) == "ping" {
-				succeeded = true
-			}
-		}
-
-		if !succeeded {
-			t.Fatalf("retry loop did not complete a round trip within %d attempts at a 0.3 loss rate", maxAttempts)
-		}
-	})
-}
+// TestRetrySucceedsUnderLoss was grown into TestScenarioRetryUnderPacketLoss
+// (scenario_test.go, M3-4) and moved there -- see that file for the full
+// M3-4 shape (fixed seed, run through the M3-3 reproducibility harness).
 
 func TestLossIsolatedPerConnection(t *testing.T) {
 	const seed = int64(55)
