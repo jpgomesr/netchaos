@@ -480,7 +480,9 @@ func TestScenarioSuiteCostsNoRealTime(t *testing.T) {
 	wallStart := time.Now()
 
 	synctest.Test(t, func(t *testing.T) { scenarioRetryUnderLoss(0.3, 100).fn(t, 1) })
-	synctest.Test(t, func(t *testing.T) { scenarioTimeoutBackoffUnderLatency(150*time.Millisecond, 120*time.Millisecond, 2).fn(t, 1) })
+	synctest.Test(t, func(t *testing.T) {
+		scenarioTimeoutBackoffUnderLatency(150*time.Millisecond, 120*time.Millisecond, 2).fn(t, 1)
+	})
 	synctest.Test(t, func(t *testing.T) { scenarioCircuitBreakerPartitionHeal().fn(t, 1) })
 	synctest.Test(t, func(t *testing.T) { scenarioFailoverBetweenPeers().fn(t, 1) })
 
