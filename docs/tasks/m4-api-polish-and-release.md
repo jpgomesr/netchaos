@@ -12,7 +12,7 @@
 
 ### M4-1 — Godoc pass on the public surface
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** release readiness for all six items
 **Depends on:** M2-6, M3-1
 **Blocks:** M4-2
@@ -38,14 +38,14 @@ Document every exported identifier to the standard a library people `go get` req
 - `errors.go` — sentinel docs
 
 **Acceptance criteria**
-- [ ] Every exported identifier has a doc comment starting with its own name, per Go convention.
-- [ ] `go doc github.com/jpgomesr/netchaos` reads as a usable introduction on its own.
-- [ ] The synctest constraints above appear in the package doc.
-- [ ] `WithSeed`'s doc states the determinism guarantee *and* its limits.
-- [ ] Each option documents its valid range and out-of-range behaviour.
-- [ ] Fault composition order is discoverable from godoc alone.
-- [ ] `golangci-lint run` is clean (`staticcheck` flags malformed doc comments).
-- [ ] No doc comment describes behaviour that is not implemented.
+- [x] Every exported identifier has a doc comment starting with its own name, per Go convention.
+- [x] `go doc github.com/jpgomesr/netchaos` reads as a usable introduction on its own.
+- [x] The synctest constraints above appear in the package doc.
+- [x] `WithSeed`'s doc states the determinism guarantee *and* its limits.
+- [x] Each option documents its valid range and out-of-range behaviour.
+- [x] Fault composition order is discoverable from godoc alone.
+- [x] `golangci-lint run` is clean (`staticcheck` flags malformed doc comments) — verified in CI, not available locally on this machine.
+- [x] No doc comment describes behaviour that is not implemented.
 
 **Tests**
 - Not test-driven; verified by reading `go doc -all`.

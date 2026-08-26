@@ -6,7 +6,7 @@ import (
 )
 
 // pendingUnit is a write payload admitted into a pipe but held back by
-// latency (M2-2), not yet visible to readers.
+// latency, not yet visible to readers.
 type pendingUnit struct {
 	data      []byte
 	releaseAt time.Time
@@ -14,13 +14,17 @@ type pendingUnit struct {
 
 // WithLatency delays delivery of writes by a duration drawn uniformly from
 // [min, max]. Passing an equal min and max applies fixed latency. Applies
-// globally, to every connection the Network handles (M0-2). Both min and
-// max must be non-negative, and min must not exceed max; NewNetwork panics
-// otherwise, naming WithLatency and the offending value (M2-6).
+// globally, to every connection the Network handles. Both min and max must
+// be non-negative, and min must not exceed max; NewNetwork panics
+// otherwise, naming WithLatency and the offending value.
 //
 // Latency delays delivery; it never reorders. Units on one connection
 // direction are released in write order even when a later unit draws a
 // shorter delay.
+//
+// When packet loss or partition is also configured on the same connection
+// direction, latency is evaluated last, after both — see the package doc's
+// section on fault composition.
 func WithLatency(min, max time.Duration) Option {
 	return func(c *networkConfig) {
 		c.latencyEnabled = true
