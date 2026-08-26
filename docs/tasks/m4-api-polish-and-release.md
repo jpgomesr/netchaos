@@ -168,7 +168,7 @@ Landed in the same PR as M4-3, since both checklists were already ticked and mat
 
 ### M4-5 — Changelog entry and `v0.1.0` tag
 
-**Status:** todo
+**Status:** in progress — release PR prepared; tag push and post-tag verification are a maintainer handoff (see below).
 **Roadmap item:** all six
 **Depends on:** M4-4
 **Blocks:** —
@@ -189,13 +189,13 @@ Cut the first release. Until a version is tagged, `go get github.com/jpgomesr/ne
 - `README.md` — an installation section with the minimum Go version, if not already present
 
 **Acceptance criteria**
-- [ ] `CHANGELOG.md` has a complete, dated `v0.1.0` entry.
-- [ ] The Go 1.25 minimum is stated in both `CHANGELOG.md` and `README.md`, with `testing/synctest` given as the reason.
-- [ ] The version number is decided and justified in the changelog.
-- [ ] The tag is pushed from `main` after the release PR merges — never by pushing directly to `main` (`AGENTS.md`).
-- [ ] pkg.go.dev shows the tagged version with rendered godoc and examples.
-- [ ] A scratch module outside the repo can `go get` the tag and run an example successfully.
-- [ ] CI is green on the tagged commit for both Go 1.25 and 1.26.
+- [x] `CHANGELOG.md` has a complete, dated `v0.1.0` entry.
+- [x] The Go 1.25 minimum is stated in both `CHANGELOG.md` and `README.md`, with `testing/synctest` given as the reason.
+- [x] The version number is decided and justified in the changelog.
+- [ ] The tag is pushed from `main` after the release PR merges — never by pushing directly to `main` (`AGENTS.md`). **Maintainer action**, not taken by this PR — the branch protection / never-push-to-main rule means tagging is the maintainer's call, done after merge.
+- [ ] pkg.go.dev shows the tagged version with rendered godoc and examples. **Verify after tagging.**
+- [ ] A scratch module outside the repo can `go get` the tag and run an example successfully. **Verify after tagging** — impossible before the tag exists and is fetchable.
+- [ ] CI is green on the tagged commit for both Go 1.25 and 1.26. **Verify after tagging.**
 
 **Tests**
 - The external-consumption check is the real test: fresh directory, `go mod init`, `go get github.com/jpgomesr/netchaos@v0.1.0`, compile and run an example.
