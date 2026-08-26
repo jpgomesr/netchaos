@@ -1,6 +1,6 @@
-# Task breakdown — netchaos v1
+# Task breakdown — netchaos v1 and beyond
 
-> **Status: historical record.** This folder broke the v1 scope into executable tasks and sequences how v1 is actually being built; M0 through M3 are done, and M4 (release) is under way — see each milestone file's own task statuses for the current state. It remains useful as the record of what was decided, in what order, and why — not as a forward-looking plan.
+> **Status: M0–M4 (v1) are a historical record; M5 is active.** This folder broke the v1 scope into executable tasks and sequences how v1 was actually built — M0 through M4 are done, `v0.1.0` is tagged and pushed, and that part of the folder is a record of what was decided, in what order, and why, not a forward-looking plan. [M5 — v0.1.0 hardening & v0.2.0 groundwork](m5-hardening-and-ergonomics.md) is the first milestone here that *is* forward-looking: closing out release verification and doing the ergonomics/process groundwork that's safe to do before any v0.2.0 scope decision is made. See each milestone file's own task statuses for the current state.
 
 ## What this is
 
@@ -17,8 +17,9 @@
 | [M2 — Determinism & the three faults](m2-determinism-and-faults.md) | Latency injection · Packet loss · Network partition · Seeded randomness | Seeded randomness is the *input* to latency and loss, so it lands first **inside** this milestone rather than after the faults that consume it. |
 | [M3 — synctest & reproducibility](m3-synctest-and-reproducibility.md) | Integration with `testing/synctest` for virtual time | Proves the two properties the library is sold on: latency costs no real wall-clock time, and a seed reproduces a failure exactly. |
 | [M4 — API polish & release](m4-api-polish-and-release.md) | *(release of all six)* | Godoc, runnable examples, flipping the design-stage status banners, tagging `v0.1.0`. |
+| [M5 — v0.1.0 hardening & v0.2.0 groundwork](m5-hardening-and-ergonomics.md) | *(none — post-v1)* | Not part of the v1 checklist. Closes out `M4-5`'s post-tag verification and does the ergonomics/process groundwork that's safe before any v0.2.0 scope decision — see the file's own banner for what it deliberately excludes. |
 
-All six checklist lines from [06 — Scope & Roadmap](../06-scope-and-roadmap.md) appear exactly once in the table above.
+All six checklist lines from [06 — Scope & Roadmap](../06-scope-and-roadmap.md) appear exactly once in the table above; `M5` covers no checklist line, since v1's checklist is closed.
 
 ### A note on M3's real size
 
@@ -26,7 +27,7 @@ All six checklist lines from [06 — Scope & Roadmap](../06-scope-and-roadmap.md
 
 ## Dependency order
 
-Milestones gate each other in order — M0 → M1 → M2 → M3 → M4 — and within that, these are the exact edges. Each task file repeats them as its own `Depends on:` / `Blocks:` lines; if the two ever disagree, the task file is authoritative.
+Milestones gate each other in order — M0 → M1 → M2 → M3 → M4 → M5 — and within that, these are the exact edges. Each task file repeats them as its own `Depends on:` / `Blocks:` lines; if the two ever disagree, the task file is authoritative.
 
 ```
 M0   M0-1, M0-2      ─▶ M0-5
@@ -51,6 +52,9 @@ M3   M1-8, M2-5      ─▶ M3-1
 
 M4   M2-6, M3-1      ─▶ M4-1
      M3-4, M4-1      ─▶ M4-2 ─▶ M4-3 ─▶ M4-4 ─▶ M4-5
+
+M5   M4-5            ─▶ M5-1
+     (no code dependency) ─▶ M5-2, M5-3
 ```
 
 Note that **partition (M2-4) does not depend on the RNG task (M2-1)**. A partition is binary, not probabilistic, and M2-4 requires it to consume no random draws at all — otherwise partitioning one peer pair would shift the fault sequence on unrelated connections. It hangs off M1, not off M2-1.
@@ -90,4 +94,4 @@ Git workflow is unchanged: Conventional Commits, explicit `git add <path>`, bran
 
 ## On GitHub issues
 
-These tasks are shaped so they map onto issues one-to-one if that is wanted later. **No issues are being created from this document.** `AGENTS.md` notes the repo deliberately has only `design-feedback` and `use-case-scenario` forms, with no `bug`/`enhancement` workflow yet — introducing one is a decision for the maintainer, not a side effect of this breakdown.
+These tasks are shaped so they map onto issues one-to-one if that is wanted later. **No issues are being created from this document.** `AGENTS.md` notes the repo deliberately has only `design-feedback` and `use-case-scenario` forms, with no `bug`/`enhancement` workflow yet — introducing one is a decision for the maintainer, not a side effect of this breakdown. [M5-3](m5-hardening-and-ergonomics.md#m5-3--decide-on-bugenhancement-issue-template-forms) is where that decision is now tracked.
