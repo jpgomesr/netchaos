@@ -1,6 +1,6 @@
 # 05 — Fault Injection
 
-> **Status: implemented.** Latency, packet loss, and partition (below) are implemented as of M2-2/M2-3/M2-4, and compose correctly together as of M2-5. See [04 — API Design](04-api-design.md) for the configuration surface.
+> **Status: implemented.** Latency, packet loss, and partition (below) are implemented, tested, and compose correctly together. See [04 — API Design](04-api-design.md) for the configuration surface.
 
 netchaos's v1 scope (per the root README's checklist) covers three fault categories: latency, packet loss, and partition. Each connection direction draws from its own seeded stream, derived from the `Network`'s master seed (see [04 — API Design § Determinism contract](04-api-design.md#determinism-contract) and [03 — Architecture](03-architecture.md#fault-injection-layer)), which is what makes an entire test run reproducible from a single seed value without one connection's fault sequence depending on how the scheduler interleaved it with another.
 

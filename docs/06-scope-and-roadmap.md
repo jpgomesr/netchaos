@@ -19,20 +19,23 @@ The operating principle: **ship a narrow, solid core first** (simulated TCP-shap
 - [x] Seeded randomness for reproducible failure scenarios
 - [x] Integration with `testing/synctest` for virtual time
 
-Each item is covered in depth elsewhere: the connection/listener simulation and `synctest` integration in [03 — Architecture](03-architecture.md), the fault mechanics in [05 — Fault Injection](05-fault-injection.md), and the proposed configuration surface in [04 — API Design](04-api-design.md).
+Each item is covered in depth elsewhere: the connection/listener simulation and `synctest` integration in [03 — Architecture](03-architecture.md), the fault mechanics in [05 — Fault Injection](05-fault-injection.md), and the configuration surface in [04 — API Design](04-api-design.md).
 
 ## Explicitly out of scope for v1
 
-The README lists most of these directly; reordering was an open question resolved by [M0-1](tasks/m0-decisions-and-foundations.md#m0-1--resolve-whether-reordering-is-in-v1):
+The README lists most of these directly; reordering was an open question resolved by [M0-1](tasks/m0-decisions-and-foundations.md#m0-1--resolve-whether-reordering-is-in-v1). Now that v1 has shipped, the precondition for revisiting any of these — "once the core is solid" — holds; the two items below genuinely are open for post-v1 consideration, while the rest are excluded on a design principle that doesn't change with time:
 
-- **Reordering** — considered for v1 (the README's introductory prose used to list it as a fault type while the checklist above never did) and decided out. If picked up post-v1, the mechanic would be: instead of delivering queued writes to the other peer strictly in the order they were written, the fault-injection layer holds a small window of pending writes and delivers them in a seeded-random permutation — meaningful primarily for protocols/clients that assume in-order delivery over what they believe is a reliable stream, a stronger assumption than TCP itself actually guarantees is preserved end-to-end at the application level in all real-world conditions.
-- **Disk fault injection** — simulating disk I/O errors, latency, or corruption. A different layer entirely from network; explicitly excluded to keep netchaos's scope to "network" as its name promises.
+**Genuinely open for post-v1 consideration**, contingent on real usage evidence rather than a fixed timeline:
+
+- **Reordering** — considered for v1 and decided out. If picked up post-v1, the mechanic would be: instead of delivering queued writes to the other peer strictly in the order they were written, the fault-injection layer holds a small window of pending writes and delivers them in a seeded-random permutation — meaningful primarily for protocols/clients that assume in-order delivery over what they believe is a reliable stream, a stronger assumption than TCP itself actually guarantees is preserved end-to-end at the application level in all real-world conditions.
+- **Per-peer-pair scoping of latency and packet loss** — v1 applies both globally across every connection in the `Network`; see [M0-2](tasks/m0-decisions-and-foundations.md#m0-2--decide-fault-scoping-global-vs-per-peer-pair) and [04 — API Design](04-api-design.md#fault-scoping-global-vs-per-peer-pair). A plausible refinement once real usage patterns show global scoping is too coarse.
+
+**Excluded on a design principle, not a sequencing decision** — "core is solid" doesn't change why these are out:
+
+- **Disk fault injection** — simulating disk I/O errors, latency, or corruption. A different layer entirely from network; excluded to keep netchaos's scope to "network" as its name promises, regardless of how mature the core is.
 - **Full syscall simulation** — the approach taken by tools like gosim (see [02 — Comparison](02-comparison.md#gosim)). netchaos's in-process, no-rewrite adoption model is incompatible with also doing full syscall interception; picking one is a deliberate trade-off in favor of ease of adoption over full-system determinism.
 - **UDP support** — v1 is TCP-shaped only (`net.Conn`/`net.Listener` are inherently stream-oriented). UDP's datagram semantics (no ordering guarantee, no connection state) are different enough that supporting it well would be a distinct design effort, not a small addition.
 - **Protocol-level fault injection above the connection layer** — e.g., HTTP-aware faults (corrupt a specific header, truncate a response body at the framing level), gRPC-aware faults, etc. netchaos operates at the `net.Conn` byte-stream level; anything that requires understanding a specific application protocol is out of scope by design, since it would tie netchaos's core to specific protocol implementations.
-- **Per-peer-pair scoping of latency and packet loss** — v1 applies both globally across every connection in the `Network`; see [M0-2](tasks/m0-decisions-and-foundations.md#m0-2--decide-fault-scoping-global-vs-per-peer-pair) and [04 — API Design](04-api-design.md#fault-scoping-global-vs-per-peer-pair).
-
-These may be revisited once the core is solid — being out of v1 scope is not a permanent rejection, it's sequencing.
 
 ## How to think about future scope decisions
 

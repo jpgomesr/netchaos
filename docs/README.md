@@ -1,6 +1,6 @@
 # netchaos design docs
 
-> **Status: M1 and M2 implemented.** The core transport and all three v1 fault types (latency, packet loss, partition) are built and tested. `testing/synctest` integration for the full suite (M3) and release polish (M4) remain.
+> **Status: v1 implemented.** The core transport, all three v1 fault types (latency, packet loss, partition), and `testing/synctest` integration are built, tested, and documented. See [`CHANGELOG.md`](../CHANGELOG.md) for the release history.
 
 This folder expands on the pitch made in the root [`README.md`](../README.md) into full design documentation, organized by topic:
 

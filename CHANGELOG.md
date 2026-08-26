@@ -3,16 +3,85 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
-once the first release is tagged.
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [v0.1.0] — 2026-08-26
 
-- Core simulated transport: `Network`, `Dial`/`DialContext`, `Listen`, deadlines, and address/peer naming (M1).
-- Deterministic fault injection: seeded per-connection RNG streams, latency (`WithLatency`), packet loss (`WithPacketLoss`), and network partition (`WithPartition`, `Network.Partition`/`Heal`, `WithPeerName`), composed into a single evaluation order with option validation (M2).
-- `testing/synctest` integration and reproducibility (M3): verified bubble-compatibility of every blocking path, virtual-time latency tests proving injected latency costs no real wall-clock time, a fault-trace reproducibility harness with checked-in golden traces, and end-to-end scenarios for retry under packet loss, timeout/backoff under latency, circuit breaker across partition and heal, and multi-peer failover.
-- Project scaffolding: CI, linting, issue/PR templates, contributing/security/conduct policies.
-- Design documentation ([docs/](docs/README.md)) covering vision, architecture, API design, and scope.
-- Task breakdown ([docs/tasks/](docs/tasks/README.md)) sequencing the v1 scope into milestones.
+First release. `netchaos` provides deterministic, in-process simulated
+`net.Conn`/`net.Listener` implementations for Go tests, with seeded fault
+injection and full `testing/synctest` integration.
 
-No release has been tagged yet.
+### Requirements
+
+- **Go 1.25 or later.** This is a hard floor, not a recommendation:
+  `testing/synctest`, which netchaos's virtual-time integration depends on,
+  was introduced in Go 1.25 and cannot be used on an older toolchain.
+
+### Added
+
+- **Core simulated transport:** `Network`, `NewNetwork`, `Dial`/`DialContext`,
+  `Listen`, connection deadlines, and address/peer naming (`WithPeerName`).
+  `Network.Dial` has exactly the shape of `net.Dial`, so it drops into any
+  code that accepts a `func(network, addr string) (net.Conn, error)`.
+- **Latency injection** (`WithLatency`): delays delivery of a write by a
+  duration drawn uniformly from `[min, max]`, without reordering.
+- **Packet loss** (`WithPacketLoss`): drops whole `Write` calls with a given
+  probability; a dropped write is a silent gap, reported to its caller as a
+  full success, matching what a real socket's sender observes when a packet
+  is lost downstream.
+- **Network partition** (`WithPartition`, `Network.Partition`/`Heal`): drops
+  all traffic between two named peers, blocking connection establishment
+  and silently discarding writes on already-established connections, until
+  healed — no re-dial required.
+- **Deterministic, seeded fault injection** (`WithSeed`): each connection
+  derives its own RNG stream from the seed, its establishment order, and
+  its direction, so a fixed seed and a fixed order of
+  `Dial`/`Listen`/`Partition`/`Heal` calls reproduce an identical fault
+  sequence across runs and machines. The guarantee covers the *order*
+  Network methods are called in, not wall-clock concurrency of connection
+  establishment itself — see `WithSeed`'s godoc for the exact limit.
+- **Fixed fault composition order:** when more than one fault is configured
+  on the same connection direction, they are evaluated as partition, then
+  packet loss, then latency, by a single evaluator. A partitioned unit
+  consumes no random draws; every other configured fault draws
+  unconditionally, which keeps each fault's draw index locked to the unit
+  index and makes a fault trace diffable across runs.
+- **Invalid option values panic at construction time:** `NewNetwork` and
+  every `Option` return no error; an out-of-range value (e.g. a
+  `WithPacketLoss` rate outside `[0.0, 1.0]`) makes `NewNetwork` panic,
+  analogous to `regexp.MustCompile`. Validation runs once, after every
+  `Option` has been applied, so a later valid option of a given kind
+  rescues an earlier invalid one of the same kind.
+- **`testing/synctest` integration:** every blocking path in netchaos parks
+  on a channel, never a mutex, so a bubble reaches idle correctly while
+  netchaos work is in flight, and injected latency costs no real
+  wall-clock time inside a bubble. A `Network` must be constructed inside
+  the bubble that uses it, and connections/listeners must not be shared
+  across bubbles — see the package doc for the full constraint list.
+  netchaos also works outside a bubble, where latency costs real time.
+- **Reproducibility harness and golden traces:** a fault-trace comparison
+  harness and checked-in golden traces prove the determinism contract
+  holds, and demonstrate the seed-and-reproduce workflow for a failing
+  test.
+- **End-to-end scenario tests:** retry under packet loss, timeout/backoff
+  under latency, a circuit breaker across partition and heal, and
+  multi-peer failover.
+- **Runnable, compiled examples** (`example_test.go`): one per headline
+  feature (latency, packet loss, partition, seeding), plus the compiled,
+  verified version of the README's usage snippet and the circuit-breaker
+  scenario.
+- Sentinel errors: `ErrUnsupportedNetwork`, `ErrConnectionRefused`,
+  `ErrAddressInUse`, `ErrBacklogFull`, all matchable with `errors.Is`.
+- Project scaffolding: CI (Go 1.25 and 1.26), `golangci-lint`, issue/PR
+  templates, contributing/security/conduct policies.
+- Design documentation ([docs/](docs/README.md)) and a task breakdown
+  ([docs/tasks/](docs/tasks/README.md)) recording how v1 was designed and
+  built.
+
+### Versioning note
+
+Tagged `v0.1.0`, not `v1.0.0`: this surface has never had external users,
+and `v0.1.0` leaves room to correct an ergonomics mistake before committing
+to the stricter compatibility expectations a `v1.0.0` tag implies. The API
+is stable but not frozen until `v1.0.0` — see
+[docs/07 — Contributing](docs/07-contributing.md).
