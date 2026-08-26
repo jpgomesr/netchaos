@@ -4,7 +4,7 @@ Instructions for AI coding agents working in this repository. Human-facing proce
 
 ## Project snapshot
 
-`netchaos` ([README](README.md)) is a Go library providing simulated `net.Conn`/`net.Listener` with deterministic fault injection. **Current stage: M1 (core simulated transport), M2 (determinism & faults), and M3 (synctest & reproducibility) done; M4 (API polish & release) not started.** The module (`github.com/jpgomesr/netchaos`, `go 1.25`) has a working `Network` type (`NewNetwork`, `Dial`/`DialContext`, `Listen`, `WithSeed`) with all three v1 faults implemented and composed: `WithLatency`, `WithPacketLoss`, and `WithPartition`/`Network.Partition`/`Network.Heal` (plus `WithPeerName`, added during M2-4 to make a dialer partition-targetable). Do not assume unimplemented work exists; check before referencing it.
+`netchaos` ([README](README.md)) is a Go library providing simulated `net.Conn`/`net.Listener` with deterministic fault injection. **Current stage: v1 implemented and godoc'd (M1-M4); not yet tagged.** The module (`github.com/jpgomesr/netchaos`, `go 1.25`) has a working `Network` type (`NewNetwork`, `Dial`/`DialContext`, `Listen`, `WithSeed`) with all three v1 faults implemented and composed: `WithLatency`, `WithPacketLoss`, and `WithPartition`/`Network.Partition`/`Network.Heal` (plus `WithPeerName`, added during implementation to make a dialer partition-targetable), plus the sentinel errors in `errors.go` (`ErrUnsupportedNetwork`, `ErrConnectionRefused`, `ErrAddressInUse`, `ErrBacklogFull`). The API is stable but not frozen until `v1.0.0` — see [docs/07-contributing.md](docs/07-contributing.md). Check `CHANGELOG.md` and the repo's tags for the current release state; do not assume unimplemented work exists.
 
 ## Source of truth for design
 
@@ -51,11 +51,11 @@ golangci-lint run # config: .golangci.yml
 
 ## Issue & label conventions
 
-Only two issue forms exist — `.github/ISSUE_TEMPLATE/design-feedback.yml` (label `design`) and `use-case-scenario.yml` (label `use-case`) — plus `needs-discussion` for anything blocking a decision. There is deliberately no `bug`/`enhancement` workflow yet, since nothing is implemented. Don't create issues or labels outside this set without the user asking.
+Only two issue forms exist — `.github/ISSUE_TEMPLATE/design-feedback.yml` (label `design`) and `use-case-scenario.yml` (label `use-case`) — plus `needs-discussion` for anything blocking a decision. There is no `bug`/`enhancement` template yet: with v1 implemented (see [docs/07-contributing.md](docs/07-contributing.md)), bug reports are now a real, expected category this set doesn't cover — that's a genuine gap, not a deliberate omission, but adding issue templates is a repo-settings change, so don't add one without the user asking. Don't create issues or labels outside this set without the user asking.
 
 ## What not to do
 
-- Don't write implementation code speculatively beyond what's actually asked — this is a design-stage repo on purpose.
+- Don't write implementation code speculatively beyond what's actually asked, or add scope beyond a task's stated boundaries — v1 is deliberately narrow (see [docs/06-scope-and-roadmap.md](docs/06-scope-and-roadmap.md)), and that discipline doesn't end once the core ships.
 - Don't create `docs/adr/` or `docs/specs/` — no such system exists here.
 - Don't modify branch protection, repo labels, or other GitHub repo settings without being explicitly asked.
 - Don't change `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, or `SECURITY.md` content without flagging it — their scope was deliberately chosen (e.g. security contact routes through GitHub private vulnerability reporting, not email).

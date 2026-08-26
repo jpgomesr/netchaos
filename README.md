@@ -8,7 +8,7 @@
 [![golangci-lint](https://github.com/jpgomesr/netchaos/actions/workflows/golangci-lint.yml/badge.svg)](https://github.com/jpgomesr/netchaos/actions/workflows/golangci-lint.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> **Status: early development.** API is unstable and will change. Not yet published as a tagged release.
+> **Status: `v0.1.0` released.** v1 is implemented, tested, and documented. The API is stable but not frozen until `v1.0.0` — see [docs/07 — Contributing](docs/07-contributing.md). Requires Go 1.25+ (`testing/synctest`).
 
 **Full design documentation:** [`docs/`](docs/README.md)
 
@@ -46,13 +46,12 @@ Go developers building distributed services (gRPC, HTTP between microservices, m
 - Teams needing bit-for-bit determinism across an entire program → look at [gosim](https://github.com/jellevandenhooff/gosim) or [Antithesis](https://antithesis.com/)
 - QA needing end-to-end / load testing against a real running service → look at [Toxiproxy](https://github.com/Shopify/toxiproxy)
 
-## Planned usage (subject to change)
+## Usage
 
 ```go
 package myservice_test
 
 import (
-	"context"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -62,22 +61,26 @@ import (
 
 func TestRetryOnPacketLoss(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		net := netchaos.NewNetwork(
+		network := netchaos.NewNetwork(
 			netchaos.WithPacketLoss(0.3),
 			netchaos.WithLatency(50*time.Millisecond, 150*time.Millisecond),
 			netchaos.WithSeed(42), // deterministic, reproducible failures
 		)
 
-		client := myservice.NewClient(net.Dial)
+		client := myservice.NewClient(network.Dial)
 
-		err := client.FetchWithRetry(context.Background(), "resource-id")
-
+		got, err := client.FetchWithRetry("resource-id")
 		if err != nil {
 			t.Fatalf("expected retry to succeed despite packet loss, got: %v", err)
+		}
+		if got != "resource-id" {
+			t.Fatalf("got %q, want %q", got, "resource-id")
 		}
 	})
 }
 ```
+
+`myservice.NewClient`/`FetchWithRetry` stand in for your own client and its retry policy — the only netchaos-specific line is `myservice.NewClient(network.Dial)`, handing your client a `func(network, addr string) (net.Conn, error)` it can dial through. A fully self-contained, compiled version of this same scenario (a hand-rolled client and server in place of `myservice`) lives as `TestReadmeUsageSnippet` in [`example_test.go`](example_test.go), along with runnable examples for each headline feature.
 
 ## Scope for v1 (deliberately minimal)
 
@@ -90,19 +93,19 @@ To avoid the trap of "framework covering everything" — the same trap that turn
 - [x] Seeded randomness for reproducible failure scenarios
 - [x] Integration with `testing/synctest` for virtual time
 
-Explicitly out of scope for v1: reordering, disk fault injection, full syscall simulation, UDP support, protocol-level fault injection above the connection layer. These may be revisited once the core is solid — see [docs/06 — Scope & Roadmap](docs/06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1).
+Explicitly out of scope for v1: reordering, disk fault injection, full syscall simulation, UDP support, protocol-level fault injection above the connection layer, and per-peer-pair scoping of latency/loss. Reordering and per-pair scoping are genuinely open for post-v1 consideration; the rest are excluded on a design principle, not sequencing — see [docs/06 — Scope & Roadmap](docs/06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1) for which is which.
 
 ## Installation
 
-```
-go get github.com/jpgomesr/netchaos
-```
+Requires **Go 1.25 or later** — `testing/synctest`, which netchaos's virtual-time integration depends on, was introduced in Go 1.25 and cannot be used on an older toolchain.
 
-*(not yet tagged — install via commit hash until a release is cut)*
+```
+go get github.com/jpgomesr/netchaos@v0.1.0
+```
 
 ## Contributing
 
-This project is in early design. Issues and discussion around the API shape are welcome; PRs against implementation will make more sense once the core interfaces stabilize.
+netchaos v1 is implemented, tested, and documented. Bug reports and implementation PRs are welcome; see [docs/07 — Contributing](docs/07-contributing.md) for what's most useful to contribute right now, and note the API is stable but not frozen until `v1.0.0`.
 
 ## License
 

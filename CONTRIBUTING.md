@@ -2,11 +2,9 @@
 
 ## Project status
 
-netchaos is in **early design** — there is no implementation yet. The repository is currently the root README, the [`docs/`](docs/README.md) design-doc set, and this scaffolding. See [`docs/07-contributing.md`](docs/07-contributing.md) for what's actually useful to contribute *right now*, since it's design-stage guidance and will stay more current than the mechanics below.
+netchaos v1 is implemented, tested, and documented. See [`docs/07-contributing.md`](docs/07-contributing.md) for what's most useful to contribute *right now* — it's kept more current than the mechanics below.
 
 ## Development setup
-
-Once there's code to build against:
 
 ```
 go build ./...
