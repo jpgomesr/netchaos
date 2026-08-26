@@ -30,7 +30,14 @@ func (n *Network) Partition(peerA, peerB string)
 func (n *Network) Heal(peerA, peerB string)
 
 func WithPeerName(ctx context.Context, name string) context.Context
+
+var ErrUnsupportedNetwork = errors.New("netchaos: unsupported network")
+var ErrConnectionRefused = errors.New("netchaos: connection refused")
+var ErrAddressInUse = errors.New("netchaos: address already in use")
+var ErrBacklogFull = errors.New("netchaos: accept backlog full")
 ```
+
+The four error sentinels are matched with `errors.Is`; see [Error and no-op behaviour](#error-and-no-op-behaviour) below and each sentinel's own godoc for which call returns it and why.
 
 No exported identifier returns an `error` from `NewNetwork` or from any `Option` — see [Error and no-op behaviour](#error-and-no-op-behaviour) below for why, and for what happens instead on misuse.
 
@@ -164,7 +171,6 @@ Restating the README's example with the API surface above made explicit:
 package myservice_test
 
 import (
-    "context"
     "testing"
     "testing/synctest"
     "time"
@@ -174,22 +180,26 @@ import (
 
 func TestRetryOnPacketLoss(t *testing.T) {
     synctest.Test(t, func(t *testing.T) {
-        net := netchaos.NewNetwork(
+        network := netchaos.NewNetwork(
             netchaos.WithPacketLoss(0.3),
             netchaos.WithLatency(50*time.Millisecond, 150*time.Millisecond),
             netchaos.WithSeed(42), // deterministic, reproducible failures
         )
 
-        client := myservice.NewClient(net.Dial)
+        client := myservice.NewClient(network.Dial)
 
-        err := client.FetchWithRetry(context.Background(), "resource-id")
-
+        got, err := client.FetchWithRetry("resource-id")
         if err != nil {
             t.Fatalf("expected retry to succeed despite packet loss, got: %v", err)
+        }
+        if got != "resource-id" {
+            t.Fatalf("got %q, want %q", got, "resource-id")
         }
     })
 }
 ```
+
+`myservice.NewClient`/`FetchWithRetry` stand in for your own client and its retry policy; the only netchaos-specific line is handing your client `network.Dial`, a `func(network, addr string) (net.Conn, error)`. A fully self-contained, compiled version of this scenario lives as `TestReadmeUsageSnippet` in `example_test.go`, alongside a runnable `Example` per headline feature (`ExampleWithLatency`, `ExampleWithPacketLoss`, `ExampleNetwork_Partition`, `ExampleWithSeed`).
 
 ## Determinism contract
 

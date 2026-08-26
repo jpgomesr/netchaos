@@ -55,7 +55,7 @@ Document every exported identifier to the standard a library people `go get` req
 
 ### M4-2 — Runnable examples
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** release readiness for all six items
 **Depends on:** M3-4, M4-1
 **Blocks:** M4-3
@@ -78,13 +78,13 @@ Ship `Example` functions that compile and run as part of `go test`, so the code 
 - [`docs/04-api-design.md`](../04-api-design.md) — sync the usage sketch
 
 **Acceptance criteria**
-- [ ] Every example compiles and passes under `go test`.
-- [ ] Examples with `// Output:` blocks are deterministic and use a fixed seed.
-- [ ] There is at least one example per headline feature: latency, packet loss, partition, seeding.
-- [ ] The `README.md` snippet compiles as written — verified by an equivalent example test, since the README itself is not compiled.
-- [ ] The [04](../04-api-design.md#full-usage-sketch) sketch matches the shipped API exactly.
-- [ ] The synctest-in-examples structural decision is applied consistently.
-- [ ] `go vet` reports no malformed example names.
+- [x] Every example compiles and passes under `go test`.
+- [x] Examples with `// Output:` blocks are deterministic and use a fixed seed.
+- [x] There is at least one example per headline feature: latency, packet loss, partition, seeding.
+- [x] The `README.md` snippet compiles as written — verified by an equivalent example test, since the README itself is not compiled.
+- [x] The [04](../04-api-design.md#full-usage-sketch) sketch matches the shipped API exactly.
+- [x] The synctest-in-examples structural decision is applied consistently: `testing/synctest.Test` requires a `*testing.T`, which `Example` functions do not have, so `Example*` functions never enter a bubble and the two synctest-dependent demonstrations (`TestReadmeUsageSnippet`, `TestCircuitBreakerAcrossPartitionAndHeal`) live as `Test` functions instead.
+- [x] `go vet` reports no malformed example names.
 
 **Tests**
 - The examples are the tests.

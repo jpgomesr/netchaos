@@ -46,13 +46,12 @@ Go developers building distributed services (gRPC, HTTP between microservices, m
 - Teams needing bit-for-bit determinism across an entire program → look at [gosim](https://github.com/jellevandenhooff/gosim) or [Antithesis](https://antithesis.com/)
 - QA needing end-to-end / load testing against a real running service → look at [Toxiproxy](https://github.com/Shopify/toxiproxy)
 
-## Planned usage (subject to change)
+## Usage
 
 ```go
 package myservice_test
 
 import (
-	"context"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -62,22 +61,26 @@ import (
 
 func TestRetryOnPacketLoss(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		net := netchaos.NewNetwork(
+		network := netchaos.NewNetwork(
 			netchaos.WithPacketLoss(0.3),
 			netchaos.WithLatency(50*time.Millisecond, 150*time.Millisecond),
 			netchaos.WithSeed(42), // deterministic, reproducible failures
 		)
 
-		client := myservice.NewClient(net.Dial)
+		client := myservice.NewClient(network.Dial)
 
-		err := client.FetchWithRetry(context.Background(), "resource-id")
-
+		got, err := client.FetchWithRetry("resource-id")
 		if err != nil {
 			t.Fatalf("expected retry to succeed despite packet loss, got: %v", err)
+		}
+		if got != "resource-id" {
+			t.Fatalf("got %q, want %q", got, "resource-id")
 		}
 	})
 }
 ```
+
+`myservice.NewClient`/`FetchWithRetry` stand in for your own client and its retry policy — the only netchaos-specific line is `myservice.NewClient(network.Dial)`, handing your client a `func(network, addr string) (net.Conn, error)` it can dial through. A fully self-contained, compiled version of this same scenario (a hand-rolled client and server in place of `myservice`) lives as `TestReadmeUsageSnippet` in [`example_test.go`](example_test.go), along with runnable examples for each headline feature.
 
 ## Scope for v1 (deliberately minimal)
 
