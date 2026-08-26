@@ -8,7 +8,7 @@
 [![golangci-lint](https://github.com/jpgomesr/netchaos/actions/workflows/golangci-lint.yml/badge.svg)](https://github.com/jpgomesr/netchaos/actions/workflows/golangci-lint.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> **Status: early development.** API is unstable and will change. Not yet published as a tagged release.
+> **Status: `v0.1.0` released.** v1 is implemented, tested, and documented. The API is stable but not frozen until `v1.0.0` — see [docs/07 — Contributing](docs/07-contributing.md). Requires Go 1.25+ (`testing/synctest`).
 
 **Full design documentation:** [`docs/`](docs/README.md)
 
@@ -97,11 +97,11 @@ Explicitly out of scope for v1: reordering, disk fault injection, full syscall s
 
 ## Installation
 
-```
-go get github.com/jpgomesr/netchaos
-```
+Requires **Go 1.25 or later** — `testing/synctest`, which netchaos's virtual-time integration depends on, was introduced in Go 1.25 and cannot be used on an older toolchain.
 
-*(not yet tagged — install via commit hash until a release is cut)*
+```
+go get github.com/jpgomesr/netchaos@v0.1.0
+```
 
 ## Contributing
 
