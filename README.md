@@ -93,7 +93,7 @@ To avoid the trap of "framework covering everything" — the same trap that turn
 - [x] Seeded randomness for reproducible failure scenarios
 - [x] Integration with `testing/synctest` for virtual time
 
-Explicitly out of scope for v1: reordering, disk fault injection, full syscall simulation, UDP support, protocol-level fault injection above the connection layer. These may be revisited once the core is solid — see [docs/06 — Scope & Roadmap](docs/06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1).
+Explicitly out of scope for v1: reordering, disk fault injection, full syscall simulation, UDP support, protocol-level fault injection above the connection layer, and per-peer-pair scoping of latency/loss. Reordering and per-pair scoping are genuinely open for post-v1 consideration; the rest are excluded on a design principle, not sequencing — see [docs/06 — Scope & Roadmap](docs/06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1) for which is which.
 
 ## Installation
 
@@ -105,7 +105,7 @@ go get github.com/jpgomesr/netchaos
 
 ## Contributing
 
-This project is in early design. Issues and discussion around the API shape are welcome; PRs against implementation will make more sense once the core interfaces stabilize.
+netchaos v1 is implemented, tested, and documented. Bug reports and implementation PRs are welcome; see [docs/07 — Contributing](docs/07-contributing.md) for what's most useful to contribute right now, and note the API is stable but not frozen until `v1.0.0`.
 
 ## License
 

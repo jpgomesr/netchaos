@@ -17,7 +17,7 @@ Analyze all staged and unstaged changes in the repository, then propose a set of
    - Follow this repo's existing convention (see `git log`): `<type>: <summary>` or `<type>(<scope>): <summary>` — e.g. `docs: enhance README with project details and usage`.
    - Valid types: `feat`, `fix`, `chore`, `refactor`, `docs`, `test`, `ci`, `build`, `perf`, `style`.
    - Summary: imperative mood, lowercase, no trailing period, ≤72 chars.
-   - If a change introduces a breaking change (not expected while netchaos is pre-implementation), append `!` after the type and include a `BREAKING CHANGE:` footer.
+   - If a change introduces a breaking change to the exported API, append `!` after the type and include a `BREAKING CHANGE:` footer — the API is stable but not frozen until `v1.0.0` (see `docs/07-contributing.md`), so this is a real possibility now, not a hypothetical.
 
 4. **Present the proposal**
    - Show a numbered list of proposed commits, each with the full commit message and the files it covers.

@@ -5,12 +5,12 @@ netchaos has no ADR system — the design is recorded in the numbered docs under
 ## Steps
 
 1. Read `docs/03-architecture.md`, `docs/04-api-design.md`, `docs/05-fault-injection.md`, and `docs/06-scope-and-roadmap.md`.
-2. Read the relevant code paths for the area in question, if any exist yet (netchaos is largely pre-implementation — most of the time there will be nothing to read here, which is itself worth noting).
+2. Read the relevant code paths for the area in question — v1 is implemented, so for anything within its scope there should be real code to compare against, not just design prose.
 3. Compare the change or question against what the docs actually say — quote the specific doc and section when something aligns or conflicts, don't assert from memory.
 4. Report:
    - Which doc sections are relevant and what they say.
    - Whether the current/proposed change is consistent, and if not, exactly where it diverges.
-   - Whether it touches a **known open question** — e.g. the reordering-in-v1 inconsistency flagged in `docs/05-fault-injection.md#reordering-open-question` and `docs/06-scope-and-roadmap.md#reordering-in-or-out-of-v1` — versus a genuinely new divergence.
+   - Whether it touches something explicitly deferred post-v1 (see `docs/06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1`) versus a genuinely new divergence.
 
 ## Constraints
 

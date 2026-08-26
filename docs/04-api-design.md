@@ -1,6 +1,6 @@
 # 04 — API Design
 
-> **API AGREED AND IMPLEMENTED (M1–M2).** [M0-5](tasks/m0-decisions-and-foundations.md#m0-5--freeze-the-v1-api-surface) froze the v1 API surface below; M1 and M2 have since built every exported identifier it lists, plus one addition made during M2-4 (`WithPeerName`, noted where it appears below). What remains is M3 (the `synctest`/reproducibility test suite) and M4 (polish and release), not further API surface.
+> **API implemented and shipped.** [M0-5](tasks/m0-decisions-and-foundations.md#m0-5--freeze-the-v1-api-surface) froze the v1 API surface below; every exported identifier it lists is built, tested, and documented via godoc, plus one addition made during implementation (`WithPeerName`, noted where it appears below). The surface may still change before a `v1.0.0` (see [07 — Contributing](07-contributing.md)), but is not expected to for `v0.1.0`.
 
 This is a concrete elaboration of the code sample from the root [`README.md`](../README.md), scoped to the v1 fault types in [06 — Scope & Roadmap](06-scope-and-roadmap.md).
 
