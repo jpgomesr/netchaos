@@ -63,7 +63,9 @@ type peerNameCtxKey struct{}
 // WithPeerName returns a copy of ctx that declares name as the calling
 // peer's own identity for a subsequent DialContext call — the identity
 // Network.Partition and Network.Heal target. Without it, a dialer gets a
-// synthesized, unpartitionable ephemeral identity (see peerNameCtxKey).
+// synthesized, unpartitionable ephemeral identity, usable for I/O like any
+// other connection but never nameable by a Partition call and never
+// blocked by one either.
 func WithPeerName(ctx context.Context, name string) context.Context {
 	return context.WithValue(ctx, peerNameCtxKey{}, name)
 }

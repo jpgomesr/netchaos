@@ -1,6 +1,6 @@
 # Task breakdown — netchaos v1
 
-> **Status: planning artifact.** This folder breaks the v1 scope into executable tasks. It describes work that has **not** been done — nothing in `docs/tasks/` implies an implementation exists.
+> **Status: historical record.** This folder broke the v1 scope into executable tasks and sequences how v1 is actually being built; M0 through M3 are done, and M4 (release) is under way — see each milestone file's own task statuses for the current state. It remains useful as the record of what was decided, in what order, and why — not as a forward-looking plan.
 
 ## What this is
 

@@ -1,6 +1,6 @@
 # 03 — Architecture
 
-> **Status: implemented (M1–M2).** The transport (M1) and fault-injection layer (M2) described below are built. `testing/synctest` integration for the whole test suite is M3's concern.
+> **Status: implemented.** The transport, fault-injection layer, and `testing/synctest` integration described below are all built and tested; this doc describes the structure of the shipped code, not a proposal.
 
 ## Design goals driving the architecture
 
@@ -14,7 +14,7 @@
 
 ### `Network`
 
-The `Network` is the simulated environment: it owns the seeded random source, the configured fault-injection policy, and any simulated topology state (e.g., which simulated peers are currently partitioned from each other). A test constructs one `Network` per scenario it wants to simulate — see [04 — API Design](04-api-design.md) for the proposed construction API.
+The `Network` is the simulated environment: it owns the seeded random source, the configured fault-injection policy, and any simulated topology state (e.g., which simulated peers are currently partitioned from each other). A test constructs one `Network` per scenario it wants to simulate — see [04 — API Design](04-api-design.md) for the construction API.
 
 ### Simulated `net.Conn` pairs
 
@@ -61,4 +61,4 @@ This means: run a test inside `synctest.Test`, configure a `Network` with `WithL
 
 Because everything happens in-process, a `Network` can simulate multiple named peers (e.g., `"client"`, `"server-a"`, `"server-b"`) all within a single `go test` process. This is what makes partition testing meaningful: a `Network` can track partition state between specific pairs of peers, and dialing/listening happens against simulated addresses within that topology rather than real host:port pairs.
 
-Next: [04 — API Design](04-api-design.md) turns this into a concrete proposed Go API.
+Next: [04 — API Design](04-api-design.md) turns this into the concrete, shipped Go API.

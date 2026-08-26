@@ -12,7 +12,7 @@
 
 ### M4-1 — Godoc pass on the public surface
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** release readiness for all six items
 **Depends on:** M2-6, M3-1
 **Blocks:** M4-2
@@ -38,14 +38,14 @@ Document every exported identifier to the standard a library people `go get` req
 - `errors.go` — sentinel docs
 
 **Acceptance criteria**
-- [ ] Every exported identifier has a doc comment starting with its own name, per Go convention.
-- [ ] `go doc github.com/jpgomesr/netchaos` reads as a usable introduction on its own.
-- [ ] The synctest constraints above appear in the package doc.
-- [ ] `WithSeed`'s doc states the determinism guarantee *and* its limits.
-- [ ] Each option documents its valid range and out-of-range behaviour.
-- [ ] Fault composition order is discoverable from godoc alone.
-- [ ] `golangci-lint run` is clean (`staticcheck` flags malformed doc comments).
-- [ ] No doc comment describes behaviour that is not implemented.
+- [x] Every exported identifier has a doc comment starting with its own name, per Go convention.
+- [x] `go doc github.com/jpgomesr/netchaos` reads as a usable introduction on its own.
+- [x] The synctest constraints above appear in the package doc.
+- [x] `WithSeed`'s doc states the determinism guarantee *and* its limits.
+- [x] Each option documents its valid range and out-of-range behaviour.
+- [x] Fault composition order is discoverable from godoc alone.
+- [x] `golangci-lint run` is clean (`staticcheck` flags malformed doc comments) — verified in CI, not available locally on this machine.
+- [x] No doc comment describes behaviour that is not implemented.
 
 **Tests**
 - Not test-driven; verified by reading `go doc -all`.
@@ -55,7 +55,7 @@ Document every exported identifier to the standard a library people `go get` req
 
 ### M4-2 — Runnable examples
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** release readiness for all six items
 **Depends on:** M3-4, M4-1
 **Blocks:** M4-3
@@ -78,13 +78,13 @@ Ship `Example` functions that compile and run as part of `go test`, so the code 
 - [`docs/04-api-design.md`](../04-api-design.md) — sync the usage sketch
 
 **Acceptance criteria**
-- [ ] Every example compiles and passes under `go test`.
-- [ ] Examples with `// Output:` blocks are deterministic and use a fixed seed.
-- [ ] There is at least one example per headline feature: latency, packet loss, partition, seeding.
-- [ ] The `README.md` snippet compiles as written — verified by an equivalent example test, since the README itself is not compiled.
-- [ ] The [04](../04-api-design.md#full-usage-sketch) sketch matches the shipped API exactly.
-- [ ] The synctest-in-examples structural decision is applied consistently.
-- [ ] `go vet` reports no malformed example names.
+- [x] Every example compiles and passes under `go test`.
+- [x] Examples with `// Output:` blocks are deterministic and use a fixed seed.
+- [x] There is at least one example per headline feature: latency, packet loss, partition, seeding.
+- [x] The `README.md` snippet compiles as written — verified by an equivalent example test, since the README itself is not compiled.
+- [x] The [04](../04-api-design.md#full-usage-sketch) sketch matches the shipped API exactly.
+- [x] The synctest-in-examples structural decision is applied consistently: `testing/synctest.Test` requires a `*testing.T`, which `Example` functions do not have, so `Example*` functions never enter a bubble and the two synctest-dependent demonstrations (`TestReadmeUsageSnippet`, `TestCircuitBreakerAcrossPartitionAndHeal`) live as `Test` functions instead.
+- [x] `go vet` reports no malformed example names.
 
 **Tests**
 - The examples are the tests.
@@ -94,7 +94,7 @@ Ship `Example` functions that compile and run as part of `go test`, so the code 
 
 ### M4-3 — Flip the design-stage status banners
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** release readiness for all six items
 **Depends on:** M4-2
 **Blocks:** M4-4
@@ -118,13 +118,15 @@ Every status statement in the repository currently asserts that no implementatio
 - All files listed above.
 
 **Acceptance criteria**
-- [ ] No file in the repository claims netchaos has no implementation.
-- [ ] Every design doc distinguishes what is implemented from what remains proposed for post-v1.
-- [ ] [07 — Contributing](../07-contributing.md) describes a contribution model appropriate to a shipped library.
-- [ ] `AGENTS.md`'s project snapshot matches the actual module contents.
-- [ ] The reordering open question is either resolved in every location (per M0-1) or still accurately described as open.
-- [ ] Proposed `CONTRIBUTING.md` edits are flagged to the maintainer before landing.
-- [ ] Every internal doc link still resolves.
+- [x] No file in the repository claims netchaos has no implementation.
+- [x] Every design doc distinguishes what is implemented from what remains proposed for post-v1.
+- [x] [07 — Contributing](../07-contributing.md) describes a contribution model appropriate to a shipped library.
+- [x] `AGENTS.md`'s project snapshot matches the actual module contents.
+- [x] The reordering open question is either resolved in every location (per M0-1) or still accurately described as open.
+- [x] Proposed `CONTRIBUTING.md` edits are flagged to the maintainer before landing — see this PR's description.
+- [x] Every internal doc link still resolves.
+
+**Widened beyond the task's own file list**, since the grep sweep and the M0-1 retrospective's own note (its recording list "turned out to be incomplete in practice") both flagged more: `.claude/commands/architecture.md`, `commit.md`, `issue.md` (all said "pre-implementation"), `docs/tasks/README.md` (said "nothing in `docs/tasks/` implies an implementation exists" — the other flat false claim besides `CONTRIBUTING.md`), and the README's Contributing section and out-of-scope line.
 
 **Tests**
 - Not test-driven. Grep for "design-stage", "no implementation", "PROPOSED", "not yet implemented", "pre-implementation" and confirm every hit is either updated or deliberately still accurate.
@@ -133,7 +135,7 @@ Every status statement in the repository currently asserts that no implementatio
 
 ### M4-4 — Tick the v1 checklist
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** all six
 **Depends on:** M4-3
 **Blocks:** M4-5
@@ -152,10 +154,12 @@ Check off the six boxes in [06 — Scope & Roadmap](../06-scope-and-roadmap.md) 
 - `README.md`
 
 **Acceptance criteria**
-- [ ] All six items are ticked in [06](../06-scope-and-roadmap.md).
-- [ ] The `README.md` checklist matches [06](../06-scope-and-roadmap.md) exactly.
-- [ ] Any M0-1 reordering item is reflected in both.
-- [ ] The out-of-scope section is revisited now that its stated precondition holds.
+- [x] All six items are ticked in [06](../06-scope-and-roadmap.md) — already true before this task; verified still true.
+- [x] The `README.md` checklist matches [06](../06-scope-and-roadmap.md) exactly.
+- [x] Any M0-1 reordering item is reflected in both — reordering stayed out of v1, so no seventh line; it's named as a genuinely-open post-v1 item in both.
+- [x] The out-of-scope section is revisited now that its stated precondition holds — split into "genuinely open for post-v1 consideration" (reordering, per-pair scoping) versus "excluded on a design principle" (disk, syscall, UDP, protocol-level).
+
+Landed in the same PR as M4-3, since both checklists were already ticked and matching by the time this milestone started — the only real remaining work was the out-of-scope section revisit.
 
 **Tests**
 - None. Verify by diffing the two checklists.
@@ -164,7 +168,7 @@ Check off the six boxes in [06 — Scope & Roadmap](../06-scope-and-roadmap.md) 
 
 ### M4-5 — Changelog entry and `v0.1.0` tag
 
-**Status:** todo
+**Status:** in progress — release PR prepared; tag push and post-tag verification are a maintainer handoff (see below).
 **Roadmap item:** all six
 **Depends on:** M4-4
 **Blocks:** —
@@ -185,13 +189,13 @@ Cut the first release. Until a version is tagged, `go get github.com/jpgomesr/ne
 - `README.md` — an installation section with the minimum Go version, if not already present
 
 **Acceptance criteria**
-- [ ] `CHANGELOG.md` has a complete, dated `v0.1.0` entry.
-- [ ] The Go 1.25 minimum is stated in both `CHANGELOG.md` and `README.md`, with `testing/synctest` given as the reason.
-- [ ] The version number is decided and justified in the changelog.
-- [ ] The tag is pushed from `main` after the release PR merges — never by pushing directly to `main` (`AGENTS.md`).
-- [ ] pkg.go.dev shows the tagged version with rendered godoc and examples.
-- [ ] A scratch module outside the repo can `go get` the tag and run an example successfully.
-- [ ] CI is green on the tagged commit for both Go 1.25 and 1.26.
+- [x] `CHANGELOG.md` has a complete, dated `v0.1.0` entry.
+- [x] The Go 1.25 minimum is stated in both `CHANGELOG.md` and `README.md`, with `testing/synctest` given as the reason.
+- [x] The version number is decided and justified in the changelog.
+- [ ] The tag is pushed from `main` after the release PR merges — never by pushing directly to `main` (`AGENTS.md`). **Maintainer action**, not taken by this PR — the branch protection / never-push-to-main rule means tagging is the maintainer's call, done after merge.
+- [ ] pkg.go.dev shows the tagged version with rendered godoc and examples. **Verify after tagging.**
+- [ ] A scratch module outside the repo can `go get` the tag and run an example successfully. **Verify after tagging** — impossible before the tag exists and is fetchable.
+- [ ] CI is green on the tagged commit for both Go 1.25 and 1.26. **Verify after tagging.**
 
 **Tests**
 - The external-consumption check is the real test: fresh directory, `go mod init`, `go get github.com/jpgomesr/netchaos@v0.1.0`, compile and run an example.

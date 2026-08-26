@@ -9,9 +9,8 @@ import (
 )
 
 // Network is a simulated network topology: a set of named peers that can
-// Dial one another and Listen for connections, subject to a fault policy
-// (added in M2 — latency, packet loss, and partition are not yet
-// implemented).
+// Dial one another and Listen for connections, subject to a configurable
+// fault policy (latency, packet loss, and partition).
 //
 // Network intentionally has no Close method: netchaos spawns no goroutines
 // of its own. The only asynchronous work is two time.AfterFunc callbacks —
@@ -51,15 +50,17 @@ type Network struct {
 
 // NewNetwork returns a new, empty Network configured by opts. Options are
 // applied in argument order; a later option of the same kind overrides an
-// earlier one.
+// earlier one. Every Option is validated once, after all of them have been
+// applied — see Option and WithSeed for what that means for invalid values
+// and for the determinism contract.
 //
-// If WithSeed is not given, NewNetwork uses a fixed, documented default
-// seed (defaultSeed) rather than a random one: netchaos's whole premise is
-// that a test run is reproducible from its seed, so the common case of "just
-// run the test" should be reproducible by default too. Because the default
-// is a fixed constant, there is nothing to "recover" from a failing run —
-// unlike a random default, which would need an accessor to report the seed
-// it picked.
+// If WithSeed is not given, NewNetwork uses the fixed default seed 1 rather
+// than a random one: netchaos's whole premise is that a test run is
+// reproducible from its seed, so the common case of "just run the test"
+// should be reproducible by default too. Because the default is a fixed
+// constant, there is nothing to "recover" from a failing run — unlike a
+// random default, which would need an accessor to report the seed it
+// picked.
 func NewNetwork(opts ...Option) *Network {
 	cfg := networkConfig{seed: defaultSeed}
 	for _, opt := range opts {
@@ -141,21 +142,23 @@ func (n *Network) Dial(network, addr string) (net.Conn, error) {
 // WithPeerName is never partition-targetable (see WithPeerName), so it
 // never blocks here regardless of any partition's state.
 //
-// Establishment is otherwise entirely synchronous — there is no blocking
-// step between validating the request and enqueuing the new connection on
-// the target listener (enqueue itself never blocks; a full backlog fails
-// immediately with ErrBacklogFull rather than waiting for room) — so
-// cancellation is checked once, up front, rather than raced against
-// enqueuing in the same select. Folding ctx.Done() into that select instead
-// would be a real bug: with a ready default case present, Go picks
-// pseudo-randomly among ready cases, so a cancelled-but-racing dial could
-// still enqueue.
+// A dial that never establishes (blocked on a partition, then cancelled)
+// does not consume a connection ordinal — ordinals, and therefore RNG
+// streams (see the determinism contract on WithSeed), are assigned in the
+// order dials complete, not the order they're attempted. This means the
+// determinism contract does not apply to a dial that races a partition
+// against cancellation; give it a context whose deadline is what should
+// determine the outcome if that matters to a test.
 //
-// The partition wait happens before the connection ordinal is assigned, so
-// a dial that never establishes (blocked, then cancelled) does not burn an
-// ordinal — ordinal order tracks the order dials complete, not the order
-// they're attempted.
+// Establishment is otherwise entirely synchronous: there is no blocking
+// step between validating the request and enqueuing the new connection on
+// the target listener. A full listener backlog fails immediately with
+// ErrBacklogFull rather than waiting for room.
 func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (net.Conn, error) {
+	// Checked once, up front, rather than folded into the enqueue select
+	// below: with a ready default case present, Go picks pseudo-randomly
+	// among ready cases, so a cancelled-but-racing dial could still enqueue
+	// if ctx.Done() were just another case in that same select.
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()

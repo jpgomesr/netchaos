@@ -25,7 +25,11 @@ type partitionPair struct{ peerA, peerB string }
 // Network.Partition / Network.Heal for dynamic control during a test.
 //
 // peerA and peerB must be non-empty and distinct; NewNetwork panics
-// otherwise (M2-6).
+// otherwise, naming WithPartition and the offending value.
+//
+// Partition is evaluated first in fault composition: a partitioned unit is
+// discarded before packet loss or latency is evaluated, and consumes no
+// random draws -- see the package doc's section on fault composition.
 func WithPartition(peerA, peerB string) Option {
 	return func(c *networkConfig) {
 		c.staticPartitions = append(c.staticPartitions, partitionPair{peerA, peerB})
@@ -46,8 +50,7 @@ func validatePartitionPair(p partitionPair) {
 // Partition drops all subsequent traffic between the named peers until Heal
 // is called for the same pair. A no-op if the pair is already partitioned,
 // and a no-op (not an error) if either peer has never Dialed or Listened —
-// partitioning before either side has connected is legitimate test setup
-// (M0-5).
+// partitioning before either side has connected is legitimate test setup.
 //
 // Partition affects both connection establishment (a Dial naming one of
 // these peers as itself, via WithPeerName, blocks until Heal or its
@@ -69,8 +72,8 @@ func (n *Network) Partition(peerA, peerB string) {
 // Heal removes a previously established partition between the named peers,
 // restoring traffic on any already-established connection between them
 // without requiring a re-dial. A no-op if the pair is not currently
-// partitioned (M0-5) — safe to call from a defer or test cleanup without
-// tracking partition state separately.
+// partitioned — safe to call from a defer or test cleanup without tracking
+// partition state separately.
 func (n *Network) Heal(peerA, peerB string) {
 	k := newPairKey(peerName(peerA), peerName(peerB))
 

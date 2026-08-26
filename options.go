@@ -7,8 +7,7 @@ import "time"
 const defaultSeed = 1
 
 // networkConfig accumulates the settings Options mutate before NewNetwork
-// builds a Network from them. M2 adds latency/packet-loss/partition fields
-// here alongside seed.
+// builds a Network from them.
 type networkConfig struct {
 	seed int64
 
@@ -34,6 +33,12 @@ type networkConfig struct {
 // call returns an error: an Option given an invalid value (e.g. a
 // WithPacketLoss rate outside [0,1]) makes NewNetwork panic, analogous to
 // regexp.MustCompile.
+//
+// Validation runs once, after every Option passed to NewNetwork has been
+// applied — not inside each Option's own closure. This means a later,
+// valid Option of a given kind rescues an earlier, invalid one of the same
+// kind: passing WithPacketLoss(-1) followed by WithPacketLoss(0.5) does not
+// panic, because only the final packet-loss rate is checked.
 type Option func(*networkConfig)
 
 // validate panics, naming the offending option and value, if any option
@@ -54,9 +59,22 @@ func (c *networkConfig) validate() {
 }
 
 // WithSeed sets the seed a Network's per-connection random streams are
-// derived from (wired up starting M2-1). The same seed, with the same order
-// of Dial/Listen/Partition/Heal calls, always produces the same sequence of
-// injected faults.
+// derived from. If WithSeed is not given, NewNetwork uses the fixed default
+// seed 1.
+//
+// The determinism guarantee: for a fixed seed and a fixed order in which
+// Dial, Listen, Partition, and Heal are called, every resulting connection
+// produces an identical sequence of injected faults across runs and across
+// machines. Each connection derives its own RNG stream from the seed, its
+// establishment order, and its direction, so the guarantee holds regardless
+// of how concurrently established connections do I/O afterward.
+//
+// The limit: the guarantee covers the order Network methods are called in,
+// not wall-clock concurrency of establishment itself. If two goroutines
+// race to Dial concurrently, which one is assigned which connection ordinal
+// — and therefore which RNG stream — is decided by the Go scheduler, not
+// the seed, so the guarantee does not apply to that race. Dial sequentially
+// before starting concurrent I/O if a test needs to reproduce exactly.
 func WithSeed(seed int64) Option {
 	return func(c *networkConfig) {
 		c.seed = seed

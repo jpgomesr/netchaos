@@ -6,9 +6,9 @@ import "errors"
 // any failure mode is discoverable and matchable with errors.Is from one
 // place. Two failure modes are deliberately absent from this list:
 //
-//   - Invalid Option values (e.g. a future WithPacketLoss rate outside
-//     [0,1]): NewNetwork panics rather than returning an error, so there is
-//     no sentinel to match against.
+//   - Invalid Option values (e.g. a WithPacketLoss rate outside [0,1]):
+//     NewNetwork panics rather than returning an error, so there is no
+//     sentinel to match against.
 //   - Use of a closed conn or listener, and a Read/Write past its deadline:
 //     both reuse standard library errors (net.ErrClosed and
 //     os.ErrDeadlineExceeded respectively) rather than defining new ones,
