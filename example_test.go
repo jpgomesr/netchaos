@@ -40,7 +40,7 @@ func Example() {
 		fmt.Println(err)
 		return
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	accepted := acceptOne(l)
 
 	client, err := n.Dial("tcp", "server")
@@ -48,9 +48,9 @@ func Example() {
 		fmt.Println(err)
 		return
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 	server := <-accepted
-	defer server.Close()
+	defer func() { _ = server.Close() }()
 
 	if _, err := client.Write([]byte("ping")); err != nil {
 		fmt.Println(err)
@@ -89,7 +89,7 @@ func ExampleWithPacketLoss() {
 		fmt.Println(err)
 		return
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	accepted := acceptOne(l)
 
 	client, err := n.Dial("tcp", "server")
@@ -98,7 +98,7 @@ func ExampleWithPacketLoss() {
 		return
 	}
 	server := <-accepted
-	defer server.Close()
+	defer func() { _ = server.Close() }()
 
 	const writes = 10
 	for i := 0; i < writes; i++ {
@@ -107,7 +107,7 @@ func ExampleWithPacketLoss() {
 			return
 		}
 	}
-	client.Close()
+	_ = client.Close()
 
 	survivors, err := io.ReadAll(server)
 	if err != nil {
@@ -130,7 +130,7 @@ func ExampleWithLatency() {
 		fmt.Println(err)
 		return
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	accepted := acceptOne(l)
 
 	client, err := n.Dial("tcp", "server")
@@ -138,9 +138,9 @@ func ExampleWithLatency() {
 		fmt.Println(err)
 		return
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 	server := <-accepted
-	defer server.Close()
+	defer func() { _ = server.Close() }()
 
 	if _, err := client.Write([]byte("hello")); err != nil {
 		fmt.Println(err)
@@ -168,7 +168,7 @@ func ExampleNetwork_Partition() {
 		fmt.Println(err)
 		return
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	accepted := acceptOne(l)
 
 	ctx := netchaos.WithPeerName(context.Background(), "client")
@@ -177,9 +177,9 @@ func ExampleNetwork_Partition() {
 		fmt.Println(err)
 		return
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 	server := <-accepted
-	defer server.Close()
+	defer func() { _ = server.Close() }()
 
 	n.Partition("client", "server")
 	if _, err := client.Write([]byte("dropped")); err != nil {
@@ -213,7 +213,7 @@ func ExampleWithSeed() {
 		if err != nil {
 			return "", err
 		}
-		defer l.Close()
+		defer func() { _ = l.Close() }()
 		accepted := acceptOne(l)
 
 		client, err := n.Dial("tcp", "server")
@@ -221,7 +221,7 @@ func ExampleWithSeed() {
 			return "", err
 		}
 		server := <-accepted
-		defer server.Close()
+		defer func() { _ = server.Close() }()
 
 		const writes = 8
 		for i := 0; i < writes; i++ {
@@ -229,7 +229,7 @@ func ExampleWithSeed() {
 				return "", err
 			}
 		}
-		client.Close()
+		_ = client.Close()
 
 		survivors, err := io.ReadAll(server)
 		return string(survivors), err
@@ -268,14 +268,14 @@ func TestReadmeUsageSnippet(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer l.Close()
+		defer func() { _ = l.Close() }()
 
 		go func() {
 			server, err := l.Accept()
 			if err != nil {
 				return
 			}
-			defer server.Close()
+			defer func() { _ = server.Close() }()
 			// Echo every request it receives back to the client.
 			buf := make([]byte, 64)
 			for {
@@ -293,7 +293,7 @@ func TestReadmeUsageSnippet(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer client.Close()
+		defer func() { _ = client.Close() }()
 
 		got, err := fetchWithRetry(client, []byte("resource-id"))
 		if err != nil {
@@ -320,7 +320,7 @@ func TestCircuitBreakerAcrossPartitionAndHeal(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer l.Close()
+		defer func() { _ = l.Close() }()
 		accepted := acceptOne(l)
 
 		ctx := netchaos.WithPeerName(context.Background(), "client")
@@ -328,9 +328,9 @@ func TestCircuitBreakerAcrossPartitionAndHeal(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer client.Close()
+		defer func() { _ = client.Close() }()
 		server := <-accepted
-		defer server.Close()
+		defer func() { _ = server.Close() }()
 
 		// A trivial echo server: bounce every ping straight back.
 		go func() {
