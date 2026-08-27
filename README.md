@@ -82,6 +82,8 @@ func TestRetryOnPacketLoss(t *testing.T) {
 
 `myservice.NewClient`/`FetchWithRetry` stand in for your own client and its retry policy — the only netchaos-specific line is `myservice.NewClient(network.Dial)`, handing your client a `func(network, addr string) (net.Conn, error)` it can dial through. A fully self-contained, compiled version of this same scenario (a hand-rolled client and server in place of `myservice`) lives as `TestReadmeUsageSnippet` in [`example_test.go`](example_test.go), along with runnable examples for each headline feature.
 
+For a full, standalone project wired up with netchaos — not just an inline snippet — see [jpgomesr/netchaos-example](https://github.com/jpgomesr/netchaos-example).
+
 ## Scope for v1 (deliberately minimal)
 
 To avoid the trap of "framework covering everything" — the same trap that turned a previous project into an unfinishable moving target — v1 is scoped tightly:
