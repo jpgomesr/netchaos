@@ -52,6 +52,15 @@ func validatePartitionPair(p partitionPair) {
 // and a no-op (not an error) if either peer has never Dialed or Listened —
 // partitioning before either side has connected is legitimate test setup.
 //
+// Naming a dialer requires WithPeerName. Dialing is not enough on its own: a
+// dial that never calls WithPeerName gets a synthesized ephemeral identity
+// (see WithPeerName), so that peer is not targetable here under any name.
+// This composes with the silent no-op above into a case worth stating
+// outright — Partition("client", "server") returns without error, and
+// traffic between them keeps flowing, if "client" only ever dialed as
+// n.Dial("tcp", "server"). A listener is always targetable by its Listen
+// address; only dialers need naming.
+//
 // Partition affects both connection establishment (a Dial naming one of
 // these peers as itself, via WithPeerName, blocks until Heal or its
 // context expires) and already-established connections between the pair
@@ -74,6 +83,10 @@ func (n *Network) Partition(peerA, peerB string) {
 // without requiring a re-dial. A no-op if the pair is not currently
 // partitioned — safe to call from a defer or test cleanup without tracking
 // partition state separately.
+//
+// Heal identifies peers exactly as Partition does, so the same naming
+// caveat applies: a dialer that never called WithPeerName is not targetable
+// under any name, and a Heal aimed at one is one of the silent no-ops above.
 func (n *Network) Heal(peerA, peerB string) {
 	k := newPairKey(peerName(peerA), peerName(peerB))
 

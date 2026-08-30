@@ -307,7 +307,7 @@ The repo has zero `Fuzz*` and zero `Benchmark*` functions. The pipe's buffer acc
 
 ### M6-9 — Cross-reference the ephemeral-dialer caveat from Partition and Heal
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** none (documentation)
 **Depends on:** —
 **Blocks:** —
@@ -330,9 +330,9 @@ Each half is deliberate and each is already documented *from the `WithPeerName` 
 - `partition.go`
 
 **Acceptance criteria**
-- [ ] `Partition` and `Heal` godoc point a reader to `WithPeerName` and state the ephemeral-dialer consequence.
-- [ ] No behaviour change.
-- [ ] The task text records the semantics question as `M5-2` input, so the review picks it up without depending on this box.
+- [x] `Partition` and `Heal` godoc point a reader to `WithPeerName` and state the ephemeral-dialer consequence.
+- [x] No behaviour change.
+- [x] The task text records the semantics question as `M5-2` input, so the review picks it up without depending on this box. `M5-2`'s own `Partition`/`Heal` bullet now carries the pointer back, so the review reaches it from either direction.
 
 **Tests**
 - None — godoc only. Verify the rendered doc reads correctly with `go doc github.com/jpgomesr/netchaos.Network.Partition`.
