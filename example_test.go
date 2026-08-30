@@ -202,6 +202,55 @@ func ExampleNetwork_Partition() {
 	// Output: delivered
 }
 
+// ExampleNetwork_DialerFor shows the same partition scenario as
+// ExampleNetwork_Partition, reached without a context. DialerFor returns a
+// plain net.Dial-shaped function, so it goes straight into a client
+// constructor that accepts one — and unlike Network.Dial, the connections it
+// makes are targetable by Partition and Heal.
+func ExampleNetwork_DialerFor() {
+	n := netchaos.NewNetwork()
+
+	l, err := n.Listen("tcp", "server")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer func() { _ = l.Close() }()
+	accepted := acceptOne(l)
+
+	// The type a client constructor would ask for; net.Dial satisfies it too.
+	var dial func(network, addr string) (net.Conn, error) = n.DialerFor("client")
+
+	client, err := dial("tcp", "server")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer func() { _ = client.Close() }()
+	server := <-accepted
+	defer func() { _ = server.Close() }()
+
+	n.Partition("client", "server")
+	if _, err := client.Write([]byte("dropped")); err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	n.Heal("client", "server")
+	if _, err := client.Write([]byte("delivered")); err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	buf := make([]byte, len("delivered"))
+	if _, err := io.ReadFull(server, buf); err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(string(buf))
+	// Output: delivered
+}
+
 // ExampleWithSeed shows that the same seed reproduces the exact same fault
 // sequence: running the same scenario twice with WithSeed(42) produces
 // identical packet-loss outcomes both times.

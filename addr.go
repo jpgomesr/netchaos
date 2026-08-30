@@ -177,13 +177,19 @@ func validateNetwork(network string) error {
 //
 // WithPeerName (below) is the exported setter, added in M2-4 for
 // Network.Partition, which is what actually needs a dialer to have a
-// stable, partition-targetable name. A dialer that never calls WithPeerName
-// gets a synthesized ephemeral identity, usable for I/O like any other
-// connection but not nameable by a Partition call — analogous to an
-// OS-assigned ephemeral client port — and, as a consequence, never blocks
-// on dial-time partition checks either, since no partition could ever be
-// declared against a name that isn't known until the dial that produces it
-// completes.
+// stable, partition-targetable name. A dialer that never names itself gets a
+// synthesized ephemeral identity, usable for I/O like any other connection
+// but not nameable by a Partition call — analogous to an OS-assigned
+// ephemeral client port — and, as a consequence, never blocks on dial-time
+// partition checks either, since no partition could ever be declared against
+// a name that isn't known until the dial that produces it completes.
+//
+// The signature constraint above is real, but it is a constraint on Dial
+// rather than on net.Dial-shaped dialing, which is a distinction M6-9 did not
+// draw — it recorded the caveat as permanent for anything with Dial's shape.
+// Network.DialerFor (M7-2) returns a function with exactly that shape which
+// carries a name through this key, so a drop-in dialer can be
+// partition-targetable after all. Only a bare Dial call cannot.
 type peerNameCtxKey struct{}
 
 // WithPeerName returns a copy of ctx that declares name as the calling
@@ -195,6 +201,11 @@ type peerNameCtxKey struct{}
 //
 // The name is a peer identity, not an address: a port written into it is
 // stripped, exactly as it is on the addresses passed to Dial and Listen.
+//
+// Use this when the dial needs a context anyway — to bound how long it waits
+// on a partition, for instance. Network.DialerFor is the same capability for
+// code that wants a plain net.Dial-shaped function to hand to a client
+// constructor.
 func WithPeerName(ctx context.Context, name string) context.Context {
 	return context.WithValue(ctx, peerNameCtxKey{}, name)
 }

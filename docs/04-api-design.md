@@ -26,6 +26,9 @@ func (n *Network) Dial(network, addr string) (net.Conn, error)
 func (n *Network) DialContext(ctx context.Context, network, addr string) (net.Conn, error)
 func (n *Network) Listen(network, addr string) (net.Listener, error)
 
+// Added by M7-2 (issue #36), post-v0.1.0.
+func (n *Network) DialerFor(name string) func(network, addr string) (net.Conn, error)
+
 func (n *Network) Partition(peerA, peerB string)
 func (n *Network) Heal(peerA, peerB string)
 
@@ -50,7 +53,9 @@ Address strings also change shape: [M6-10](tasks/m6-review-findings.md#m6-10--de
 
 No exported identifier returns an `error` from `NewNetwork` or from any `Option` — see [Error and no-op behaviour](#error-and-no-op-behaviour) below for why, and for what happens instead on misuse.
 
-**`WithPeerName` is an addition made during [M2-4](tasks/m2-determinism-and-faults.md#m2-4--network-partition-static-and-dynamic), not a change of an earlier decision.** M0-5 froze the surface above it without an exported way for a dialer to declare its own peer identity — `Dial`'s signature has no room for one, and the identity is what `Partition`/`Heal` need to target a specific connection's dialing side. Without it, every dialer gets a synthesized, unpartitionable `ephemeral:N` identity (see `DialContext`'s godoc), which would make the root README's own `client` ↔ `server-a` partition example impossible to implement. `WithPeerName(ctx, name)` closes that gap: a caller passes `n.DialContext(netchaos.WithPeerName(ctx, "client"), "tcp", "server-a")` to make `"client"` targetable by `n.Partition("client", "server-a")`.
+**`WithPeerName` is an addition made during [M2-4](tasks/m2-determinism-and-faults.md#m2-4--network-partition-static-and-dynamic), not a change of an earlier decision.** M0-5 froze the surface above it without an exported way for a dialer to declare its own peer identity — `Dial`'s signature has no room for one, and the identity is what `Partition`/`Heal` need to target a specific connection's dialing side. Without it, every dialer gets a synthesized, unpartitionable `ephemeral-N` identity (see `DialContext`'s godoc), which would make the root README's own `client` ↔ `server-a` partition example impossible to implement. `WithPeerName(ctx, name)` closes that gap: a caller passes `n.DialContext(netchaos.WithPeerName(ctx, "client"), "tcp", "server-a")` to make `"client"` targetable by `n.Partition("client", "server-a")`.
+
+What it did *not* close is the same gap for `Dial` — the context it writes to has nowhere to live in a `net.Dial`-shaped signature. `DialerFor` ([M7-2](tasks/m7-v0.2.0-implementation.md#m7-2--networkdialerfor-make-a-drop-in-dialer-partition-targetable), issue [#36](https://github.com/jpgomesr/netchaos/issues/36)) is the answer to that, and the two are complements rather than alternatives: `WithPeerName` for a dial that has a context anyway, `DialerFor` for code that wants a plain dial function to hand to a client constructor.
 
 ## Package shape
 
@@ -181,9 +186,19 @@ func (n *Network) Heal(peerA, peerB string)
 
 Pairs are unordered: `Partition("a", "b")` and `Partition("b", "a")` name the same pair, and either heals the other.
 
-**Effect on connection establishment (decided in [M2-4](tasks/m2-determinism-and-faults.md#m2-4--network-partition-static-and-dynamic)):** only a dialer that named itself via `WithPeerName` is subject to this check at all. For such a dialer, `DialContext` **blocks** for the duration of the partition, returning `ctx.Err()` only once the context is done — a partition drops the SYN, so a real dial into a partitioned peer hangs the same way rather than failing fast. Give it a context with a deadline if that is not the intended behaviour.
+**Effect on connection establishment (decided in [M2-4](tasks/m2-determinism-and-faults.md#m2-4--network-partition-static-and-dynamic)):** only a dialer that named itself — via `WithPeerName` or `DialerFor` — is subject to this check at all. For such a dialer, `DialContext` **blocks** for the duration of the partition, returning `ctx.Err()` only once the context is done — a partition drops the SYN, so a real dial into a partitioned peer hangs the same way rather than failing fast. Give it a context with a deadline if that is not the intended behaviour.
 
-An unnamed dialer's synthesized `ephemeral:N` identity can never appear in a `Partition` call made before the dial completes, so it never blocks here regardless of any partition's state. **`Dial` is always in that second category:** `WithPeerName` records the identity on a `context.Context`, and `Dial`'s `net.Dial`-shaped signature has no context parameter, so a `Dial` call can never carry a peer name and therefore never blocks on a partition. Reaching for `DialContext` is the only way to get the blocking behaviour — a deadline cannot produce it, because there is nowhere to put one.
+An unnamed dialer's synthesized `ephemeral-N` identity can never appear in a `Partition` call made before the dial completes, so it never blocks here regardless of any partition's state. **A bare `Dial` call is always in that second category:** `WithPeerName` records the identity on a `context.Context`, and `Dial`'s `net.Dial`-shaped signature has no context parameter, so a `Dial` call can never carry a peer name and therefore never blocks on a partition.
+
+**That is a property of `Dial` itself, not of `net.Dial`-shaped dialing** — a distinction `M6-9` did not have, since it recorded the caveat as *permanent* for anything with `Dial`'s shape. [M7-2](tasks/m7-v0.2.0-implementation.md#m7-2--networkdialerfor-make-a-drop-in-dialer-partition-targetable) (issue [#36](https://github.com/jpgomesr/netchaos/issues/36)) removed the cause: `DialerFor(name)` returns a function with exactly `Dial`'s signature that carries a name, so a drop-in dialer can be partition-targetable after all. Two ways to get there now, and one that still does not work:
+
+```go
+client := myservice.NewClient(n.DialerFor("client"))   // targetable, net.Dial-shaped
+c, _ := n.DialContext(netchaos.WithPeerName(ctx, "client"), "tcp", "server") // targetable, bounded by ctx
+c, _ := n.Dial("tcp", "server")                        // NOT targetable — ephemeral identity
+```
+
+The trade between the first two is the wait: a `DialerFor` dialer blocks for the duration of a partition with no context to bound it, while `DialContext` can be given a deadline. Reach for `DialContext` when the dial must fail rather than hang.
 
 The wait happens **before** the connection's ordinal is assigned, so a dial that blocks and is then cancelled does not burn an ordinal; see the [determinism contract](#determinism-contract)'s note on this.
 

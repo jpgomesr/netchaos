@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -398,6 +399,108 @@ func TestPartitionTargetsHostHalf(t *testing.T) {
 		// the dial would succeed.
 		if _, err := n.DialContext(ctx, "tcp", "server:8080"); !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("DialContext to a partitioned peer addressed with a port = %v, want errors.Is(context.DeadlineExceeded)", err)
+		}
+	})
+}
+
+// TestDialerForIsPartitionTargetable is the capability #36 was filed for.
+// WithPeerName writes to a context.Context and Dial has no context
+// parameter, so a Dial call could never carry a peer name — which made
+// partition, a headline feature, unreachable from the drop-in entry point
+// the no-rewrite adoption claim rests on. DialerFor closes that without
+// changing Dial's shape: what it returns is still a net.Dial-shaped func.
+func TestDialerForIsPartitionTargetable(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		n := NewNetwork()
+		l, err := n.Listen("tcp", "server")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = l.Close() }()
+
+		accepted := make(chan net.Conn, 1)
+		go func() {
+			c, err := l.Accept()
+			if err == nil {
+				accepted <- c
+			}
+		}()
+
+		// The whole point: this is assignable to the same type a client
+		// constructor takes, and net.Dial satisfies.
+		var dial func(network, addr string) (net.Conn, error) = n.DialerFor("client")
+
+		client, err := dial("tcp", "server")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = client.Close() }()
+
+		server := <-accepted
+		defer func() { _ = server.Close() }()
+
+		if got, want := peerName(client.LocalAddr().String()), "client"; got != want {
+			t.Fatalf("dialer identity = %q, want %q", got, want)
+		}
+
+		n.Partition("client", "server")
+
+		// Partitioned: the write is accepted and discarded, so the read must
+		// block to its deadline rather than seeing the bytes.
+		if _, err := client.Write([]byte("ping")); err != nil {
+			t.Fatal(err)
+		}
+		if err := server.SetReadDeadline(time.Now().Add(50 * time.Millisecond)); err != nil {
+			t.Fatal(err)
+		}
+		buf := make([]byte, 4)
+		if _, err := server.Read(buf); !errors.Is(err, os.ErrDeadlineExceeded) {
+			t.Fatalf("read across a partitioned pair = %v, want os.ErrDeadlineExceeded "+
+				"(a DialerFor dialer must be partition-targetable, or Partition is a silent no-op again)", err)
+		}
+	})
+}
+
+// TestDialerForBlocksOnStartPartitioned pins the behaviour DialerFor
+// inherits and that a Dial user has never seen: a named dialer is subject to
+// the dial-time partition check, so it blocks until Heal. That is correct —
+// a partition drops the SYN — but it is new for anyone who reached for Dial
+// precisely because it never blocked, which is why DialerFor's godoc says so
+// and points at DialContext for the bounded form.
+func TestDialerForBlocksOnStartPartitioned(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		n := NewNetwork(WithPartition("client", "server"))
+		l, err := n.Listen("tcp", "server")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = l.Close() }()
+
+		dialed := make(chan error, 1)
+		go func() {
+			_, err := n.DialerFor("client")("tcp", "server")
+			dialed <- err
+		}()
+
+		// Let the dial reach the partition wait and settle there.
+		time.Sleep(100 * time.Millisecond)
+		synctest.Wait()
+		select {
+		case err := <-dialed:
+			t.Fatalf("DialerFor dial into a partitioned peer returned %v, want it to block", err)
+		default:
+		}
+
+		go func() {
+			c, err := l.Accept()
+			if err == nil {
+				_ = c.Close()
+			}
+		}()
+		n.Heal("client", "server")
+
+		if err := <-dialed; err != nil {
+			t.Fatalf("dial after Heal = %v, want nil", err)
 		}
 	})
 }
