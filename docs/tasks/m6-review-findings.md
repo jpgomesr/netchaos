@@ -18,7 +18,7 @@
 
 ### M6-1 — Reconcile ordinal assignment with the determinism contract
 
-**Status:** todo
+**Status:** done — resolved as **outcome 1** (the code now matches the doc)
 **Roadmap item:** none (correctness — the determinism contract in [04 — API Design](../04-api-design.md#determinism-contract))
 **Depends on:** —
 **Blocks:** —
@@ -56,12 +56,20 @@ Which leaves two honest outcomes, and this task picks one rather than assuming t
 - `dial_test.go` / `listener_test.go`
 
 **Acceptance criteria**
-- [ ] A test exercises a dial that fails at `enqueue` with `ErrBacklogFull` and asserts the resulting ordinal behaviour, whichever way it was decided.
-- [ ] The closed-listener `ErrConnectionRefused` path from `enqueue` is covered by the same assertion.
-- [ ] `docs/04-api-design.md`'s `connectionOrdinal` bullet and `DialContext`'s godoc state the same thing as each other and as the code.
-- [ ] The `n.mu` / `l.mu` lock order is unchanged, with a comment at `netchaos.go:188` recording why the unlock sits where it does.
-- [ ] Existing golden traces in `testdata/traces/` are unaffected, or the change to them is deliberate and explained (per `M3-3`, a golden diff is a contract-change signal).
-- [ ] `-race` clean on CI.
+- [x] A test exercises a dial that fails at `enqueue` with `ErrBacklogFull` and asserts the resulting ordinal behaviour, whichever way it was decided. — `TestBacklogFullOrdinalAccounting`, red at 129/want 128 before the fix.
+- [x] The closed-listener `ErrConnectionRefused` path from `enqueue` is covered by the same assertion. — `TestClosedListenerDialOrdinalAccounting`, red at 1/want 0 before the fix.
+- [x] `docs/04-api-design.md`'s `connectionOrdinal` bullet and `DialContext`'s godoc state the same thing as each other and as the code.
+- [x] The `n.mu` / `l.mu` lock order is unchanged, with a comment at `netchaos.go:188` recording why the unlock sits where it does.
+- [x] Existing golden traces in `testdata/traces/` are unaffected, or the change to them is deliberate and explained (per `M3-3`, a golden diff is a contract-change signal). — byte-identical, as expected: no golden scenario contains a failing dial.
+- [x] `-race` clean on CI. — confirmed on PR #40: `test (1.25)` and `test (1.26)` both pass, along with `lint` and the `gofmt` check. Not verifiable locally (`CGO_ENABLED=0`, no C toolchain on the dev machine, per `AGENTS.md`), which is why this box was ticked from the CI run rather than a local one.
+
+**How it was resolved**
+Outcome 1, via a reservation primitive. `listener` gained `reserve`/`fill`: `reserve` claims an accept-queue slot under `l.mu`, checking both remaining failure modes (closed listener, full backlog); `fill` hands the `*conn` to the claimed slot and cannot block or fail, because the capacity was already accounted for. `DialContext` now reserves *before* taking an ordinal, which makes a successful reserve the point the dial commits — past it, establishment cannot fail, so an ordinal is only ever spent on a connection that establishes.
+
+`enqueue` survives as a thin `reserve`-then-`fill` wrapper rather than being replaced, so `TestBacklogFull` and the two `errors_test.go` callers that exercise the capacity bound directly are untouched by this change.
+
+**One semantics consequence, recorded deliberately**
+A `Close` landing between the reserve and the fill now closes the filled conn instead of failing the dial, so the dialer gets a live conn whose peer is already closed rather than `ErrConnectionRefused`. This is not a new outcome: `listener.Close` already closes queued-but-unaccepted conns, so "successful dial, dead peer" was always reachable — the reservation widens an existing window. It is the price of the contract holding on every path, and it is noted in `fill`'s godoc so a later reader does not mistake it for an accident.
 
 **Tests**
 - Red first: write a test that dials until the backlog is full, lets one dial fail, then completes a successful dial and compares its ordinal (or its recorded trace) against the same sequence run without the failing dial. Confirm it fails before touching production code.
@@ -72,8 +80,8 @@ Which leaves two honest outcomes, and this task picks one rather than assuming t
 
 ### M6-2 — Decide a single error-wrapping policy across Listen, Dial and DialContext
 
-**Status:** todo
-**Decision:** *(not yet made — this is a decision task; it changes observable behaviour)*
+**Status:** done — decided **and implemented**
+**Decision:** **option 1 — wrap everything in `*net.OpError`, uniformly — landing before `v1.0.0`.** Taken by the maintainer. The reasoning is the one the task's own weighing input names: it is the only option that serves the substitutability claim, the sentinels are already documented as `errors.Is` targets, and `errors.Is` is the comparison style the package's own tests use. The behaviour change is worth making now precisely because `v0.1.0` has no external users, so the two real costs — changed `Error()` strings and `==` against a sentinel no longer matching — are paid by nobody.
 **Roadmap item:** none (API consistency)
 **Depends on:** —
 **Blocks:** —
@@ -105,9 +113,18 @@ Weighing input, not a decision: option 1 is the only one that serves the substit
 **Decision required**
 Which of the three, and if option 1, whether it lands before `v1.0.0`.
 
-**Where the decision gets recorded**
-- An issue per [07 — Contributing](../07-contributing.md)'s issue-first rule, labeled `needs-discussion`.
-- [04 — API Design](../04-api-design.md#error-and-no-op-behaviour)'s error-behaviour section, and `errors.go`'s package-level comment, once decided.
+**Where the decision got recorded**
+- [04 — API Design](../04-api-design.md#error-and-no-op-behaviour)'s error-behaviour section — a new bullet stating the uniform shape and the `errors.Is`-not-`==` rule.
+- `errors.go`'s package-level comment, which now says the same thing at the point a reader meets the sentinels.
+- `CHANGELOG.md` under `Unreleased`, since this is a caller-visible change rather than an internal one.
+- The issue-first rule in [07 — Contributing](../07-contributing.md) applies to changes to an *exported signature*; no signature moves here, and the maintainer decided the behaviour directly, so the decision is recorded in the docs above rather than routed through a `needs-discussion` issue that would only have restated it.
+
+**Implementation notes**
+Four sites were bare and are now wrapped: `Listen`'s network validation and `ErrAddressInUse`, and `DialContext`'s already-done context and network validation. The refused-dial and enqueue-failure paths were already `*net.OpError` and are unchanged. `Listen` gained a `listenOpError` helper mirroring the existing `dialOpError`, so `Op` is `"listen"` there and `"dial"` in `DialContext`.
+
+Nothing in the existing suite broke, which is itself the evidence that the risk was where the task said it was: every existing assertion already used `errors.Is`, so the wrapping is transparent to them. The exposure is entirely to hypothetical external code doing `==`, and there is none.
+
+`TestErrorsAreUniformlyOpError` covers all five sites in a table, asserting `Op`, `Net`, a non-nil `Addr`, and that `errors.Is` still reaches the sentinel through the wrapper. It was red on exactly the four unwrapped sites beforehand.
 
 ---
 
@@ -365,6 +382,8 @@ Each half is deliberate and each is already documented *from the `WithPeerName` 
 - Add the cross-reference to `Partition` and `Heal`'s godoc: naming a dialer requires `WithPeerName`, and without it the dialer is not partition-targetable under any name.
 - Out of scope — and this is the substantive half: whether `Partition` should surface a diagnostic at all instead of silently no-op'ing. That is a semantics change to the frozen surface, and [M5-2](m5-hardening-and-ergonomics.md#m5-2--api-ergonomics-review-before-v100) already lists `Partition`/`Heal`'s silent-no-op behaviour as one of its three named review points. This finding is **input to that review** — recorded here, decided there. Do not change the semantics under this task.
 
+**Decided (M5-2, finding F3): the silent no-op stays.** The composed failure was reproduced empirically against the published `v0.1.0` — an unnamed dialer is `ephemeral:0`, `Partition("client","server")` is a no-op, and a subsequent write is delivered. But `Partition` cannot distinguish "peer not connected yet" from "peer will never exist" without breaking the legitimate "start partitioned" setup pattern. M5-2 located the real cause elsewhere: `Dial` is *structurally* unable to carry a peer name, because `WithPeerName` writes to a `context.Context` and `Dial` has no context parameter (M5-2 finding F2, raised as [#36](https://github.com/jpgomesr/netchaos/issues/36)). **This task's godoc cross-reference is still worth doing** and is unaffected by that decision — if anything it matters more, since the caveat is now known to be permanent for `Dial` rather than merely easy to miss.
+
 **Files**
 - `partition.go`
 
@@ -397,6 +416,8 @@ This is the one review finding that bears directly on the adoption claim in [01 
 3. **Document the limitation and do nothing.** Zero risk. The friction stays, and it stays invisible until someone hits it.
 
 Weighing input, not a decision: option 2 preserves every existing usage while removing the failure mode, but "the address is the peer name" is load-bearing simplicity that `addr.go`'s own comment calls out deliberately — and with no external users yet, there is no evidence anyone has hit this. Worth pairing with [M5-2](m5-hardening-and-ergonomics.md#m5-2--api-ergonomics-review-before-v100), which is looking at the same surface in the same window.
+
+**M5-2 confirmed the finding and filed [#37](https://github.com/jpgomesr/netchaos/issues/37)** (its finding F4) rather than deciding it — the change breaks every address string a test prints, so it belongs to [07](../07-contributing.md)'s issue-first process. The decision itself is still open and still this task's.
 
 **Decision required**
 Whether addresses gain any port structure before `v1.0.0`, given that adding one afterwards is a breaking change to every address string a test prints.
@@ -598,8 +619,10 @@ A user wanting to test their own back-pressure handling, or a listener under acc
 
 Weighing input, not a decision: option 3 has a real argument behind it — the values are chosen to be realistic (`listenerBacklog`'s comment calls it "analogous to a conventional `listen(2)` backlog default"), and every option added now is one `M5-2` has to weigh before `v1.0.0`. But option 1 is genuinely cheap and the in-package test constructor is evidence the need is real.
 
+**Gate resolved: this task does not wait for `M5-2`.** M5-2 has concluded (its finding F5), and the premise behind the "wait" option did not survive it. The concern was that two more names would burden a surface M5-2 might find too large; M5-2 found the opposite problem — the surface's weakness is a *missing* capability on `Dial`, not excess breadth. Option count is not the binding constraint, so decide this one on its own merits whenever it is picked up.
+
 **Decision required**
-Which of the three, and whether it waits for `M5-2`'s review to conclude first.
+Which of the three. (No longer gated on `M5-2`.)
 
 **Where the decision gets recorded**
 - [04 — API Design](../04-api-design.md#functional-options)'s options list, if either lands.

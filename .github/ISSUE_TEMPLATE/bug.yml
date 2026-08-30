@@ -1,0 +1,58 @@
+name: Bug report
+description: netchaos behaves differently from a real net.Conn or net.Listener in a way that isn't a documented v1 trade-off.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Some differences from the real network stack are deliberate — see
+        [05 — Fault Injection](https://github.com/jpgomesr/netchaos/blob/main/docs/05-fault-injection.md) for the fault
+        model and [04 — API Design](https://github.com/jpgomesr/netchaos/blob/main/docs/04-api-design.md#error-and-no-op-behaviour)
+        for the no-op and panic semantics. If the behaviour you hit is described there, it's a design decision, and
+        [Design feedback](https://github.com/jpgomesr/netchaos/issues/new?template=design-feedback.yml) is the better form.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what does a real net.Conn do instead?
+      description: The comparison is the bug report — e.g. "Read returned io.EOF where a real conn blocks until the deadline."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproducer
+    attributes:
+      label: Minimal reproducer
+      description: A self-contained Go test if you can. netchaos is deterministic, so a reproducer that names its seed reproduces exactly.
+      render: go
+    validations:
+      required: true
+
+  - type: input
+    id: seed
+    attributes:
+      label: Seed
+      description: The value passed to WithSeed, or "unseeded" if NewNetwork was called without it. Without this a fault-dependent bug can't be replayed.
+    validations:
+      required: true
+
+  - type: input
+    id: versions
+    attributes:
+      label: netchaos and Go versions
+      description: e.g. netchaos v0.1.0, go1.25.0 darwin/arm64. Go 1.25 is the minimum.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: synctest
+    attributes:
+      label: Does this happen inside a testing/synctest bubble?
+      description: Latency uses virtual time inside a bubble and real wall-clock time outside it, so the answer changes which code path is suspect.
+      options:
+        - "Inside a synctest bubble"
+        - "Outside a bubble"
+        - "Both"
+        - "Not sure"
+    validations:
+      required: true

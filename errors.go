@@ -4,7 +4,17 @@ import "errors"
 
 // This file consolidates every sentinel error netchaos can return, so that
 // any failure mode is discoverable and matchable with errors.Is from one
-// place. Two failure modes are deliberately absent from this list:
+// place.
+//
+// Match these with errors.Is, never with ==. Every error leaving Listen,
+// Dial and DialContext is wrapped in a *net.OpError (M6-2), uniformly and
+// including the sentinels below, so that netchaos reports failures in the
+// shape real net.Listen and net.Dial do — a caller that type-asserts to
+// *net.OpError, or calls Timeout()/Temporary() on the result, behaves the
+// same against either. OpError unwraps, so errors.Is keeps working through
+// the wrapper; direct == comparison does not.
+//
+// Two failure modes are deliberately absent from this list:
 //
 //   - Invalid Option values (e.g. a WithPacketLoss rate outside [0,1]):
 //     NewNetwork panics rather than returning an error, so there is no
