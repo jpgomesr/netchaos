@@ -48,6 +48,16 @@ netchaos's v1 scope (per the root README's checklist) covers three fault categor
 
 **What it's for:** Testing circuit breakers and failover logic — does your code detect a fully-unreachable peer and open its circuit breaker, does it correctly fail over to another peer, does it recover once the partition heals (`Heal`) without requiring a process restart.
 
+## Accepted for v0.2.0, not yet implemented
+
+[M6-11](tasks/m6-review-findings.md#m6-11--decide-which-new-fault-kinds-if-any-enter-v02) accepted four further fault kinds into `v0.2.0` scope. None is implemented; each gets its own task. Recorded here so this document stays the place a reader looks for what netchaos can fault, and [06 — Scope & Roadmap § Accepted for v0.2.0](06-scope-and-roadmap.md#accepted-for-v02) carries the reasoning.
+
+- **Bandwidth throttling / rate limiting** — a delivery-timing model, composing as a fourth stage in the evaluator alongside latency. It is what makes the pipe's buffer bound observable: a throttle slower than the reader produces sustained back-pressure, which is why configurable bounds ([M6-17](tasks/m6-review-findings.md#m6-17--decide-whether-the-pipe-bound-and-listener-backlog-become-configurable)) were accepted alongside it.
+- **Mid-stream connection reset** — an established conn failing abruptly. This is a genuine gap rather than an enhancement: `Partition` is the nearest thing today and is deliberately a silent black hole (writes accepted and discarded, reads blocking to their deadline), not an `ECONNRESET`.
+- **Packet duplication** and **data corruption / bit flips** — accepted on the [M0-3](tasks/m0-decisions-and-foundations.md#m0-3--decide-fault-granularity-per-write-vs-per-simulated-packet) precedent. Real TCP hides both from the application, as it also hides packet *loss* by retransmitting; netchaos chose the silent-gap model for loss anyway, precisely so a test can exercise what the application sees when the transport does not behave. The same reasoning extends here, and was applied explicitly rather than by analogy.
+
+Each new kind gets its own `faultKind` byte and therefore its own derived stream, so **adding one cannot perturb any existing test's latency or loss sequence** — new kinds are additive rather than a golden-trace break. Each must respect the M2-5 draw discipline above: draw unconditionally on every unit past the partition gate, like the existing two.
+
 ## Reordering (deferred, not in v1)
 
 Reordering is **not** in v1 scope. It was flagged as an open question — the README's introductory prose used to list it alongside latency, packet loss, and partition while the v1 checklist never included it — and has been resolved out, decided as part of [M0-1](tasks/m0-decisions-and-foundations.md#m0-1--resolve-whether-reordering-is-in-v1). See [06 — Scope & Roadmap](06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1) for where it now lives on the deferred list, including the mechanic it would use if picked up post-v1.
