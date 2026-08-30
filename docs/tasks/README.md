@@ -1,6 +1,6 @@
 # Task breakdown — netchaos v1 and beyond
 
-> **Status: M0–M4 (v1) are a historical record; M5 is active.** This folder broke the v1 scope into executable tasks and sequences how v1 was actually built — M0 through M4 are done, `v0.1.0` is tagged and pushed, and that part of the folder is a record of what was decided, in what order, and why, not a forward-looking plan. [M5 — v0.1.0 hardening & v0.2.0 groundwork](m5-hardening-and-ergonomics.md) is the first milestone here that *is* forward-looking: closing out release verification and doing the ergonomics/process groundwork that's safe to do before any v0.2.0 scope decision is made. See each milestone file's own task statuses for the current state.
+> **Status: M0–M4 (v1) are a historical record; M5 and M6 are active.** This folder broke the v1 scope into executable tasks and sequences how v1 was actually built — M0 through M4 are done, `v0.1.0` is tagged and pushed, and that part of the folder is a record of what was decided, in what order, and why, not a forward-looking plan. [M5 — v0.1.0 hardening & v0.2.0 groundwork](m5-hardening-and-ergonomics.md) is the first milestone here that *is* forward-looking: closing out release verification and doing the ergonomics/process groundwork that's safe to do before any v0.2.0 scope decision is made. [M6 — Post-v0.1.0 review findings](m6-review-findings.md) is the recorded output of a full review of the tagged source tree — a backlog of findings, not a plan that was agreed to in advance. See each milestone file's own task statuses for the current state.
 
 ## What this is
 
@@ -18,8 +18,9 @@
 | [M3 — synctest & reproducibility](m3-synctest-and-reproducibility.md) | Integration with `testing/synctest` for virtual time | Proves the two properties the library is sold on: latency costs no real wall-clock time, and a seed reproduces a failure exactly. |
 | [M4 — API polish & release](m4-api-polish-and-release.md) | *(release of all six)* | Godoc, runnable examples, flipping the design-stage status banners, tagging `v0.1.0`. |
 | [M5 — v0.1.0 hardening & v0.2.0 groundwork](m5-hardening-and-ergonomics.md) | *(none — post-v1)* | Not part of the v1 checklist. Closes out `M4-5`'s post-tag verification and does the ergonomics/process groundwork that's safe before any v0.2.0 scope decision — see the file's own banner for what it deliberately excludes. |
+| [M6 — Post-v0.1.0 review findings](m6-review-findings.md) | *(none — post-v1)* | Not a grouping of planned work: the output of a full review of the tagged tree. One contract contradiction, some small correctness and precision fixes, three coverage gaps, and the feature candidates that pass [06](../06-scope-and-roadmap.md#how-to-think-about-future-scope-decisions)'s scope rubric — recorded as decisions to make, not work agreed to. |
 
-All six checklist lines from [06 — Scope & Roadmap](../06-scope-and-roadmap.md) appear exactly once in the table above; `M5` covers no checklist line, since v1's checklist is closed.
+All six checklist lines from [06 — Scope & Roadmap](../06-scope-and-roadmap.md) appear exactly once in the table above; `M5` and `M6` cover no checklist line, since v1's checklist is closed.
 
 ### A note on M3's real size
 
@@ -55,7 +56,12 @@ M4   M2-6, M3-1      ─▶ M4-1
 
 M5   M4-5            ─▶ M5-1
      (no code dependency) ─▶ M5-2, M5-3
+
+M6   M6-7            ─▶ M6-8
+     (no code dependency) ─▶ M6-1..M6-6, M6-9..M6-17
 ```
+
+M6's tasks are deliberately almost all independent — it is a review's findings, not a build, so there is no order the work has to happen in. The one edge is `M6-7` before `M6-8`: without a latency benchmark there is no way to tell whether `M6-8`'s optimization did anything. Two relationships are **not** dependency edges and are kept in prose so the two task files don't disagree: `M6-9` and `M6-10` both feed [M5-2](m5-hardening-and-ergonomics.md#m5-2--api-ergonomics-review-before-v100)'s ergonomics review as input, and `M6-12` overlaps `M6-16` closely enough that if both are ever taken up they should be designed together. M6's own file states all of this on the tasks themselves.
 
 Note that **partition (M2-4) does not depend on the RNG task (M2-1)**. A partition is binary, not probabilistic, and M2-4 requires it to consume no random draws at all — otherwise partitioning one peer pair would shift the fault sequence on unrelated connections. It hangs off M1, not off M2-1.
 
