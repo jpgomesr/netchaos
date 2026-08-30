@@ -47,10 +47,36 @@ func validateLatencyRange(min, max time.Duration) {
 	}
 }
 
+// armLatencyForAppendLocked arms the latency timer for a unit just appended
+// to pending. pending is release-ordered and appends go to the tail, so the
+// appended unit is the head only when pending was empty beforehand — which
+// is exactly when len(pending) is 1 afterwards. In every other case a live
+// timer is already armed for the same, earlier deadline, and stopping and
+// recreating it would target precisely what it already targets, at the cost
+// of one *time.Timer per write (M6-8).
+//
+// This is deliberately a separate entry point from the one
+// releaseDueLatency uses, rather than a guard inside armLatencyTimerLocked.
+// There the head genuinely does change — units are removed from the front —
+// so that re-arm must stay unconditional. Applying this guard to both call
+// sites would leave the tail behind a drained head with no timer, and
+// nothing would ever deliver it: silent data loss, not a slow path. Keep the
+// two callers distinct.
+//
+// Must be called with p.mu held.
+func (p *pipe) armLatencyForAppendLocked() {
+	if len(p.pending) != 1 {
+		return
+	}
+	p.armLatencyTimerLocked()
+}
+
 // armLatencyTimerLocked (re)arms the single live latency timer for the
-// current pending head, or clears it if pending is empty. Must be called
-// with p.mu held.
+// current pending head, or clears it if pending is empty. Callers that only
+// appended to the tail should use armLatencyForAppendLocked instead. Must be
+// called with p.mu held.
 func (p *pipe) armLatencyTimerLocked() {
+	p.arms++
 	if p.timer != nil {
 		p.timer.Stop()
 		p.timer = nil

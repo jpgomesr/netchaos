@@ -295,7 +295,7 @@ The number `M6-8` turns on is the last column: **3 allocations per write under l
 
 ### M6-8 — Avoid re-arming the latency timer when the pending head is unchanged
 
-**Status:** todo
+**Status:** done — kept (3 allocs/write → 1; see the result table below)
 **Roadmap item:** none (efficiency)
 **Depends on:** [M6-7](#m6-7--add-a-fuzz-target-and-baseline-benchmarks) — without its latency benchmark there is no way to tell whether this changed anything
 **Blocks:** —
@@ -316,10 +316,26 @@ The number `M6-8` turns on is the last column: **3 allocations per write under l
 - `latency_test.go`, `latency_synctest_test.go`
 
 **Acceptance criteria**
-- [ ] No timer is recreated when a write appends behind an existing pending head.
-- [ ] A write that *does* become the new head arms correctly — asserted directly, not assumed.
-- [ ] All existing latency tests pass unchanged, including ordering and close-in-flight.
-- [ ] The benchmark shows a measurable reduction in allocations per write under latency, or the task is marked `dropped` with that result recorded.
+- [x] No timer is recreated when a write appends behind an existing pending head. — `TestLatencyTimerNotRearmedBehindHead`, red at 9 arms/want 1 before the change.
+- [x] A write that *does* become the new head arms correctly — asserted directly, not assumed. — same test's first assertion, plus `TestLatencyTimerRearmsAfterPartialDrain` for the release path.
+- [x] All existing latency tests pass unchanged, including ordering and close-in-flight. Golden traces byte-identical.
+- [x] The benchmark shows a measurable reduction in allocations per write under latency, or the task is marked `dropped` with that result recorded.
+
+**Result: kept, not dropped.** The trade turned out better than the task's own risk assessment assumed.
+
+| `BenchmarkWriteUnderLatency` | ns/op | B/op | allocs/op |
+|---|---|---|---|
+| before (`M6-7` baseline) | 282.3 | 817 | 3 |
+| after | 138.0 | 677 | **1** |
+
+Two of the three allocations per write disappear, not the one predicted: stop-and-recreate cost both a `*time.Timer` and the method-value closure for `p.releaseDueLatency`. What remains is `conn.Write`'s payload copy, which is required by `io.Writer`'s non-retention convention and is not this task's to remove.
+
+**How the asymmetric risk was handled**
+The task warns that a guard wrong in the *other* direction — failing to re-arm when the head did change — is silent non-delivery on the core path. That risk is real and concentrated in one place: `armLatencyTimerLocked` has two callers with opposite needs. `faults.go`'s append can skip the re-arm; `releaseDueLatency`'s drain never can.
+
+So the guard is a **separate entry point** (`armLatencyForAppendLocked`) rather than a condition inside the shared function, and `latency.go` says why in a comment that names the failure mode. Pointing `releaseDueLatency` at the guarded entry point was then tried deliberately, to confirm the test suite catches it.
+
+**The safety test needed strengthening to actually catch it.** A first version used two pending units, and it stayed green against the wrong entry point: a partial drain of two units leaves `len(pending) == 1`, which the append guard's own condition happens to accept. Three units leave two behind, the guard skips, nothing is ever delivered, and the test now fails with the reader deadlocked in `conn.Read`. That distinction is recorded in the test's own comment so a later edit does not quietly reduce it to two.
 
 **Tests**
 - Red first: a test asserting the timer is not replaced on an append behind the head (via an allocation count or a test-only counter).

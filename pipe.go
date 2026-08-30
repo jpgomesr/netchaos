@@ -61,6 +61,15 @@ type pipe struct {
 	// a pipe with no latency configured.
 	pending []pendingUnit
 	timer   *time.Timer
+
+	// arms counts how many times the latency timer has been armed, purely so
+	// a test can assert that a write appended behind an existing pending head
+	// does not re-arm for a deadline the live timer already targets (M6-8).
+	// It is instrumentation, not state anything reads to make a decision:
+	// nothing outside armLatencyTimerLocked writes it, and nothing in the
+	// production path reads it. It is guarded by p.mu like every other field
+	// here.
+	arms int
 }
 
 // newPipe returns an empty, open pipe with the given buffer bound.
