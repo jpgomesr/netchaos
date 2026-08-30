@@ -36,7 +36,11 @@ func validateNetwork(network string) error {
 	switch network {
 	case "tcp", "tcp4", "tcp6":
 		return nil
-	case "udp":
+	case "udp", "udp4", "udp6":
+		// All three spellings name the same exclusion, so all three get the
+		// explanation rather than the generic message for an unrecognized
+		// network — docs/06-scope-and-roadmap.md excludes UDP once, not
+		// three times.
 		return fmt.Errorf("%w: udp support is out of scope for netchaos v1", ErrUnsupportedNetwork)
 	default:
 		return fmt.Errorf("%w: %q", ErrUnsupportedNetwork, network)

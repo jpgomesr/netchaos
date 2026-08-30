@@ -113,7 +113,7 @@ Which of the three, and if option 1, whether it lands before `v1.0.0`.
 
 ### M6-3 — Extend the udp rejection message to udp4 and udp6
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** none (error-message quality)
 **Depends on:** —
 **Blocks:** —
@@ -130,8 +130,8 @@ Which of the three, and if option 1, whether it lands before `v1.0.0`.
 - `addr_test.go`
 
 **Acceptance criteria**
-- [ ] `validateNetwork("udp4")` and `validateNetwork("udp6")` return the same explanatory message as `"udp"`, still satisfying `errors.Is(err, ErrUnsupportedNetwork)`.
-- [ ] An unrelated unknown network (e.g. `"unix"`) still gets the generic message.
+- [x] `validateNetwork("udp4")` and `validateNetwork("udp6")` return the same explanatory message as `"udp"`, still satisfying `errors.Is(err, ErrUnsupportedNetwork)`.
+- [x] An unrelated unknown network (e.g. `"unix"`) still gets the generic message.
 
 **Tests**
 - Red first: extend the existing network-validation test with the two new inputs and watch it fail on the message assertion.
