@@ -154,3 +154,102 @@ func TestUseAfterCloseNoPanic(t *testing.T) {
 		t.Fatalf("Accept after Close = %v, want errors.Is(net.ErrClosed)", err)
 	}
 }
+
+// TestErrorsAreUniformlyOpError is M6-2's decision made testable: every error
+// leaving Listen, Dial and DialContext is a *net.OpError, matching what real
+// net.Listen and net.Dial return for the same failures.
+//
+// Before this, the shape depended on which line produced the error, and the
+// split followed no rule anyone could state -- a dial refusal was wrapped, a
+// bad network was not, Listen's address-in-use was not. Code under test that
+// type-asserts to *net.OpError, or calls Timeout()/Temporary() on the result,
+// therefore behaved differently against netchaos than against the standard
+// library, which cuts against the substitutability claim the library is sold
+// on.
+//
+// errors.Is against every sentinel keeps working because OpError unwraps;
+// that is what makes the change safe for the comparison style the package's
+// own docs and tests use.
+func TestErrorsAreUniformlyOpError(t *testing.T) {
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tests := []struct {
+		name    string
+		call    func(n *Network) error
+		wantOp  string
+		wantIs  error
+		wantNet string
+	}{
+		{
+			name:    "Listen with an unsupported network",
+			call:    func(n *Network) error { _, err := n.Listen("udp", "server"); return err },
+			wantOp:  "listen",
+			wantIs:  ErrUnsupportedNetwork,
+			wantNet: "udp",
+		},
+		{
+			name: "Listen on an address already in use",
+			call: func(n *Network) error {
+				if _, err := n.Listen("tcp", "taken"); err != nil {
+					return err
+				}
+				_, err := n.Listen("tcp", "taken")
+				return err
+			},
+			wantOp:  "listen",
+			wantIs:  ErrAddressInUse,
+			wantNet: "tcp",
+		},
+		{
+			name:    "Dial with an unsupported network",
+			call:    func(n *Network) error { _, err := n.Dial("udp", "server"); return err },
+			wantOp:  "dial",
+			wantIs:  ErrUnsupportedNetwork,
+			wantNet: "udp",
+		},
+		{
+			name:    "Dial an address nobody listens on",
+			call:    func(n *Network) error { _, err := n.Dial("tcp", "nobody"); return err },
+			wantOp:  "dial",
+			wantIs:  ErrConnectionRefused,
+			wantNet: "tcp",
+		},
+		{
+			name: "DialContext with an already-cancelled context",
+			call: func(n *Network) error {
+				_, err := n.DialContext(cancelled, "tcp", "server")
+				return err
+			},
+			wantOp:  "dial",
+			wantIs:  context.Canceled,
+			wantNet: "tcp",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.call(NewNetwork())
+			if err == nil {
+				t.Fatal("got nil, want an error")
+			}
+
+			var opErr *net.OpError
+			if !errors.As(err, &opErr) {
+				t.Fatalf("err = %v (%T), want a *net.OpError", err, err)
+			}
+			if opErr.Op != tt.wantOp {
+				t.Errorf("Op = %q, want %q", opErr.Op, tt.wantOp)
+			}
+			if opErr.Net != tt.wantNet {
+				t.Errorf("Net = %q, want %q", opErr.Net, tt.wantNet)
+			}
+			if opErr.Addr == nil {
+				t.Error("Addr = nil, want the address the call named")
+			}
+			if !errors.Is(err, tt.wantIs) {
+				t.Errorf("errors.Is(err, %v) = false; wrapping must not break sentinel matching", tt.wantIs)
+			}
+		})
+	}
+}

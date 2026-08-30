@@ -92,7 +92,7 @@ func NewNetwork(opts ...Option) *Network {
 // open listener returns an error satisfying errors.Is(err, ErrAddressInUse).
 func (n *Network) Listen(network, laddr string) (net.Listener, error) {
 	if err := validateNetwork(network); err != nil {
-		return nil, err
+		return nil, n.listenOpError(network, laddr, err)
 	}
 	peer := peerName(laddr)
 
@@ -100,7 +100,7 @@ func (n *Network) Listen(network, laddr string) (net.Listener, error) {
 	defer n.mu.Unlock()
 
 	if _, ok := n.listeners[peer]; ok {
-		return nil, ErrAddressInUse
+		return nil, n.listenOpError(network, laddr, ErrAddressInUse)
 	}
 
 	l := &listener{
@@ -164,19 +164,19 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 	// if ctx.Done() were just another case in that same select.
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, n.dialOpError(network, dialAddr, ctx.Err())
 	default:
 	}
 
 	if err := validateNetwork(network); err != nil {
-		return nil, err
+		return nil, n.dialOpError(network, dialAddr, err)
 	}
 	peer := peerName(dialAddr)
 
 	localName, named := peerNameFromContext(ctx)
 	if named && localName != "" {
 		if err := n.waitUnpartitioned(ctx, newPairKey(localName, peer)); err != nil {
-			return nil, err
+			return nil, n.dialOpError(network, dialAddr, err)
 		}
 	}
 
@@ -250,6 +250,22 @@ func (n *Network) waitUnpartitioned(ctx context.Context, k pairKey) error {
 	}
 }
 
+// dialOpError and listenOpError wrap every error leaving DialContext and
+// Listen respectively, so the shape a caller sees is the same one real
+// net.Dial and net.Listen produce (M6-2). Wrapping is uniform rather than
+// per-site: the previous split — refusals wrapped, bad networks and
+// address-in-use bare — followed no rule anyone could state, and code under
+// test that type-asserts to *net.OpError or calls Timeout()/Temporary()
+// behaved differently against netchaos than against the standard library.
+//
+// Every sentinel stays matchable with errors.Is, since OpError unwraps. Only
+// direct == comparison against a sentinel stops working, which is why this
+// was a decision rather than a cleanup; errors.go documents the sentinels as
+// errors.Is targets.
 func (n *Network) dialOpError(network, dialAddr string, err error) error {
 	return &net.OpError{Op: "dial", Net: network, Addr: &addr{network: network, peer: dialAddr}, Err: err}
+}
+
+func (n *Network) listenOpError(network, laddr string, err error) error {
+	return &net.OpError{Op: "listen", Net: network, Addr: &addr{network: network, peer: laddr}, Err: err}
 }

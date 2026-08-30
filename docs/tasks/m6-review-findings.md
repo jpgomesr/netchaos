@@ -80,8 +80,8 @@ A `Close` landing between the reserve and the fill now closes the filled conn in
 
 ### M6-2 — Decide a single error-wrapping policy across Listen, Dial and DialContext
 
-**Status:** todo
-**Decision:** *(not yet made — this is a decision task; it changes observable behaviour)*
+**Status:** done — decided **and implemented**
+**Decision:** **option 1 — wrap everything in `*net.OpError`, uniformly — landing before `v1.0.0`.** Taken by the maintainer. The reasoning is the one the task's own weighing input names: it is the only option that serves the substitutability claim, the sentinels are already documented as `errors.Is` targets, and `errors.Is` is the comparison style the package's own tests use. The behaviour change is worth making now precisely because `v0.1.0` has no external users, so the two real costs — changed `Error()` strings and `==` against a sentinel no longer matching — are paid by nobody.
 **Roadmap item:** none (API consistency)
 **Depends on:** —
 **Blocks:** —
@@ -113,9 +113,18 @@ Weighing input, not a decision: option 1 is the only one that serves the substit
 **Decision required**
 Which of the three, and if option 1, whether it lands before `v1.0.0`.
 
-**Where the decision gets recorded**
-- An issue per [07 — Contributing](../07-contributing.md)'s issue-first rule, labeled `needs-discussion`.
-- [04 — API Design](../04-api-design.md#error-and-no-op-behaviour)'s error-behaviour section, and `errors.go`'s package-level comment, once decided.
+**Where the decision got recorded**
+- [04 — API Design](../04-api-design.md#error-and-no-op-behaviour)'s error-behaviour section — a new bullet stating the uniform shape and the `errors.Is`-not-`==` rule.
+- `errors.go`'s package-level comment, which now says the same thing at the point a reader meets the sentinels.
+- `CHANGELOG.md` under `Unreleased`, since this is a caller-visible change rather than an internal one.
+- The issue-first rule in [07 — Contributing](../07-contributing.md) applies to changes to an *exported signature*; no signature moves here, and the maintainer decided the behaviour directly, so the decision is recorded in the docs above rather than routed through a `needs-discussion` issue that would only have restated it.
+
+**Implementation notes**
+Four sites were bare and are now wrapped: `Listen`'s network validation and `ErrAddressInUse`, and `DialContext`'s already-done context and network validation. The refused-dial and enqueue-failure paths were already `*net.OpError` and are unchanged. `Listen` gained a `listenOpError` helper mirroring the existing `dialOpError`, so `Op` is `"listen"` there and `"dial"` in `DialContext`.
+
+Nothing in the existing suite broke, which is itself the evidence that the risk was where the task said it was: every existing assertion already used `errors.Is`, so the wrapping is transparent to them. The exposure is entirely to hypothetical external code doing `==`, and there is none.
+
+`TestErrorsAreUniformlyOpError` covers all five sites in a table, asserting `Op`, `Net`, a non-nil `Addr`, and that `errors.Is` still reaches the sentinel through the wrapper. It was red on exactly the four unwrapped sites beforehand.
 
 ---
 
