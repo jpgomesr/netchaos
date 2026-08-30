@@ -67,7 +67,7 @@ Weighing input, not a decision: option 1 costs little (it's a review, not a rewr
 Whether anything on the frozen surface should change before `v1.0.0`, and if so, what — recorded as an issue (or issues) per the `M0` precedent's `needs-discussion` label, not landed directly.
 
 **Where the decision gets recorded**
-- A `needs-discussion`-labeled issue per finding, or a single issue if the review turns up nothing — either way, the outcome should be linked back here.
+- A `needs-discussion`-labeled issue per finding, or a single issue if the review turns up nothing — either way, the outcome should be linked back here. Filed: [#36](https://github.com/jpgomesr/netchaos/issues/36) (F2, cross-linked from `M6-9`) and [#37](https://github.com/jpgomesr/netchaos/issues/37) (F4, cross-linked from `M6-10`). These are the repository's first issues.
 - [07 — Contributing](../07-contributing.md), if the review changes the guidance about how much room `v0.1.0` actually has left.
 
 ---
@@ -99,7 +99,7 @@ F1's mechanism is the real finding, and it is not a documentation problem. `Dial
 
 This subsumes M5-2's point (b), "`Dial`/`DialContext` symmetry": the asymmetry is not stylistic, it is a capability gap. It also reframes point (a): `WithPeerName`'s context-carried shape is defensible as the least-bad fit for `Dial`'s frozen signature (as [04](../04-api-design.md#frozen-v1-surface) argues), but F2 is the cost that argument was paying, and it was never written down.
 
-Raised as a `needs-discussion` issue rather than decided — it would add an exported identifier.
+Raised as a `needs-discussion` issue rather than decided — it would add an exported identifier: [#36](https://github.com/jpgomesr/netchaos/issues/36).
 
 ### F3 — `Partition` on an unnamed dialer is a silent no-op *(input from `M6-9`, folded into F2's issue)*
 
@@ -115,7 +115,7 @@ Raised as a `needs-discussion` issue rather than decided — it would add an exp
 
 ### F4 — Addresses have no `host:port` structure *(input from `M6-10`, its own issue)*
 
-`peerName` is the identity function (`addr.go:32`), so `addr.String()` returns the peer name verbatim and `net.SplitHostPort` fails against netchaos where it succeeds against the real stack. Confirmed unchanged. `M6-10` asked for a `needs-discussion` issue cross-linked to this review; filed. Not decided here — it is a breaking change to every address string a test prints, so it belongs to the issue-first process.
+`peerName` is the identity function (`addr.go:32`), so `addr.String()` returns the peer name verbatim and `net.SplitHostPort` fails against netchaos where it succeeds against the real stack. Confirmed unchanged. `M6-10` asked for a `needs-discussion` issue cross-linked to this review: [#37](https://github.com/jpgomesr/netchaos/issues/37). Not decided here — it is a breaking change to every address string a test prints, so it belongs to the issue-first process.
 
 ### F5 — `M6-17`'s gate: **not blocked by this review**
 
