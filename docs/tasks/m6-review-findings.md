@@ -46,7 +46,7 @@ Which leaves two honest outcomes, and this task picks one rather than assuming t
 
 **Scope**
 - Decide between the two outcomes above and implement it.
-- Whichever is chosen, the behaviour must end up asserted by a test — the reason this survived to `v0.1.0` is that `TestBacklogFull` (`listener_test.go:142`) asserts the returned error and nothing about the ordinal side effect.
+- Whichever is chosen, the behaviour must end up asserted by a test. The reason this survived to `v0.1.0` is worth stating precisely: `TestBacklogFull` (`listener_test.go:142-159`) calls `ln.enqueue(dummyConn())` directly in a loop, bypassing `DialContext` entirely. It proves `enqueue` returns `ErrBacklogFull` at capacity and never exercises the dial path where the ordinal is assigned — so no existing test could have caught this, regardless of what it asserted.
 - Out of scope: any change to how ordinals are derived or to the derivation tuple in `rand.go`. This is about *when* one is handed out.
 
 **Files**
@@ -332,7 +332,7 @@ Each half is deliberate and each is already documented *from the `WithPeerName` 
 **Acceptance criteria**
 - [ ] `Partition` and `Heal` godoc point a reader to `WithPeerName` and state the ephemeral-dialer consequence.
 - [ ] No behaviour change.
-- [ ] The finding is linked into `M5-2`'s review when that runs.
+- [ ] The task text records the semantics question as `M5-2` input, so the review picks it up without depending on this box.
 
 **Tests**
 - None — godoc only. Verify the rendered doc reads correctly with `go doc github.com/jpgomesr/netchaos.Network.Partition`.

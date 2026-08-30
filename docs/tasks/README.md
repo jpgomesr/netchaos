@@ -28,7 +28,7 @@ All six checklist lines from [06 — Scope & Roadmap](../06-scope-and-roadmap.md
 
 ## Dependency order
 
-Milestones gate each other in order — M0 → M1 → M2 → M3 → M4 → M5 — and within that, these are the exact edges. Each task file repeats them as its own `Depends on:` / `Blocks:` lines; if the two ever disagree, the task file is authoritative.
+Milestones M0 through M5 gate each other in order — M0 → M1 → M2 → M3 → M4 → M5 — and within that, these are the exact edges. **M6 is not gated on M5:** it collects findings against code that already shipped, so nothing in it waits on M5's release verification or its ergonomics review, and its tasks' own `Depends on:` lines say so. Each task file repeats these edges as its own `Depends on:` / `Blocks:` lines; if the two ever disagree, the task file is authoritative.
 
 ```
 M0   M0-1, M0-2      ─▶ M0-5
