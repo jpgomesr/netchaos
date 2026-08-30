@@ -159,7 +159,7 @@ Nothing in the existing suite broke, which is itself the evidence that the risk 
 
 ### M6-4 — Correct the "exactly one draw" claim
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** none (documentation precision)
 **Depends on:** —
 **Blocks:** —
@@ -179,9 +179,11 @@ The property the comment is *reaching for* is true and worth keeping: the fixed 
 - `docs/05-fault-injection.md`
 
 **Acceptance criteria**
-- [ ] `rand.go`'s comment no longer claims a raw-draw count it cannot guarantee, and names the rejection loop as the reason.
-- [ ] `docs/05-fault-injection.md`'s latency wording agrees with it.
-- [ ] No behaviour change; golden vectors and traces are untouched.
+- [x] `rand.go`'s comment no longer claims a raw-draw count it cannot guarantee, and names the rejection loop as the reason.
+- [x] `docs/05-fault-injection.md`'s latency wording agrees with it.
+- [x] No behaviour change; golden vectors and traces are untouched.
+
+**Outcome note:** the fixed case turned out to be *exactly* one raw draw after all, and provably so: `min == max` gives `span == 1`, for which `boundedUint64`'s rejection threshold `-n % n` is 0, so the loop can never run. `TestUniformDurationFixedConsumesADraw` (`rand_test.go:157-169`) was therefore correct as written and needed no change. The overstatement was only in generalizing that to the ranged case; the reworded comment now says which case is which rather than replacing one imprecise claim with another.
 
 **Tests**
 - None — comment and prose only. Verified by `go build ./... && go vet ./... && gofmt -l . && go test -race ./...` still passing unchanged.
