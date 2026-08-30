@@ -209,3 +209,82 @@ func TestMultipleLatenciesInOneBubble(t *testing.T) {
 		}
 	})
 }
+
+// TestLatencyDoesNotWedgeSlowReader is the latency counterpart to
+// TestLossDoesNotWedgeWriterOnRepeatedDrops (loss_test.go), which had no
+// equivalent. It is the case where the pipe's 64 KiB bound and the pending
+// queue actually interact: a unit held back by latency keeps its bufBytes
+// accounting until it is released, so a reader slower than the injected
+// delay is exactly the shape in which an accounting bug would wedge the
+// writer permanently rather than merely slowing it.
+//
+// Run in a bubble so the delay costs no real time and so the assertion is a
+// deterministic signal rather than a wall-clock timeout: synctest.Test fails
+// the test if the writer is still blocked and nothing can advance, so
+// reaching the end is the proof that no write wedged.
+func TestLatencyDoesNotWedgeSlowReader(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const (
+			bound   = 1024
+			chunk   = 256
+			writes  = 40
+			latency = 50 * time.Millisecond
+		)
+
+		client, server := newConnPairWithBound(&addr{"tcp", "client"}, &addr{"tcp", "server"}, 0, "tcp", bound)
+		defer func() { _ = client.Close() }()
+		defer func() { _ = server.Close() }()
+
+		installFaultPolicy(client.writePipe, faultPolicy{
+			latencyEnabled: true,
+			latencyMin:     latency,
+			latencyMax:     latency,
+		})
+
+		written := make(chan error, 1)
+		go func() {
+			payload := make([]byte, chunk)
+			for i := 0; i < writes; i++ {
+				if _, err := client.Write(payload); err != nil {
+					written <- err
+					return
+				}
+			}
+			written <- nil
+		}()
+
+		// Read strictly slower than the writer produces, so the bound is
+		// reached and the writer has to wait on released capacity. The sleep
+		// comes *after* the read, deliberately: that way each Read blocks
+		// until the latency timer releases a unit and broadcasts, so this
+		// exercises the release path rather than letting a pre-read sleep
+		// advance the clock and make the data already available.
+		got := 0
+		buf := make([]byte, chunk/2)
+		for got < writes*chunk {
+			n, err := server.Read(buf)
+			if err != nil {
+				t.Fatalf("read after %d of %d bytes: %v", got, writes*chunk, err)
+			}
+			got += n
+			time.Sleep(latency * 2)
+		}
+
+		if err := <-written; err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		if got != writes*chunk {
+			t.Fatalf("read %d bytes, want %d", got, writes*chunk)
+		}
+
+		// Everything delivered means everything was released, so no unit is
+		// still holding accounting against the bound.
+		client.writePipe.mu.Lock()
+		leftover := client.writePipe.bufBytes
+		stillPending := len(client.writePipe.pending)
+		client.writePipe.mu.Unlock()
+		if leftover != 0 || stillPending != 0 {
+			t.Fatalf("after draining: bufBytes = %d, pending = %d, want 0 and 0", leftover, stillPending)
+		}
+	})
+}

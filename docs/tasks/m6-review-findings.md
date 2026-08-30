@@ -226,7 +226,7 @@ netchaos's headline claim is that its `net.Conn` substitutes for the real one. `
 
 ### M6-6 — Close the three named test-coverage gaps
 
-**Status:** todo
+**Status:** done — and it turned up [M6-18](#m6-18--two-leak-tests-claim-a-property-their-assertion-cannot-observe)
 **Roadmap item:** none (test hardening)
 **Depends on:** —
 **Blocks:** —
@@ -247,10 +247,18 @@ Three specific gaps, each one a behaviour the code has but no test observes:
 - `conn_test.go` or `pipe_test.go`, `latency_test.go`, `leak_test.go`
 
 **Acceptance criteria**
-- [ ] Zero-length `Write` behaviour is asserted, and the draw-consumption consequence is stated in a comment or godoc.
-- [ ] A slow reader under high latency does not wedge the writer, asserted in virtual time.
-- [ ] `leak_test.go` no longer depends on a wall-clock polling window.
-- [ ] The suite's runtime does not regress meaningfully.
+- [x] Zero-length `Write` behaviour is asserted, and the draw-consumption consequence is stated in a comment or godoc.
+- [x] A slow reader under high latency does not wedge the writer, asserted in virtual time.
+- [x] `leak_test.go` no longer depends on a wall-clock polling window.
+- [x] The suite's runtime does not regress meaningfully. — it improves: two wall-clock waits of up to 2s are gone from `TestNoGoroutineLeaks`.
+
+**What each gap turned out to be**
+
+1. **Zero-length write.** It *is* a fault unit: admitted, and drawing from every configured stream like any other unit. That half is asserted as intended behaviour, since treating an empty write as a no-op would be a breaking change to the draw discipline. But it also surfaced at the reader as a `(0, nil)` `Read` — a wakeup no real `net.Conn` produces, and the return `io.Reader` discourages for a non-empty buffer. Fixed in `pipe.tryRead`: when every payload consumed was empty, fall through and keep waiting instead of returning zero. `len(b) == 0` keeps its existing `(0, nil)` answer, which is the one case where that return is correct. Draw consumption is untouched, so the determinism contract is not affected.
+
+2. **Writer wedging under latency.** No defect; the behaviour was already correct. The test needed strengthening rather than the code: a first version slept *before* each read, which let virtual time advance past the release and made the assertion vacuous — it stayed green with `releaseDueLatency`'s broadcast deleted. Moving the sleep after the read makes each `Read` block on the release path, and the test now fails (writer wedged in `conn.Write`) when that broadcast is removed.
+
+3. **`leak_test.go`'s wall-clock poll.** Replaced, but not the way this task assumed. The task expected synctest's bubble-exit to already carry the property; **it does not.** An armed-but-unfired `time.AfterFunc` owns no goroutine, so the bubble cannot see a timer left unstopped — deleting `conn.Close`'s `rd.stop()` leaves a bubble-only test green. So the poll is replaced by two signals: the bubble (for goroutines still running, which it does cover) plus `assertDeadlineTimerDisarmed`, a direct check confirmed to go red when `rd.stop()` is removed. The same blind spot on the latency side is recorded as [M6-18](#m6-18--two-leak-tests-claim-a-property-their-assertion-cannot-observe) rather than fixed here.
 
 **Tests**
 - `TestZeroLengthWrite`, `TestLatencyDoesNotWedgeSlowReader`, and the rewritten leak assertion.
@@ -588,6 +596,46 @@ Which of the three. (No longer gated on `M5-2`.)
 **Where the decision gets recorded**
 - [04 — API Design](../04-api-design.md#functional-options)'s options list, if either lands.
 - The godoc on whichever constants stay fixed, which should at minimum state the value.
+
+---
+
+### M6-18 — Two leak tests claim a property their assertion cannot observe
+
+**Status:** todo
+**Roadmap item:** none (test correctness — found while doing [M6-6](#m6-6--close-the-three-named-test-coverage-gaps))
+**Depends on:** —
+**Blocks:** —
+
+**Objective**
+Found by experiment while rewriting `leak_test.go`, not by reading: **`synctest.Test`'s bubble-exit check does not observe an armed-but-unfired `time.AfterFunc`.** `synctest.Test` fails a test when a goroutine started inside the bubble is still running at return, and an `AfterFunc` that has not fired owns no goroutine — so a timer left armed by a missing `Stop` is invisible to it.
+
+Two docstrings claim otherwise:
+
+- `TestCloseWithInFlightWorkInBubble` (`synctest_test.go:321-327`) calls itself *"the primary evidence that a latency delivery timer does not outlive the conn that created it"* and says completing the test *"is the assertion that pipe.close's timer.Stop actually disarmed the pending AfterFunc."* Verified false: deleting the `if p.timer != nil { p.timer.Stop(); ... }` block from `pipe.close` leaves this test green.
+- `TestNoLatencyTimerLeaks` (`synctest_test.go:427-433`) is already honest that `runtime.NumGoroutine` cannot see an unstopped timer, and correctly defers to `TestCloseWithInFlightWorkInBubble` as "what actually proves" it. That deferral is the part that does not hold.
+
+The consequence is narrow but real: **no test in the repo currently proves that `pipe.close` disarms a pending latency timer.** The production code does do it — this is a gap in the evidence, not a defect in the behaviour.
+
+`M6-6` fixed the equivalent gap on the deadline side rather than leaving it: `leak_test.go`'s `assertDeadlineTimerDisarmed` checks `deadline.timer != nil` directly, and was confirmed to catch a removed `conn.Close` → `rd.stop()`. The latency side wants the same treatment.
+
+**Scope**
+- Add a direct assertion to `TestCloseWithInFlightWorkInBubble` (or alongside it) that `pipe.timer` is nil after close — mirroring `assertDeadlineTimerDisarmed`. Confirm it goes red when `pipe.close`'s `timer.Stop()` is removed.
+- Correct both docstrings to state what the bubble does and does not prove. This is the same class of overstatement `M6-4` fixed in `rand.go`: a comment asserting a precision the mechanism does not have.
+- Consider whether `M3-3`'s recorded decision (["the leak criterion is carried by `TestCloseWithInFlightWorkInBubble`, not by goroutine counting"](m3-synctest-and-reproducibility.md)) needs a correction note, since that decision rests on the claim this task disproves.
+- Out of scope: any change to `pipe.close` or `conn.Close`. The behaviour is correct; only the evidence for it is missing.
+
+**Files**
+- `synctest_test.go`
+- `docs/tasks/m3-synctest-and-reproducibility.md` — the decision note, if it is corrected
+
+**Acceptance criteria**
+- [ ] A test fails when `pipe.close`'s `timer.Stop()` is removed, demonstrated rather than assumed.
+- [ ] `TestCloseWithInFlightWorkInBubble` and `TestNoLatencyTimerLeaks` describe what their assertions actually observe.
+- [ ] The bubble's real value — catching goroutines still running at exit — is still stated, not thrown out with the overstatement.
+
+**Tests**
+- Red first, by deletion: remove `timer.Stop()` from `pipe.close`, confirm the new assertion fails, restore it.
+- Verify: `go build ./... && go vet ./... && gofmt -l . && go test -race ./... && golangci-lint run`
 
 ---
 
