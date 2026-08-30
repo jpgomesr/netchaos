@@ -18,7 +18,7 @@
 
 ### M6-1 — Reconcile ordinal assignment with the determinism contract
 
-**Status:** todo
+**Status:** done — resolved as **outcome 1** (the code now matches the doc)
 **Roadmap item:** none (correctness — the determinism contract in [04 — API Design](../04-api-design.md#determinism-contract))
 **Depends on:** —
 **Blocks:** —
@@ -56,12 +56,20 @@ Which leaves two honest outcomes, and this task picks one rather than assuming t
 - `dial_test.go` / `listener_test.go`
 
 **Acceptance criteria**
-- [ ] A test exercises a dial that fails at `enqueue` with `ErrBacklogFull` and asserts the resulting ordinal behaviour, whichever way it was decided.
-- [ ] The closed-listener `ErrConnectionRefused` path from `enqueue` is covered by the same assertion.
-- [ ] `docs/04-api-design.md`'s `connectionOrdinal` bullet and `DialContext`'s godoc state the same thing as each other and as the code.
-- [ ] The `n.mu` / `l.mu` lock order is unchanged, with a comment at `netchaos.go:188` recording why the unlock sits where it does.
-- [ ] Existing golden traces in `testdata/traces/` are unaffected, or the change to them is deliberate and explained (per `M3-3`, a golden diff is a contract-change signal).
-- [ ] `-race` clean on CI.
+- [x] A test exercises a dial that fails at `enqueue` with `ErrBacklogFull` and asserts the resulting ordinal behaviour, whichever way it was decided. — `TestBacklogFullOrdinalAccounting`, red at 129/want 128 before the fix.
+- [x] The closed-listener `ErrConnectionRefused` path from `enqueue` is covered by the same assertion. — `TestClosedListenerDialOrdinalAccounting`, red at 1/want 0 before the fix.
+- [x] `docs/04-api-design.md`'s `connectionOrdinal` bullet and `DialContext`'s godoc state the same thing as each other and as the code.
+- [x] The `n.mu` / `l.mu` lock order is unchanged, with a comment at `netchaos.go:188` recording why the unlock sits where it does.
+- [x] Existing golden traces in `testdata/traces/` are unaffected, or the change to them is deliberate and explained (per `M3-3`, a golden diff is a contract-change signal). — byte-identical, as expected: no golden scenario contains a failing dial.
+- [ ] `-race` clean on CI. — **not verifiable locally** (`CGO_ENABLED=0`, no C toolchain on the dev machine, per `AGENTS.md`); confirm on the PR's CI run before treating this task as closed.
+
+**How it was resolved**
+Outcome 1, via a reservation primitive. `listener` gained `reserve`/`fill`: `reserve` claims an accept-queue slot under `l.mu`, checking both remaining failure modes (closed listener, full backlog); `fill` hands the `*conn` to the claimed slot and cannot block or fail, because the capacity was already accounted for. `DialContext` now reserves *before* taking an ordinal, which makes a successful reserve the point the dial commits — past it, establishment cannot fail, so an ordinal is only ever spent on a connection that establishes.
+
+`enqueue` survives as a thin `reserve`-then-`fill` wrapper rather than being replaced, so `TestBacklogFull` and the two `errors_test.go` callers that exercise the capacity bound directly are untouched by this change.
+
+**One semantics consequence, recorded deliberately**
+A `Close` landing between the reserve and the fill now closes the filled conn instead of failing the dial, so the dialer gets a live conn whose peer is already closed rather than `ErrConnectionRefused`. This is not a new outcome: `listener.Close` already closes queued-but-unaccepted conns, so "successful dial, dead peer" was always reachable — the reservation widens an existing window. It is the price of the contract holding on every path, and it is noted in `fill`'s godoc so a later reader does not mistake it for an accident.
 
 **Tests**
 - Red first: write a test that dials until the backlog is full, lets one dial fail, then completes a successful dial and compares its ordinal (or its recorded trace) against the same sequence run without the failing dial. Confirm it fails before touching production code.
