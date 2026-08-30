@@ -209,3 +209,185 @@ func TestMultipleLatenciesInOneBubble(t *testing.T) {
 		}
 	})
 }
+
+// TestLatencyDoesNotWedgeSlowReader is the latency counterpart to
+// TestLossDoesNotWedgeWriterOnRepeatedDrops (loss_test.go), which had no
+// equivalent. It is the case where the pipe's 64 KiB bound and the pending
+// queue actually interact: a unit held back by latency keeps its bufBytes
+// accounting until it is released, so a reader slower than the injected
+// delay is exactly the shape in which an accounting bug would wedge the
+// writer permanently rather than merely slowing it.
+//
+// Run in a bubble so the delay costs no real time and so the assertion is a
+// deterministic signal rather than a wall-clock timeout: synctest.Test fails
+// the test if the writer is still blocked and nothing can advance, so
+// reaching the end is the proof that no write wedged.
+func TestLatencyDoesNotWedgeSlowReader(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const (
+			bound   = 1024
+			chunk   = 256
+			writes  = 40
+			latency = 50 * time.Millisecond
+		)
+
+		client, server := newConnPairWithBound(&addr{"tcp", "client"}, &addr{"tcp", "server"}, 0, "tcp", bound)
+		defer func() { _ = client.Close() }()
+		defer func() { _ = server.Close() }()
+
+		installFaultPolicy(client.writePipe, faultPolicy{
+			latencyEnabled: true,
+			latencyMin:     latency,
+			latencyMax:     latency,
+		})
+
+		written := make(chan error, 1)
+		go func() {
+			payload := make([]byte, chunk)
+			for i := 0; i < writes; i++ {
+				if _, err := client.Write(payload); err != nil {
+					written <- err
+					return
+				}
+			}
+			written <- nil
+		}()
+
+		// Read strictly slower than the writer produces, so the bound is
+		// reached and the writer has to wait on released capacity. The sleep
+		// comes *after* the read, deliberately: that way each Read blocks
+		// until the latency timer releases a unit and broadcasts, so this
+		// exercises the release path rather than letting a pre-read sleep
+		// advance the clock and make the data already available.
+		got := 0
+		buf := make([]byte, chunk/2)
+		for got < writes*chunk {
+			n, err := server.Read(buf)
+			if err != nil {
+				t.Fatalf("read after %d of %d bytes: %v", got, writes*chunk, err)
+			}
+			got += n
+			time.Sleep(latency * 2)
+		}
+
+		if err := <-written; err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		if got != writes*chunk {
+			t.Fatalf("read %d bytes, want %d", got, writes*chunk)
+		}
+
+		// Everything delivered means everything was released, so no unit is
+		// still holding accounting against the bound.
+		client.writePipe.mu.Lock()
+		leftover := client.writePipe.bufBytes
+		stillPending := len(client.writePipe.pending)
+		client.writePipe.mu.Unlock()
+		if leftover != 0 || stillPending != 0 {
+			t.Fatalf("after draining: bufBytes = %d, pending = %d, want 0 and 0", leftover, stillPending)
+		}
+	})
+}
+
+// TestLatencyTimerNotRearmedBehindHead is M6-8's efficiency claim: pending is
+// release-ordered and new units append to the tail, so admitting a unit
+// changes the head only when pending was previously empty. Every other write
+// re-armed the timer for the same deadline it was already armed for.
+//
+// Asserted with a counter rather than an allocation count: conn.Write copies
+// its payload, so testing.AllocsPerRun on this path measures two things at
+// once, and a flaky assertion in a change whose whole risk is silent
+// non-delivery would be the wrong trade.
+func TestLatencyTimerNotRearmedBehindHead(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		client, server := newConnPairWithBound(&addr{"tcp", "client"}, &addr{"tcp", "server"}, 0, "tcp", defaultPipeBound)
+		defer func() { _ = client.Close() }()
+		defer func() { _ = server.Close() }()
+
+		p := client.writePipe
+		installFaultPolicy(p, faultPolicy{
+			latencyEnabled: true,
+			latencyMin:     time.Hour,
+			latencyMax:     time.Hour,
+		})
+
+		// The first write becomes the head, so it must arm.
+		if _, err := client.Write([]byte("a")); err != nil {
+			t.Fatal(err)
+		}
+		if got := latencyRearms(p); got != 1 {
+			t.Fatalf("arms after the first write = %d, want 1 (it became the head)", got)
+		}
+
+		// Every later write lands behind that head, which does not move.
+		for i := 0; i < 8; i++ {
+			if _, err := client.Write([]byte("b")); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if got := latencyRearms(p); got != 1 {
+			t.Fatalf("arms after 8 writes behind an existing head = %d, want 1: "+
+				"a unit appended to the tail cannot change the head, so the live timer already targets the right deadline", got)
+		}
+	})
+}
+
+// TestLatencyTimerRearmsAfterPartialDrain is the other direction, and the one
+// that matters: a re-arm guard that is wrong this way stops delivering
+// pending units, which is silent data loss on the library's core path rather
+// than a missed optimization.
+//
+// Three units are given distinct release times, so the first release drains
+// exactly one and leaves *two* behind. The head genuinely changed there, so
+// releaseDueLatency must re-arm — unconditionally, unlike the append path. If
+// it does not, the remaining units are never delivered and the reads below
+// block until synctest reports the bubble deadlocked.
+//
+// Three rather than two, and that is the whole point of the test: with two
+// units a partial drain leaves len(pending) == 1, which the append guard's
+// own condition happens to accept, so the bug passes unnoticed. Verified by
+// making it — pointing releaseDueLatency at armLatencyForAppendLocked leaves
+// a two-unit version of this test green and fails this one.
+func TestLatencyTimerRearmsAfterPartialDrain(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const latency = time.Hour
+		const gap = time.Minute
+
+		client, server := newConnPairWithBound(&addr{"tcp", "client"}, &addr{"tcp", "server"}, 0, "tcp", defaultPipeBound)
+		defer func() { _ = client.Close() }()
+		defer func() { _ = server.Close() }()
+
+		installFaultPolicy(client.writePipe, faultPolicy{
+			latencyEnabled: true,
+			latencyMin:     latency,
+			latencyMax:     latency,
+		})
+
+		want := []string{"first", "second", "third"}
+		for i, payload := range want {
+			if _, err := client.Write([]byte(payload)); err != nil {
+				t.Fatal(err)
+			}
+			if i < len(want)-1 {
+				time.Sleep(gap) // so each unit releases strictly later than the last
+			}
+		}
+
+		buf := make([]byte, 6)
+		for i, w := range want {
+			n, err := server.Read(buf)
+			if err != nil || string(buf[:n]) != w {
+				t.Fatalf("read %d = (%q, %v), want (%q, nil): "+
+					"a unit behind the drained head was never released, so the timer was not re-armed",
+					i, buf[:n], err, w)
+			}
+		}
+	})
+}
+
+// latencyRearms reports how many times p's latency timer has been armed.
+func latencyRearms(p *pipe) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.arms
+}

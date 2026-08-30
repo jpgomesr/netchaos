@@ -26,7 +26,7 @@ Analyze all staged and unstaged changes in the repository, then propose a set of
 5. **On confirmation**
    - For each proposed commit (in order):
      - Stage only the relevant files explicitly: `git add <file1> <file2> ...`
-     - Commit using a heredoc to preserve formatting, with `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>` as the only trailer:
+     - Commit using a heredoc to preserve formatting, with `Co-Authored-By: Claude <noreply@anthropic.com>` as the only trailer:
 
        ```
        git commit -F - <<'EOF'

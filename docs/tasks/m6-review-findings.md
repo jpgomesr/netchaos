@@ -18,7 +18,7 @@
 
 ### M6-1 — Reconcile ordinal assignment with the determinism contract
 
-**Status:** todo
+**Status:** done — resolved as **outcome 1** (the code now matches the doc)
 **Roadmap item:** none (correctness — the determinism contract in [04 — API Design](../04-api-design.md#determinism-contract))
 **Depends on:** —
 **Blocks:** —
@@ -56,12 +56,20 @@ Which leaves two honest outcomes, and this task picks one rather than assuming t
 - `dial_test.go` / `listener_test.go`
 
 **Acceptance criteria**
-- [ ] A test exercises a dial that fails at `enqueue` with `ErrBacklogFull` and asserts the resulting ordinal behaviour, whichever way it was decided.
-- [ ] The closed-listener `ErrConnectionRefused` path from `enqueue` is covered by the same assertion.
-- [ ] `docs/04-api-design.md`'s `connectionOrdinal` bullet and `DialContext`'s godoc state the same thing as each other and as the code.
-- [ ] The `n.mu` / `l.mu` lock order is unchanged, with a comment at `netchaos.go:188` recording why the unlock sits where it does.
-- [ ] Existing golden traces in `testdata/traces/` are unaffected, or the change to them is deliberate and explained (per `M3-3`, a golden diff is a contract-change signal).
-- [ ] `-race` clean on CI.
+- [x] A test exercises a dial that fails at `enqueue` with `ErrBacklogFull` and asserts the resulting ordinal behaviour, whichever way it was decided. — `TestBacklogFullOrdinalAccounting`, red at 129/want 128 before the fix.
+- [x] The closed-listener `ErrConnectionRefused` path from `enqueue` is covered by the same assertion. — `TestClosedListenerDialOrdinalAccounting`, red at 1/want 0 before the fix.
+- [x] `docs/04-api-design.md`'s `connectionOrdinal` bullet and `DialContext`'s godoc state the same thing as each other and as the code.
+- [x] The `n.mu` / `l.mu` lock order is unchanged, with a comment at `netchaos.go:188` recording why the unlock sits where it does.
+- [x] Existing golden traces in `testdata/traces/` are unaffected, or the change to them is deliberate and explained (per `M3-3`, a golden diff is a contract-change signal). — byte-identical, as expected: no golden scenario contains a failing dial.
+- [x] `-race` clean on CI. — confirmed on PR #40: `test (1.25)` and `test (1.26)` both pass, along with `lint` and the `gofmt` check. Not verifiable locally (`CGO_ENABLED=0`, no C toolchain on the dev machine, per `AGENTS.md`), which is why this box was ticked from the CI run rather than a local one.
+
+**How it was resolved**
+Outcome 1, via a reservation primitive. `listener` gained `reserve`/`fill`: `reserve` claims an accept-queue slot under `l.mu`, checking both remaining failure modes (closed listener, full backlog); `fill` hands the `*conn` to the claimed slot and cannot block or fail, because the capacity was already accounted for. `DialContext` now reserves *before* taking an ordinal, which makes a successful reserve the point the dial commits — past it, establishment cannot fail, so an ordinal is only ever spent on a connection that establishes.
+
+`enqueue` survives as a thin `reserve`-then-`fill` wrapper rather than being replaced, so `TestBacklogFull` and the two `errors_test.go` callers that exercise the capacity bound directly are untouched by this change.
+
+**One semantics consequence, recorded deliberately**
+A `Close` landing between the reserve and the fill now closes the filled conn instead of failing the dial, so the dialer gets a live conn whose peer is already closed rather than `ErrConnectionRefused`. This is not a new outcome: `listener.Close` already closes queued-but-unaccepted conns, so "successful dial, dead peer" was always reachable — the reservation widens an existing window. It is the price of the contract holding on every path, and it is noted in `fill`'s godoc so a later reader does not mistake it for an accident.
 
 **Tests**
 - Red first: write a test that dials until the backlog is full, lets one dial fail, then completes a successful dial and compares its ordinal (or its recorded trace) against the same sequence run without the failing dial. Confirm it fails before touching production code.
@@ -72,8 +80,8 @@ Which leaves two honest outcomes, and this task picks one rather than assuming t
 
 ### M6-2 — Decide a single error-wrapping policy across Listen, Dial and DialContext
 
-**Status:** todo
-**Decision:** *(not yet made — this is a decision task; it changes observable behaviour)*
+**Status:** done — decided **and implemented**
+**Decision:** **option 1 — wrap everything in `*net.OpError`, uniformly — landing before `v1.0.0`.** Taken by the maintainer. The reasoning is the one the task's own weighing input names: it is the only option that serves the substitutability claim, the sentinels are already documented as `errors.Is` targets, and `errors.Is` is the comparison style the package's own tests use. The behaviour change is worth making now precisely because `v0.1.0` has no external users, so the two real costs — changed `Error()` strings and `==` against a sentinel no longer matching — are paid by nobody.
 **Roadmap item:** none (API consistency)
 **Depends on:** —
 **Blocks:** —
@@ -105,15 +113,24 @@ Weighing input, not a decision: option 1 is the only one that serves the substit
 **Decision required**
 Which of the three, and if option 1, whether it lands before `v1.0.0`.
 
-**Where the decision gets recorded**
-- An issue per [07 — Contributing](../07-contributing.md)'s issue-first rule, labeled `needs-discussion`.
-- [04 — API Design](../04-api-design.md#error-and-no-op-behaviour)'s error-behaviour section, and `errors.go`'s package-level comment, once decided.
+**Where the decision got recorded**
+- [04 — API Design](../04-api-design.md#error-and-no-op-behaviour)'s error-behaviour section — a new bullet stating the uniform shape and the `errors.Is`-not-`==` rule.
+- `errors.go`'s package-level comment, which now says the same thing at the point a reader meets the sentinels.
+- `CHANGELOG.md` under `Unreleased`, since this is a caller-visible change rather than an internal one.
+- The issue-first rule in [07 — Contributing](../07-contributing.md) applies to changes to an *exported signature*; no signature moves here, and the maintainer decided the behaviour directly, so the decision is recorded in the docs above rather than routed through a `needs-discussion` issue that would only have restated it.
+
+**Implementation notes**
+Four sites were bare and are now wrapped: `Listen`'s network validation and `ErrAddressInUse`, and `DialContext`'s already-done context and network validation. The refused-dial and enqueue-failure paths were already `*net.OpError` and are unchanged. `Listen` gained a `listenOpError` helper mirroring the existing `dialOpError`, so `Op` is `"listen"` there and `"dial"` in `DialContext`.
+
+Nothing in the existing suite broke, which is itself the evidence that the risk was where the task said it was: every existing assertion already used `errors.Is`, so the wrapping is transparent to them. The exposure is entirely to hypothetical external code doing `==`, and there is none.
+
+`TestErrorsAreUniformlyOpError` covers all five sites in a table, asserting `Op`, `Net`, a non-nil `Addr`, and that `errors.Is` still reaches the sentinel through the wrapper. It was red on exactly the four unwrapped sites beforehand.
 
 ---
 
 ### M6-3 — Extend the udp rejection message to udp4 and udp6
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** none (error-message quality)
 **Depends on:** —
 **Blocks:** —
@@ -130,8 +147,8 @@ Which of the three, and if option 1, whether it lands before `v1.0.0`.
 - `addr_test.go`
 
 **Acceptance criteria**
-- [ ] `validateNetwork("udp4")` and `validateNetwork("udp6")` return the same explanatory message as `"udp"`, still satisfying `errors.Is(err, ErrUnsupportedNetwork)`.
-- [ ] An unrelated unknown network (e.g. `"unix"`) still gets the generic message.
+- [x] `validateNetwork("udp4")` and `validateNetwork("udp6")` return the same explanatory message as `"udp"`, still satisfying `errors.Is(err, ErrUnsupportedNetwork)`.
+- [x] An unrelated unknown network (e.g. `"unix"`) still gets the generic message.
 
 **Tests**
 - Red first: extend the existing network-validation test with the two new inputs and watch it fail on the message assertion.
@@ -142,7 +159,7 @@ Which of the three, and if option 1, whether it lands before `v1.0.0`.
 
 ### M6-4 — Correct the "exactly one draw" claim
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** none (documentation precision)
 **Depends on:** —
 **Blocks:** —
@@ -162,9 +179,11 @@ The property the comment is *reaching for* is true and worth keeping: the fixed 
 - `docs/05-fault-injection.md`
 
 **Acceptance criteria**
-- [ ] `rand.go`'s comment no longer claims a raw-draw count it cannot guarantee, and names the rejection loop as the reason.
-- [ ] `docs/05-fault-injection.md`'s latency wording agrees with it.
-- [ ] No behaviour change; golden vectors and traces are untouched.
+- [x] `rand.go`'s comment no longer claims a raw-draw count it cannot guarantee, and names the rejection loop as the reason.
+- [x] `docs/05-fault-injection.md`'s latency wording agrees with it.
+- [x] No behaviour change; golden vectors and traces are untouched.
+
+**Outcome note:** the fixed case turned out to be *exactly* one raw draw after all, and provably so: `min == max` gives `span == 1`, for which `boundedUint64`'s rejection threshold `-n % n` is 0, so the loop can never run. `TestUniformDurationFixedConsumesADraw` (`rand_test.go:157-169`) was therefore correct as written and needed no change. The overstatement was only in generalizing that to the ranged case; the reworded comment now says which case is which rather than replacing one imprecise claim with another.
 
 **Tests**
 - None — comment and prose only. Verified by `go build ./... && go vet ./... && gofmt -l . && go test -race ./...` still passing unchanged.
@@ -219,7 +238,7 @@ The `go` directive normalized from `go 1.25` to `go 1.25.0`. This is forced by t
 
 ### M6-6 — Close the three named test-coverage gaps
 
-**Status:** todo
+**Status:** done — and it turned up [M6-18](#m6-18--two-leak-tests-claim-a-property-their-assertion-cannot-observe)
 **Roadmap item:** none (test hardening)
 **Depends on:** —
 **Blocks:** —
@@ -240,10 +259,18 @@ Three specific gaps, each one a behaviour the code has but no test observes:
 - `conn_test.go` or `pipe_test.go`, `latency_test.go`, `leak_test.go`
 
 **Acceptance criteria**
-- [ ] Zero-length `Write` behaviour is asserted, and the draw-consumption consequence is stated in a comment or godoc.
-- [ ] A slow reader under high latency does not wedge the writer, asserted in virtual time.
-- [ ] `leak_test.go` no longer depends on a wall-clock polling window.
-- [ ] The suite's runtime does not regress meaningfully.
+- [x] Zero-length `Write` behaviour is asserted, and the draw-consumption consequence is stated in a comment or godoc.
+- [x] A slow reader under high latency does not wedge the writer, asserted in virtual time.
+- [x] `leak_test.go` no longer depends on a wall-clock polling window.
+- [x] The suite's runtime does not regress meaningfully. — it improves: two wall-clock waits of up to 2s are gone from `TestNoGoroutineLeaks`.
+
+**What each gap turned out to be**
+
+1. **Zero-length write.** It *is* a fault unit: admitted, and drawing from every configured stream like any other unit. That half is asserted as intended behaviour, since treating an empty write as a no-op would be a breaking change to the draw discipline. But it also surfaced at the reader as a `(0, nil)` `Read` — a wakeup no real `net.Conn` produces, and the return `io.Reader` discourages for a non-empty buffer. Fixed in `pipe.tryRead`: when every payload consumed was empty, fall through and keep waiting instead of returning zero. `len(b) == 0` keeps its existing `(0, nil)` answer, which is the one case where that return is correct. Draw consumption is untouched, so the determinism contract is not affected.
+
+2. **Writer wedging under latency.** No defect; the behaviour was already correct. The test needed strengthening rather than the code: a first version slept *before* each read, which let virtual time advance past the release and made the assertion vacuous — it stayed green with `releaseDueLatency`'s broadcast deleted. Moving the sleep after the read makes each `Read` block on the release path, and the test now fails (writer wedged in `conn.Write`) when that broadcast is removed.
+
+3. **`leak_test.go`'s wall-clock poll.** Replaced, but not the way this task assumed. The task expected synctest's bubble-exit to already carry the property; **it does not.** An armed-but-unfired `time.AfterFunc` owns no goroutine, so the bubble cannot see a timer left unstopped — deleting `conn.Close`'s `rd.stop()` leaves a bubble-only test green. So the poll is replaced by two signals: the bubble (for goroutines still running, which it does cover) plus `assertDeadlineTimerDisarmed`, a direct check confirmed to go red when `rd.stop()` is removed. The same blind spot on the latency side is recorded as [M6-18](#m6-18--two-leak-tests-claim-a-property-their-assertion-cannot-observe) rather than fixed here.
 
 **Tests**
 - `TestZeroLengthWrite`, `TestLatencyDoesNotWedgeSlowReader`, and the rewritten leak assertion.
@@ -253,7 +280,7 @@ Three specific gaps, each one a behaviour the code has but no test observes:
 
 ### M6-7 — Add a fuzz target and baseline benchmarks
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** none (test hardening)
 **Depends on:** —
 **Blocks:** M6-8 (its `BenchmarkWriteUnderLatency` is how M6-8's benefit gets measured)
@@ -270,9 +297,24 @@ The repo has zero `Fuzz*` and zero `Benchmark*` functions. The pipe's buffer acc
 - `fuzz_test.go` (new), `bench_test.go` (new)
 
 **Acceptance criteria**
-- [ ] `go test -run=Fuzz -fuzz=FuzzPipeAccounting -fuzztime=30s` runs clean, and any seed corpus it produces is committed.
-- [ ] Benchmarks exist for the three named paths and their first results are recorded in the PR description as the baseline.
-- [ ] The fuzz target runs as a normal (non-fuzzing) test in CI against its seed corpus, so it costs nothing per-run but still guards regressions.
+- [x] `go test -run=Fuzz -fuzz=FuzzPipeAccounting -fuzztime=30s` runs clean, and any seed corpus it produces is committed. — 558,360 executions clean on the second attempt; the input from the first is committed at `testdata/fuzz/FuzzPipeAccounting/39c4be89a18cc8de`.
+- [x] Benchmarks exist for the three named paths and their first results are recorded in the PR description as the baseline.
+- [x] The fuzz target runs as a normal (non-fuzzing) test in CI against its seed corpus, so it costs nothing per-run but still guards regressions. — verified: a plain `go test` runs seed#0–#6 plus the committed corpus entry.
+
+**What the fuzzer found in its first second**
+Not a defect in the pipe — a defect in the invariant I wrote for it, which is worth recording because the distinction took evidence rather than argument to settle. Input `{write 0, write 65}` against a bound of 64 reaches two queued payloads holding 65 bytes, which the first version of the check called a violation of the oversized-write rule.
+
+It is not one. A zero-length write is admitted and queued while leaving `bufBytes` at 0, so `tryWrite`'s "pipe is completely empty" test (`p.bufBytes == 0`) is still true and the oversized write joins it legitimately. The byte accounting is exactly right: the empty chunk contributes nothing, and any read pops it silently (per `M6-6`). The rule is about bytes, so the invariant is now counted in **non-empty** payloads, and the input is kept in the corpus as a permanent regression case for that interaction.
+
+**Baseline (12th Gen i5-12450HX, `-benchmem`, best of 3)**
+
+| Benchmark | ns/op | B/op | allocs/op |
+|---|---|---|---|
+| `BenchmarkRoundTrip` | 270.7 | 760 | 4 |
+| `BenchmarkWriteUnderLoss` | 156.4 | 787 | 2 |
+| `BenchmarkWriteUnderLatency` | 282.3 | 817 | 3 |
+
+The number `M6-8` turns on is the last column: **3 allocations per write under latency against 2 under loss.** The extra one is `armLatencyTimerLocked` recreating the timer, so the effect `M6-8` is looking for is measurable here or nowhere.
 
 **Tests**
 - `FuzzPipeAccounting`; `BenchmarkRoundTrip`, `BenchmarkWriteUnderLoss`, `BenchmarkWriteUnderLatency`.
@@ -282,7 +324,7 @@ The repo has zero `Fuzz*` and zero `Benchmark*` functions. The pipe's buffer acc
 
 ### M6-8 — Avoid re-arming the latency timer when the pending head is unchanged
 
-**Status:** todo
+**Status:** done — kept (3 allocs/write → 1; see the result table below)
 **Roadmap item:** none (efficiency)
 **Depends on:** [M6-7](#m6-7--add-a-fuzz-target-and-baseline-benchmarks) — without its latency benchmark there is no way to tell whether this changed anything
 **Blocks:** —
@@ -303,10 +345,26 @@ The repo has zero `Fuzz*` and zero `Benchmark*` functions. The pipe's buffer acc
 - `latency_test.go`, `latency_synctest_test.go`
 
 **Acceptance criteria**
-- [ ] No timer is recreated when a write appends behind an existing pending head.
-- [ ] A write that *does* become the new head arms correctly — asserted directly, not assumed.
-- [ ] All existing latency tests pass unchanged, including ordering and close-in-flight.
-- [ ] The benchmark shows a measurable reduction in allocations per write under latency, or the task is marked `dropped` with that result recorded.
+- [x] No timer is recreated when a write appends behind an existing pending head. — `TestLatencyTimerNotRearmedBehindHead`, red at 9 arms/want 1 before the change.
+- [x] A write that *does* become the new head arms correctly — asserted directly, not assumed. — same test's first assertion, plus `TestLatencyTimerRearmsAfterPartialDrain` for the release path.
+- [x] All existing latency tests pass unchanged, including ordering and close-in-flight. Golden traces byte-identical.
+- [x] The benchmark shows a measurable reduction in allocations per write under latency, or the task is marked `dropped` with that result recorded.
+
+**Result: kept, not dropped.** The trade turned out better than the task's own risk assessment assumed.
+
+| `BenchmarkWriteUnderLatency` | ns/op | B/op | allocs/op |
+|---|---|---|---|
+| before (`M6-7` baseline) | 282.3 | 817 | 3 |
+| after | 138.0 | 677 | **1** |
+
+Two of the three allocations per write disappear, not the one predicted: stop-and-recreate cost both a `*time.Timer` and the method-value closure for `p.releaseDueLatency`. What remains is `conn.Write`'s payload copy, which is required by `io.Writer`'s non-retention convention and is not this task's to remove.
+
+**How the asymmetric risk was handled**
+The task warns that a guard wrong in the *other* direction — failing to re-arm when the head did change — is silent non-delivery on the core path. That risk is real and concentrated in one place: `armLatencyTimerLocked` has two callers with opposite needs. `faults.go`'s append can skip the re-arm; `releaseDueLatency`'s drain never can.
+
+So the guard is a **separate entry point** (`armLatencyForAppendLocked`) rather than a condition inside the shared function, and `latency.go` says why in a comment that names the failure mode. Pointing `releaseDueLatency` at the guarded entry point was then tried deliberately, to confirm the test suite catches it.
+
+**The safety test needed strengthening to actually catch it.** A first version used two pending units, and it stayed green against the wrong entry point: a partial drain of two units leaves `len(pending) == 1`, which the append guard's own condition happens to accept. Three units leave two behind, the guard skips, nothing is ever delivered, and the test now fails with the reader deadlocked in `conn.Read`. That distinction is recorded in the test's own comment so a later edit does not quietly reduce it to two.
 
 **Tests**
 - Red first: a test asserting the timer is not replaced on an append behind the head (via an allocation count or a test-only counter).
@@ -317,7 +375,7 @@ The repo has zero `Fuzz*` and zero `Benchmark*` functions. The pipe's buffer acc
 
 ### M6-9 — Cross-reference the ephemeral-dialer caveat from Partition and Heal
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** none (documentation)
 **Depends on:** —
 **Blocks:** —
@@ -336,13 +394,15 @@ Each half is deliberate and each is already documented *from the `WithPeerName` 
 - Add the cross-reference to `Partition` and `Heal`'s godoc: naming a dialer requires `WithPeerName`, and without it the dialer is not partition-targetable under any name.
 - Out of scope — and this is the substantive half: whether `Partition` should surface a diagnostic at all instead of silently no-op'ing. That is a semantics change to the frozen surface, and [M5-2](m5-hardening-and-ergonomics.md#m5-2--api-ergonomics-review-before-v100) already lists `Partition`/`Heal`'s silent-no-op behaviour as one of its three named review points. This finding is **input to that review** — recorded here, decided there. Do not change the semantics under this task.
 
+**Decided (M5-2, finding F3): the silent no-op stays.** The composed failure was reproduced empirically against the published `v0.1.0` — an unnamed dialer is `ephemeral:0`, `Partition("client","server")` is a no-op, and a subsequent write is delivered. But `Partition` cannot distinguish "peer not connected yet" from "peer will never exist" without breaking the legitimate "start partitioned" setup pattern. M5-2 located the real cause elsewhere: `Dial` is *structurally* unable to carry a peer name, because `WithPeerName` writes to a `context.Context` and `Dial` has no context parameter (M5-2 finding F2, raised as [#36](https://github.com/jpgomesr/netchaos/issues/36)). **This task's godoc cross-reference is still worth doing** and is unaffected by that decision — if anything it matters more, since the caveat is now known to be permanent for `Dial` rather than merely easy to miss.
+
 **Files**
 - `partition.go`
 
 **Acceptance criteria**
-- [ ] `Partition` and `Heal` godoc point a reader to `WithPeerName` and state the ephemeral-dialer consequence.
-- [ ] No behaviour change.
-- [ ] The task text records the semantics question as `M5-2` input, so the review picks it up without depending on this box.
+- [x] `Partition` and `Heal` godoc point a reader to `WithPeerName` and state the ephemeral-dialer consequence.
+- [x] No behaviour change.
+- [x] The task text records the semantics question as `M5-2` input, so the review picks it up without depending on this box. `M5-2`'s own `Partition`/`Heal` bullet now carries the pointer back, so the review reaches it from either direction.
 
 **Tests**
 - None — godoc only. Verify the rendered doc reads correctly with `go doc github.com/jpgomesr/netchaos.Network.Partition`.
@@ -368,6 +428,8 @@ This is the one review finding that bears directly on the adoption claim in [01 
 3. **Document the limitation and do nothing.** Zero risk. The friction stays, and it stays invisible until someone hits it.
 
 Weighing input, not a decision: option 2 preserves every existing usage while removing the failure mode, but "the address is the peer name" is load-bearing simplicity that `addr.go`'s own comment calls out deliberately — and with no external users yet, there is no evidence anyone has hit this. Worth pairing with [M5-2](m5-hardening-and-ergonomics.md#m5-2--api-ergonomics-review-before-v100), which is looking at the same surface in the same window.
+
+**M5-2 confirmed the finding and filed [#37](https://github.com/jpgomesr/netchaos/issues/37)** (its finding F4) rather than deciding it — the change breaks every address string a test prints, so it belongs to [07](../07-contributing.md)'s issue-first process. The decision itself is still open and still this task's.
 
 **Decision required**
 Whether addresses gain any port structure before `v1.0.0`, given that adding one afterwards is a breaking change to every address string a test prints.
@@ -569,12 +631,54 @@ A user wanting to test their own back-pressure handling, or a listener under acc
 
 Weighing input, not a decision: option 3 has a real argument behind it — the values are chosen to be realistic (`listenerBacklog`'s comment calls it "analogous to a conventional `listen(2)` backlog default"), and every option added now is one `M5-2` has to weigh before `v1.0.0`. But option 1 is genuinely cheap and the in-package test constructor is evidence the need is real.
 
+**Gate resolved: this task does not wait for `M5-2`.** M5-2 has concluded (its finding F5), and the premise behind the "wait" option did not survive it. The concern was that two more names would burden a surface M5-2 might find too large; M5-2 found the opposite problem — the surface's weakness is a *missing* capability on `Dial`, not excess breadth. Option count is not the binding constraint, so decide this one on its own merits whenever it is picked up.
+
 **Decision required**
-Which of the three, and whether it waits for `M5-2`'s review to conclude first.
+Which of the three. (No longer gated on `M5-2`.)
 
 **Where the decision gets recorded**
 - [04 — API Design](../04-api-design.md#functional-options)'s options list, if either lands.
 - The godoc on whichever constants stay fixed, which should at minimum state the value.
+
+---
+
+### M6-18 — Two leak tests claim a property their assertion cannot observe
+
+**Status:** todo
+**Roadmap item:** none (test correctness — found while doing [M6-6](#m6-6--close-the-three-named-test-coverage-gaps))
+**Depends on:** —
+**Blocks:** —
+
+**Objective**
+Found by experiment while rewriting `leak_test.go`, not by reading: **`synctest.Test`'s bubble-exit check does not observe an armed-but-unfired `time.AfterFunc`.** `synctest.Test` fails a test when a goroutine started inside the bubble is still running at return, and an `AfterFunc` that has not fired owns no goroutine — so a timer left armed by a missing `Stop` is invisible to it.
+
+Two docstrings claim otherwise:
+
+- `TestCloseWithInFlightWorkInBubble` (`synctest_test.go:321-327`) calls itself *"the primary evidence that a latency delivery timer does not outlive the conn that created it"* and says completing the test *"is the assertion that pipe.close's timer.Stop actually disarmed the pending AfterFunc."* Verified false: deleting the `if p.timer != nil { p.timer.Stop(); ... }` block from `pipe.close` leaves this test green.
+- `TestNoLatencyTimerLeaks` (`synctest_test.go:427-433`) is already honest that `runtime.NumGoroutine` cannot see an unstopped timer, and correctly defers to `TestCloseWithInFlightWorkInBubble` as "what actually proves" it. That deferral is the part that does not hold.
+
+The consequence is narrow but real: **no test in the repo currently proves that `pipe.close` disarms a pending latency timer.** The production code does do it — this is a gap in the evidence, not a defect in the behaviour.
+
+`M6-6` fixed the equivalent gap on the deadline side rather than leaving it: `leak_test.go`'s `assertDeadlineTimerDisarmed` checks `deadline.timer != nil` directly, and was confirmed to catch a removed `conn.Close` → `rd.stop()`. The latency side wants the same treatment.
+
+**Scope**
+- Add a direct assertion to `TestCloseWithInFlightWorkInBubble` (or alongside it) that `pipe.timer` is nil after close — mirroring `assertDeadlineTimerDisarmed`. Confirm it goes red when `pipe.close`'s `timer.Stop()` is removed.
+- Correct both docstrings to state what the bubble does and does not prove. This is the same class of overstatement `M6-4` fixed in `rand.go`: a comment asserting a precision the mechanism does not have.
+- Consider whether `M3-3`'s recorded decision (["the leak criterion is carried by `TestCloseWithInFlightWorkInBubble`, not by goroutine counting"](m3-synctest-and-reproducibility.md)) needs a correction note, since that decision rests on the claim this task disproves.
+- Out of scope: any change to `pipe.close` or `conn.Close`. The behaviour is correct; only the evidence for it is missing.
+
+**Files**
+- `synctest_test.go`
+- `docs/tasks/m3-synctest-and-reproducibility.md` — the decision note, if it is corrected
+
+**Acceptance criteria**
+- [ ] A test fails when `pipe.close`'s `timer.Stop()` is removed, demonstrated rather than assumed.
+- [ ] `TestCloseWithInFlightWorkInBubble` and `TestNoLatencyTimerLeaks` describe what their assertions actually observe.
+- [ ] The bubble's real value — catching goroutines still running at exit — is still stated, not thrown out with the overstatement.
+
+**Tests**
+- Red first, by deletion: remove `timer.Stop()` from `pipe.close`, confirm the new assertion fails, restore it.
+- Verify: `go build ./... && go vet ./... && gofmt -l . && go test -race ./... && golangci-lint run`
 
 ---
 

@@ -10,7 +10,7 @@ Take the current changes (or a change already committed on a branch) through thi
    - Otherwise, create the new branch from `origin/main`, not from a branch carrying unrelated committed history — one concern per PR.
    - Branch name: `<type>/<kebab-slug>` matching the commit type, e.g. `git checkout -b docs/api-design-clarification`.
 
-2. **Commit the changes** following the exact same rules as `.claude/commands/commit.md`: analyze staged/unstaged diffs, group by scope, Conventional Commits format, explicit `git add <path>` (never `-A`/`.`), present the proposed commit(s) and get confirmation before committing. Use `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>` as the only trailer.
+2. **Commit the changes** following the exact same rules as `.claude/commands/commit.md`: analyze staged/unstaged diffs, group by scope, Conventional Commits format, explicit `git add <path>` (never `-A`/`.`), present the proposed commit(s) and get confirmation before committing. Use `Co-Authored-By: Claude <noreply@anthropic.com>` as the only trailer.
 
 3. **Push:** `git push -u origin <branch>`.
 

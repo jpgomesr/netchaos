@@ -33,6 +33,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   against the same harness the standard library validates `net.Pipe` with.
   This adds `golang.org/x/net` as the module's first dependency; it is
   test-only and does not appear in a consumer's non-test build graph.
+### Changed
+
+- **Every error from `Listen`, `Dial` and `DialContext` is now a
+  `*net.OpError`, uniformly** (`M6-2`). Previously the shape depended on which
+  line produced the error: a refused dial was wrapped, while an unsupported
+  network, an address already in use, and an already-done context were
+  returned bare. Real `net.Listen`/`net.Dial` wrap all of these, and code
+  under test that type-asserts to `*net.OpError` — or calls
+  `Timeout()`/`Temporary()` on the result — took a different path against
+  netchaos than against the standard library, which cut against the
+  substitutability the library is sold on.
+
+  **Matching with `errors.Is` is unaffected**, since `OpError` unwraps, and
+  that is the comparison style `errors.go` and `docs/04-api-design.md`
+  specify. Two things do change for a caller: `err.Error()` strings now carry
+  the `dial`/`listen` prefix, and direct `==` comparison against a sentinel
+  (for example `err == ErrAddressInUse`, which used to succeed for `Listen`)
+  no longer matches. That cost was accepted deliberately while `v0.1.0` has
+  no external users.
 
 ## [v0.1.0] — 2026-08-26
 
