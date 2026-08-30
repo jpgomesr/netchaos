@@ -251,7 +251,7 @@ Three specific gaps, each one a behaviour the code has but no test observes:
 
 ### M6-7 — Add a fuzz target and baseline benchmarks
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** none (test hardening)
 **Depends on:** —
 **Blocks:** M6-8 (its `BenchmarkWriteUnderLatency` is how M6-8's benefit gets measured)
@@ -268,9 +268,24 @@ The repo has zero `Fuzz*` and zero `Benchmark*` functions. The pipe's buffer acc
 - `fuzz_test.go` (new), `bench_test.go` (new)
 
 **Acceptance criteria**
-- [ ] `go test -run=Fuzz -fuzz=FuzzPipeAccounting -fuzztime=30s` runs clean, and any seed corpus it produces is committed.
-- [ ] Benchmarks exist for the three named paths and their first results are recorded in the PR description as the baseline.
-- [ ] The fuzz target runs as a normal (non-fuzzing) test in CI against its seed corpus, so it costs nothing per-run but still guards regressions.
+- [x] `go test -run=Fuzz -fuzz=FuzzPipeAccounting -fuzztime=30s` runs clean, and any seed corpus it produces is committed. — 558,360 executions clean on the second attempt; the input from the first is committed at `testdata/fuzz/FuzzPipeAccounting/39c4be89a18cc8de`.
+- [x] Benchmarks exist for the three named paths and their first results are recorded in the PR description as the baseline.
+- [x] The fuzz target runs as a normal (non-fuzzing) test in CI against its seed corpus, so it costs nothing per-run but still guards regressions. — verified: a plain `go test` runs seed#0–#6 plus the committed corpus entry.
+
+**What the fuzzer found in its first second**
+Not a defect in the pipe — a defect in the invariant I wrote for it, which is worth recording because the distinction took evidence rather than argument to settle. Input `{write 0, write 65}` against a bound of 64 reaches two queued payloads holding 65 bytes, which the first version of the check called a violation of the oversized-write rule.
+
+It is not one. A zero-length write is admitted and queued while leaving `bufBytes` at 0, so `tryWrite`'s "pipe is completely empty" test (`p.bufBytes == 0`) is still true and the oversized write joins it legitimately. The byte accounting is exactly right: the empty chunk contributes nothing, and any read pops it silently (per `M6-6`). The rule is about bytes, so the invariant is now counted in **non-empty** payloads, and the input is kept in the corpus as a permanent regression case for that interaction.
+
+**Baseline (12th Gen i5-12450HX, `-benchmem`, best of 3)**
+
+| Benchmark | ns/op | B/op | allocs/op |
+|---|---|---|---|
+| `BenchmarkRoundTrip` | 270.7 | 760 | 4 |
+| `BenchmarkWriteUnderLoss` | 156.4 | 787 | 2 |
+| `BenchmarkWriteUnderLatency` | 282.3 | 817 | 3 |
+
+The number `M6-8` turns on is the last column: **3 allocations per write under latency against 2 under loss.** The extra one is `armLatencyTimerLocked` recreating the timer, so the effect `M6-8` is looking for is measurable here or nowhere.
 
 **Tests**
 - `FuzzPipeAccounting`; `BenchmarkRoundTrip`, `BenchmarkWriteUnderLoss`, `BenchmarkWriteUnderLatency`.
