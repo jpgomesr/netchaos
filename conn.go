@@ -122,12 +122,12 @@ func (c *conn) Read(b []byte) (int, error) {
 		}
 
 		dch := c.rd.channel() // snapshot before checking expired/tryRead, so no wakeup is missed
+		if c.rd.expired() {
+			return 0, c.opError("read", os.ErrDeadlineExceeded)
+		}
 		n, ch, err := c.readPipe.tryRead(b)
 		if ch == nil {
 			return n, err // err is nil or io.EOF, returned bare per net.Pipe/stdlib convention
-		}
-		if c.rd.expired() {
-			return 0, c.opError("read", os.ErrDeadlineExceeded)
 		}
 
 		select {
@@ -153,6 +153,9 @@ func (c *conn) Write(b []byte) (int, error) {
 		}
 
 		dch := c.wd.channel()
+		if c.wd.expired() {
+			return 0, c.opError("write", os.ErrDeadlineExceeded)
+		}
 		n, ch, err := c.writePipe.tryWrite(data)
 		if ch == nil {
 			if err != nil {
@@ -198,6 +201,13 @@ func (c *conn) RemoteAddr() net.Addr { return c.remote }
 // timeout the conn remains usable: a fresh deadline plus a new Read/Write
 // succeeds normally. Deadlines are implemented with standard time.Timer, so
 // testing/synctest virtualizes them.
+//
+// A deadline that has already passed fails the operation even when it could
+// have been served without blocking — a Read with data already buffered, or
+// a Write that would fit in the pipe's remaining space, both return
+// os.ErrDeadlineExceeded rather than succeeding. This matches net.Pipe,
+// which checks its deadline before touching the buffer, and a real net.Conn,
+// whose poller rejects the operation before the syscall.
 func (c *conn) SetDeadline(t time.Time) error {
 	c.rd.set(t)
 	c.wd.set(t)

@@ -173,8 +173,8 @@ The property the comment is *reaching for* is true and worth keeping: the fixed 
 
 ### M6-5 — Run the standard net.Conn conformance suite
 
-**Status:** todo
-**Decision:** *(not yet made — accepting a first dependency is part of this task)*
+**Status:** done — **dependency accepted**
+**Decision:** **accepted.** `golang.org/x/net` enters `go.mod` as the module's first requirement. Rationale: it is test-only and verified so (`go list -deps github.com/jpgomesr/netchaos` contains no non-vendored `golang.org/x/net`; it appears only under `go list -deps -test`), so no consumer's non-test build graph gains anything. The zero-dependency property was worth weighing, but `nettest.TestConn` is the standard harness for exactly the claim netchaos is sold on, and it earned the trade immediately by finding a real conformance defect on its first run (see below).
 **Roadmap item:** none (validates the "drop-in `net.Conn`" claim the library is sold on)
 **Depends on:** —
 **Blocks:** —
@@ -196,10 +196,20 @@ netchaos's headline claim is that its `net.Conn` substitutes for the real one. `
 - `nettest_test.go` (new)
 
 **Acceptance criteria**
-- [ ] The dependency decision is recorded (accepted with rationale, or the task is marked `dropped`).
-- [ ] `nettest.TestConn` runs against a fault-free netchaos `Network` and passes, with any skipped subtest naming the design decision that makes it inapplicable.
-- [ ] `go.mod`'s new requirement is test-only and does not appear in a consumer's build graph for non-test code.
-- [ ] CI stays green on both Go 1.25 and 1.26.
+- [x] The dependency decision is recorded (accepted with rationale, or the task is marked `dropped`).
+- [x] `nettest.TestConn` runs against a fault-free netchaos `Network` and passes, with any skipped subtest naming the design decision that makes it inapplicable. — **all 11 subtests pass, none skipped.**
+- [x] `go.mod`'s new requirement is test-only and does not appear in a consumer's build graph for non-test code. — verified with `go list -deps` vs `go list -deps -test`.
+- [ ] CI stays green on both Go 1.25 and 1.26. — confirm on the PR's CI run.
+
+**What the first run reported — a real defect, not a design mismatch**
+9 of 11 subtests passed immediately. `WriteTimeout` and `PastTimeout` failed, both on the same cause: `conn.Read`/`conn.Write` consulted the deadline **only on the path where the operation had to block**. A read with data already buffered, or a write that fit in the pipe's remaining space, completed successfully with a deadline already in the past — `PastTimeout` saw `Write` return 1024 and a nil error where it required 0 and a `net.Error`.
+
+This is a genuine deviation from `net.Conn`, not a netchaos design decision: `net.Pipe` checks its deadline before touching the buffer, and a real conn's poller rejects the operation before the syscall. It survived to `v0.1.0` because both existing deadline tests reach the check only via the blocking path — `TestReadDeadlineExceeded` reads with nothing buffered, and `TestWriteDeadlineExceeded` fills the bound first. Nothing in the hand-written suite could have caught it, which is precisely the argument for running a conformance suite at all.
+
+Fixed here rather than deferred to a task of its own: the correction is checking `expired()` before attempting the operation (six lines across the two methods), it broke no existing test, and leaving it would have meant the suite could not land green — `nettest.TestConn` offers no way to skip an individual subtest. `TestReadPastDeadlineWithBufferedData` and `TestWritePastDeadlineWithBufferSpace` pin the behaviour directly, both confirmed red beforehand. The behaviour change is recorded in `CHANGELOG.md`.
+
+**One incidental `go.mod` change, explained**
+The `go` directive normalized from `go 1.25` to `go 1.25.0`. This is forced by the toolchain, not chosen: `golang.org/x/net v0.58.0` declares `go 1.25.0` itself, so the main module's directive is normalized up to match, and `go mod tidy` reverts any attempt to write it back. The two spellings express the same minimum Go version, so no consumer requirement changed.
 
 **Tests**
 - `TestConnConformance` is itself the test. Red is not meaningful here in the usual sense — the suite either passes or reports a real gap; record what it reported on first run either way.

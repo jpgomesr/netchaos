@@ -101,6 +101,58 @@ func TestWriteDeadlineExceeded(t *testing.T) {
 	assertDeadlineExceeded(t, err)
 }
 
+// TestReadPastDeadlineWithBufferedData covers the non-blocking half of the
+// deadline contract, which TestReadDeadlineExceeded above does not: it reads
+// with nothing buffered, so the deadline is only ever consulted on the path
+// where the read had to wait. An expired deadline must fail the read even
+// when it could have been served immediately — that is what net.Pipe does
+// (it checks readDeadline before touching the buffer) and what a real
+// net.Conn does (the poller rejects the operation before the syscall).
+//
+// Found by nettest.TestConn's PastTimeout subtest (M6-5); netchaos returned
+// the buffered bytes and a nil error instead.
+func TestReadPastDeadlineWithBufferedData(t *testing.T) {
+	client, server := newTestConnPair()
+	defer func() { _ = client.Close() }()
+	defer func() { _ = server.Close() }()
+
+	if _, err := client.Write([]byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.SetReadDeadline(time.Now().Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := server.Read(make([]byte, 4))
+	if n != 0 {
+		t.Errorf("n = %d, want 0 (data was buffered, but the deadline had already passed)", n)
+	}
+	assertDeadlineExceeded(t, err)
+}
+
+// TestWritePastDeadlineWithBufferSpace is the write-side counterpart:
+// TestWriteDeadlineExceeded fills the bound first, so it only reaches the
+// deadline check via back-pressure. A write that would fit must still fail
+// once the deadline has passed.
+//
+// Found by nettest.TestConn's WriteTimeout and PastTimeout subtests (M6-5);
+// netchaos reported a full, successful write instead.
+func TestWritePastDeadlineWithBufferSpace(t *testing.T) {
+	client, server := newTestConnPair()
+	defer func() { _ = client.Close() }()
+	defer func() { _ = server.Close() }()
+
+	if err := client.SetWriteDeadline(time.Now().Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := client.Write([]byte("ping"))
+	if n != 0 {
+		t.Errorf("n = %d, want 0 (the pipe had room, but the deadline had already passed)", n)
+	}
+	assertDeadlineExceeded(t, err)
+}
+
 func TestDeadlineUnblocksInFlightRead(t *testing.T) {
 	client, server := newTestConnPair()
 	defer func() { _ = client.Close() }()
