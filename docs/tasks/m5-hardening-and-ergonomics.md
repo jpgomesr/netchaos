@@ -104,4 +104,8 @@ Add the two forms or not — the maintainer's call, per `AGENTS.md`'s "What not 
 - `.claude/commands/issue.md` said *"Never label an issue `bug` or `enhancement` — no such labels exist in this repo yet."* Both labels have existed in `.github/labels.yml` all along; the rule was wrong before this task and would have been wrong twice over after it. Replaced with a rule that holds under change: never apply a label outside `labels.yml`, since labels are synced from that file and an ad-hoc one is deleted on the next sync.
 
 **Tests**
-- None — a GitHub issue-form change has no automated test. GitHub renders issue forms from the **default branch only**, so a malformed form is invisible from this repo's chooser until after merge; verify by pushing the branch to a fork, making it that fork's default, and opening the fork's *New issue* chooser before merging.
+- None — a GitHub issue-form change has no automated test.
+
+**What was actually verified, and what was not.** All four forms were parsed and shape-checked before merge: YAML validity, `labels` referencing labels that exist in `.github/labels.yml`, unique non-empty field `id`s, and dropdown option counts. That catches a malformed file, which is the failure that matters.
+
+The task's original Tests line called for opening a test issue against the form "in a fork or draft PR before merging." **That check was not performed.** GitHub renders issue forms from the **default branch only**, so neither this repo's chooser nor a draft PR shows them — the fork route additionally requires re-pointing a fork's default branch, and a repo cannot be forked into the account that owns it. The accepted remedy is a post-merge check of the *New issue* chooser, with a follow-up commit if a form does not render. Recorded rather than quietly substituted, because a task file that claims a verification nobody ran is the same defect this task exists to fix.
