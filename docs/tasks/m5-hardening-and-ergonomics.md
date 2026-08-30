@@ -10,30 +10,40 @@
 
 ### M5-1 — Close out M4-5's post-tag verification
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** none (release hygiene, not a v1 checklist item)
 **Depends on:** [M4-5](m4-api-polish-and-release.md#m4-5--changelog-entry-and-v010-tag)
 **Blocks:** —
 
 **Objective**
-`M4-5` shipped the `v0.1.0` tag but left three acceptance-criteria boxes explicitly marked "verify after tagging." The tag is now pushed (`git tag -l` shows `v0.1.0` on `main`), so all three are actionable. This task does not restate them under a new ID — completing it means going back and ticking the checkboxes in `M4-5` itself, per [the task index](README.md#task-id-scheme-and-status)'s rule that IDs are stable and never duplicated.
+`M4-5` shipped the `v0.1.0` tag but left acceptance-criteria boxes open pending the tag. The tag is on the remote (`git ls-remote --tags origin` → `refs/tags/v0.1.0` at `bd8e198`), so they are all actionable. This task does not restate them under a new ID — completing it means going back and ticking the checkboxes in `M4-5` itself, per [the task index](README.md#task-id-scheme-and-status)'s rule that IDs are stable and never duplicated.
+
+**Four boxes, not three.** `M4-5` left *four* unticked, not the three marked "verify after tagging." The fourth is the tag-push box, marked **Maintainer action** rather than "verify after tagging" — it is now factually satisfied, and leaving it orphaned would hold `M4-5` at `in progress` forever. A lightweight tag records no pusher, so the verifiable form of "pushed from `main`" is that `bd8e198` is an ancestor of `main` and `origin` carries the tag pointing at it.
 
 **Scope**
+- **Run the external `go get` before judging pkg.go.dev.** pkg.go.dev indexes on proxy demand: if nothing has ever fetched `v0.1.0`, the page can legitimately 404, and filing that as a defect would be a false positive. The `go get` primes `proxy.golang.org` and triggers indexing.
+- From a scratch directory outside this repo: `go mod init`, `go get github.com/jpgomesr/netchaos@v0.1.0`, compile and run one of the `M4-2` examples against it. This is the only check that catches something that only worked because it was compiled inside the repo. Note the `Example*` functions live in `example_test.go` and are therefore **not importable** — the body has to be transcribed into the scratch module by hand.
 - Confirm pkg.go.dev shows the tagged version with rendered godoc and examples (checks `M4-1`'s godoc pass and `M4-2`'s examples actually render correctly outside the repo).
-- From a scratch directory outside this repo: `go mod init`, `go get github.com/jpgomesr/netchaos@v0.1.0`, compile and run one of the `M4-2` examples against it. This is the only check that catches something that only worked because it was compiled inside the repo.
-- Confirm CI is green on the tagged commit (`2bf8d00` or later, whichever `main` pointed to when the tag was cut) for both Go 1.25 and Go 1.26.
-- Out of scope: any new release work. If any of the three checks fails, file the failure as its own issue rather than silently patching it under this task.
+- Confirm CI is green on the tagged commit for both Go 1.25 and Go 1.26. The tagged commit is **`bd8e198`**, not `2bf8d00` — `2bf8d00` ("mark AGENTS.md project snapshot as tagged `v0.1.0`") landed *after* the tag and describes it retroactively. And `ci.yml` has no `tags:` trigger, so the run to check is the `main`-push run for `bd8e198`.
+- Out of scope: any new release work. If any check fails, file the failure as its own issue rather than silently patching it under this task.
 
 **Files**
-- [`m4-api-polish-and-release.md`](m4-api-polish-and-release.md) — tick the three remaining `M4-5` boxes once each is verified.
+- [`m4-api-polish-and-release.md`](m4-api-polish-and-release.md) — tick the four remaining `M4-5` boxes once each is verified, and move `M4-5` to `done`.
 
 **Acceptance criteria**
-- [ ] pkg.go.dev renders `v0.1.0`'s godoc and examples correctly.
-- [ ] A scratch module outside the repo can `go get github.com/jpgomesr/netchaos@v0.1.0` and run an example successfully.
-- [ ] CI is green on the tagged commit for both Go 1.25 and 1.26.
+- [x] The `v0.1.0` tag is confirmed present on `origin`, pointing at a commit that is an ancestor of `main`.
+- [x] A scratch module outside the repo can `go get github.com/jpgomesr/netchaos@v0.1.0` and run an example successfully.
+- [x] pkg.go.dev renders `v0.1.0`'s godoc and examples correctly.
+- [x] CI is green on the tagged commit for both Go 1.25 and 1.26.
 
 **Tests**
 - The scratch-module check is the real test; no repo-internal test covers "does this work when consumed externally."
+
+**Result** — all four checks passed:
+- `go get github.com/jpgomesr/netchaos@v0.1.0` resolved to the tag itself, not a pseudo-version off `main`, and the transcribed `Example` / `ExampleNetwork_Dial` bodies printed `ping` and `true`.
+- Independently, [`jpgomesr/netchaos-example`](https://github.com/jpgomesr/netchaos-example) already requires `github.com/jpgomesr/netchaos v0.1.0` exactly. It is a real external consumer of the tag, which is a stronger signal than a throwaway module — worth keeping in mind as a build-level canary for future releases.
+- pkg.go.dev renders `v0.1.0` with all six `Example*` functions and the full 17-symbol frozen surface in its index.
+- CI run `32998417916` on `bd8e198`: `test (1.25)` and `test (1.26)` both `success`. `golangci-lint` and CodeQL were also green on the same commit, as separate workflows.
 
 ---
 

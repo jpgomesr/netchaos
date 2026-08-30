@@ -128,6 +128,8 @@ Every status statement in the repository currently asserts that no implementatio
 
 **Widened beyond the task's own file list**, since the grep sweep and the M0-1 retrospective's own note (its recording list "turned out to be incomplete in practice") both flagged more: `.claude/commands/architecture.md`, `commit.md`, `issue.md` (all said "pre-implementation"), `docs/tasks/README.md` (said "nothing in `docs/tasks/` implies an implementation exists" — the other flat false claim besides `CONTRIBUTING.md`), and the README's Contributing section and out-of-scope line.
 
+**The sweep still missed one directory.** `.github/ISSUE_TEMPLATE/` was never covered, so `design-feedback.yml` went on saying "netchaos has no implementation yet" — meaning the first box above was not actually true when it was ticked. Corrected under [M5-3](m5-hardening-and-ergonomics.md#m5-3--decide-on-bugenhancement-issue-template-forms), which rewrites the issue forms and re-validates the claim. Recorded here rather than unticking, so the gap leaves a trace: a status sweep has to include machine-readable config, not just prose.
+
 **Tests**
 - Not test-driven. Grep for "design-stage", "no implementation", "PROPOSED", "not yet implemented", "pre-implementation" and confirm every hit is either updated or deliberately still accurate.
 
@@ -168,7 +170,7 @@ Landed in the same PR as M4-3, since both checklists were already ticked and mat
 
 ### M4-5 — Changelog entry and `v0.1.0` tag
 
-**Status:** in progress — release PR prepared; tag push and post-tag verification are a maintainer handoff (see below).
+**Status:** done — tag pushed; post-tag verification closed out by [M5-1](m5-hardening-and-ergonomics.md#m5-1--close-out-m4-5s-post-tag-verification).
 **Roadmap item:** all six
 **Depends on:** M4-4
 **Blocks:** —
@@ -192,11 +194,13 @@ Cut the first release. Until a version is tagged, `go get github.com/jpgomesr/ne
 - [x] `CHANGELOG.md` has a complete, dated `v0.1.0` entry.
 - [x] The Go 1.25 minimum is stated in both `CHANGELOG.md` and `README.md`, with `testing/synctest` given as the reason.
 - [x] The version number is decided and justified in the changelog.
-- [ ] The tag is pushed from `main` after the release PR merges — never by pushing directly to `main` (`AGENTS.md`). **Maintainer action**, not taken by this PR — the branch protection / never-push-to-main rule means tagging is the maintainer's call, done after merge.
-- [ ] pkg.go.dev shows the tagged version with rendered godoc and examples. **Verify after tagging.**
-- [ ] A scratch module outside the repo can `go get` the tag and run an example successfully. **Verify after tagging** — impossible before the tag exists and is fetchable.
-- [ ] CI is green on the tagged commit for both Go 1.25 and 1.26. **Verify after tagging.**
+- [x] The tag is pushed from `main` after the release PR merges — never by pushing directly to `main` (`AGENTS.md`). Verified under M5-1: `git ls-remote --tags origin` returns `refs/tags/v0.1.0` → `bd8e198`, which is an ancestor of `main`. A lightweight tag records no pusher, so ancestry plus the tag's presence on `origin` is the observable proxy for "pushed from `main`".
+- [x] pkg.go.dev shows the tagged version with rendered godoc and examples. Verified under M5-1: all six `Example*` functions render, and the Index lists the full 17-symbol frozen surface.
+- [x] A scratch module outside the repo can `go get` the tag and run an example successfully. Verified under M5-1, twice over — a throwaway module, and `jpgomesr/netchaos-example`, which pins `v0.1.0` exactly.
+- [x] CI is green on the tagged commit for both Go 1.25 and 1.26. Verified under M5-1: run `32998417916`, jobs `test (1.25)` and `test (1.26)`, both `success`.
 
 **Tests**
 - The external-consumption check is the real test: fresh directory, `go mod init`, `go get github.com/jpgomesr/netchaos@v0.1.0`, compile and run an example.
 - Verify: `go build ./... && go vet ./... && gofmt -l . && go test -race ./... && golangci-lint run`
+
+**Post-tag note.** `ci.yml` triggers on push/PR to `main` only — there is no `tags:` trigger — so "CI green on the tagged commit" resolves to the `main`-push run for `bd8e198`, not a tag-triggered run. `golangci-lint` is a separate workflow pinned to a single Go version, so the 1.25 × 1.26 matrix claim is about `ci.yml` specifically.
