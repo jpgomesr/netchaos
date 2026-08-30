@@ -144,6 +144,28 @@ func (n *Network) Listen(network, addr string) (net.Listener, error)
 
 The intent is for `Network.Dial` (and `Network.DialContext`) to be usable anywhere calling code accepts a `func(network, addr string) (net.Conn, error)` (or its context-aware equivalent) — e.g., as the dial function passed into an HTTP transport, a gRPC dialer, or a hand-rolled client constructor. This is the "swap a `net.Dial` call for a factory" adoption path described in [03 — Architecture](03-architecture.md#design-goals-driving-the-architecture).
 
+### Address shape
+
+Decided by [M6-10](tasks/m6-review-findings.md#m6-10--decide-whether-addresses-should-have-a-hostport-shape) and implemented in [M7-1](tasks/m7-v0.2.0-implementation.md#m7-1--addresses-gain-a-synthesized-hostport-shape). **A netchaos address has a host and a port, and the two halves do different jobs:**
+
+- **The host half is the identity.** It is what `Dial` and `Listen` resolve against, what `Partition` and `Heal` name, and the only half the internal `peerName` returns.
+- **The port half is presentation.** It exists so a netchaos address is shaped like a real one — `net.SplitHostPort(conn.RemoteAddr().String())` succeeds, and code under test that logs, labels a metric, or allow-lists on the host half takes the same path it takes against the real stack. **Nothing in netchaos resolves, matches, or partitions on a port.**
+
+Before this, the address *was* the peer name verbatim, so `RemoteAddr().String()` returned `"server"` and `SplitHostPort` failed against netchaos where it worked against `net`. That cost was paid by code the adopter did not want to change, which is the specific friction [01 — Vision](01-vision.md) says netchaos exists to remove.
+
+What the split buys, concretely, is that addresses could gain structure without invalidating anything already written:
+
+| Written | Peer identity | `Addr().String()` |
+|---|---|---|
+| `Listen("tcp", "server")` | `server` | `server:8000` (synthesized) |
+| `Listen("tcp", "server:0")` | `server` | `server:8001` (synthesized — the `:0` form) |
+| `Listen("tcp", "server:8080")` | `server` | `server:8080` (honoured) |
+| `Dial("tcp", "server:8080")` | dials peer `server` | local `ephemeral-0:32768` |
+
+So `Partition("server")` reaches a connection dialed to `"server:8080"`, and every `Partition` call written before addresses had ports keeps working. Two listeners whose addresses name the same host collide regardless of port — one peer, one listener — and a malformed address is rejected with a `*net.AddrError`, which is what `net.Listen` and `net.Dial` produce for the same input.
+
+**Ports are synthesized in `Listen`/`Dial` order**, which the [determinism contract](#determinism-contract) already fixes, so nothing about the contract widens here. It does inherit the contract's stated limit unchanged, and that is worth naming because it is newly *visible*: two goroutines racing to `Listen` get their ports in whichever order the scheduler picks, and unlike a connection ordinal, a port shows up in `RemoteAddr().String()` and therefore in test failure output. The fix is the same one the contract already prescribes — establish connections in a fixed order before starting concurrent I/O.
+
 ## Dynamic partition control
 
 For scenarios that need to partition and heal a link *during* a test (not just at construction time):

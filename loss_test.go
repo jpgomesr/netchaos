@@ -280,7 +280,7 @@ func TestLossIsolatedPerConnection(t *testing.T) {
 // drops permanently inflate bufBytes and eventually wedge the writer with
 // false back-pressure that nothing will ever relieve.
 func TestLossDoesNotWedgeWriterOnRepeatedDrops(t *testing.T) {
-	client, server := newConnPairWithBound(&addr{"tcp", "client"}, &addr{"tcp", "server"}, 0, "tcp", 16)
+	client, server := newConnPairWithBound(&addr{network: "tcp", peer: "client"}, &addr{network: "tcp", peer: "server"}, 0, "tcp", 16)
 	defer func() { _ = client.Close() }()
 	defer func() { _ = server.Close() }()
 

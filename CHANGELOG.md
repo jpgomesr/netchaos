@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Addresses now have a `host:port` shape** (`M7-1`, closes #49 and #37).
+  `net.SplitHostPort(conn.RemoteAddr().String())` succeeds against netchaos as
+  it does against the real stack, so code under test that logs, labels a
+  metric, or allow-lists on the host half of a remote address no longer takes
+  a different path than it would against `net`. `Listen` also gained the
+  `:0` ephemeral-port form it was missing.
+
+  **The host half is the identity and the port half is presentation.** Nothing
+  in netchaos resolves, matches, or partitions on a port, which is what lets
+  addresses gain structure without invalidating anything already written:
+  `Partition("server")` still reaches a connection dialed to `"server:8080"`,
+  and `Listen("tcp", "server")` still registers the peer named `server` — it
+  simply reports itself as `server:8000` now. An explicit port is honoured;
+  `"server"` and `"server:0"` both ask netchaos to synthesize one; a malformed
+  address is rejected with a `*net.AddrError`, matching what `net.Listen` and
+  `net.Dial` produce for the same input.
+
+  **This is a breaking change to every address string a test prints**, which is
+  why it lands now: `M6-10` accepted it on the condition that it precede
+  `v1.0.0`, since making it afterwards would break the same strings with real
+  users attached. Two visible consequences beyond the shape itself — an
+  unnamed dialer is now `ephemeral-N` rather than `ephemeral:N` (the old name
+  parsed as host `ephemeral` plus port `N`, collapsing every unnamed dialer in
+  a `Network` onto one identity), and ports are assigned in `Listen`/`Dial`
+  order, so goroutines racing to `Listen` produce ports in scheduler order —
+  pre-existing nondeterminism the determinism contract already documents, now
+  visible in test output.
+
 ### Fixed
 
 - **An already-expired deadline now fails a `Read`/`Write` that could have

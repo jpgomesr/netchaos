@@ -19,7 +19,7 @@ func TestDialAssignableAsDialFunc(t *testing.T) {
 }
 
 func TestConnSatisfiesNetConn(t *testing.T) {
-	client, server := newConnPair(&addr{"tcp", "client"}, &addr{"tcp", "server"}, 0, "tcp")
+	client, server := newConnPair(&addr{network: "tcp", peer: "client"}, &addr{network: "tcp", peer: "server"}, 0, "tcp")
 	defer func() { _ = client.Close() }()
 	defer func() { _ = server.Close() }()
 

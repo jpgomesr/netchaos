@@ -53,7 +53,7 @@ func TestDeadlineNoDeadlineNeverExpires(t *testing.T) {
 // --- conn-level deadline behaviour ---
 
 func newTestConnPairWithBound(bound int) (client, server *conn) {
-	return newConnPairWithBound(&addr{"tcp", "client"}, &addr{"tcp", "server"}, 0, "tcp", bound)
+	return newConnPairWithBound(&addr{network: "tcp", peer: "client"}, &addr{network: "tcp", peer: "server"}, 0, "tcp", bound)
 }
 
 func assertDeadlineExceeded(t *testing.T, err error) {

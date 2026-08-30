@@ -9,7 +9,7 @@ import (
 )
 
 func newTestConnPair() (client, server *conn) {
-	return newConnPair(&addr{"tcp", "client"}, &addr{"tcp", "server"}, 0, "tcp")
+	return newConnPair(&addr{network: "tcp", peer: "client"}, &addr{network: "tcp", peer: "server"}, 0, "tcp")
 }
 
 func TestConnFullDuplex(t *testing.T) {
