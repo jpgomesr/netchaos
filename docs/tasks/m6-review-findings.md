@@ -61,7 +61,7 @@ Which leaves two honest outcomes, and this task picks one rather than assuming t
 - [x] `docs/04-api-design.md`'s `connectionOrdinal` bullet and `DialContext`'s godoc state the same thing as each other and as the code.
 - [x] The `n.mu` / `l.mu` lock order is unchanged, with a comment at `netchaos.go:188` recording why the unlock sits where it does.
 - [x] Existing golden traces in `testdata/traces/` are unaffected, or the change to them is deliberate and explained (per `M3-3`, a golden diff is a contract-change signal). — byte-identical, as expected: no golden scenario contains a failing dial.
-- [ ] `-race` clean on CI. — **not verifiable locally** (`CGO_ENABLED=0`, no C toolchain on the dev machine, per `AGENTS.md`); confirm on the PR's CI run before treating this task as closed.
+- [x] `-race` clean on CI. — confirmed on PR #40: `test (1.25)` and `test (1.26)` both pass, along with `lint` and the `gofmt` check. Not verifiable locally (`CGO_ENABLED=0`, no C toolchain on the dev machine, per `AGENTS.md`), which is why this box was ticked from the CI run rather than a local one.
 
 **How it was resolved**
 Outcome 1, via a reservation primitive. `listener` gained `reserve`/`fill`: `reserve` claims an accept-queue slot under `l.mu`, checking both remaining failure modes (closed listener, full backlog); `fill` hands the `*conn` to the claimed slot and cannot block or fail, because the capacity was already accounted for. `DialContext` now reserves *before* taking an ordinal, which makes a successful reserve the point the dial commits — past it, establishment cannot fail, so an ordinal is only ever spent on a connection that establishes.
