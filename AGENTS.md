@@ -46,12 +46,14 @@ golangci-lint run # config: .golangci.yml
 |---|---|
 | `.claude/commands/commit.md` | Propose and create Conventional Commits from the current diff |
 | `.claude/commands/pr.md` | Full branch → commit → push → PR flow |
-| `.claude/commands/issue.md` | Create a GitHub issue matching `design-feedback` or `use-case-scenario` |
+| `.claude/commands/issue.md` | Create a GitHub issue matching one of the four forms in `.github/ISSUE_TEMPLATE/` |
 | `.claude/commands/architecture.md` | Check a change/question against `docs/03`, `04`, `05`, `06` |
 
 ## Issue & label conventions
 
-Only two issue forms exist — `.github/ISSUE_TEMPLATE/design-feedback.yml` (label `design`) and `use-case-scenario.yml` (label `use-case`) — plus `needs-discussion` for anything blocking a decision. There is no `bug`/`enhancement` template yet: with v1 implemented (see [docs/07-contributing.md](docs/07-contributing.md)), bug reports are now a real, expected category this set doesn't cover — that's a genuine gap, not a deliberate omission, but adding issue templates is a repo-settings change, so don't add one without the user asking. Don't create issues or labels outside this set without the user asking.
+Four issue forms exist in `.github/ISSUE_TEMPLATE/` — `bug.yml` (label `bug`), `enhancement.yml` (`enhancement`), `design-feedback.yml` (`design`) and `use-case-scenario.yml` (`use-case`) — plus `needs-discussion` for anything blocking a decision. `bug` and `enhancement` were added under [M5-3](docs/tasks/m5-hardening-and-ergonomics.md#m5-3--decide-on-bugenhancement-issue-template-forms), closing the gap this section used to describe as open.
+
+Two things to keep straight. Behaviour the docs describe as deliberate is `design`, not `bug` — the fault model in [docs/05](docs/05-fault-injection.md) and the no-op/panic semantics in [docs/04](docs/04-api-design.md#error-and-no-op-behaviour) are design decisions, not defects. And blank issues are disabled (`.github/ISSUE_TEMPLATE/config.yml`), so every issue goes through a form or through Discussions. Don't create issues, or labels outside `.github/labels.yml`, without the user asking.
 
 ## What not to do
 

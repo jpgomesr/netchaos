@@ -3,10 +3,12 @@ Create a GitHub issue for this repository using `gh issue create`, always matchi
 ## Steps
 
 1. **Determine the issue type** from the conversation context. If it isn't obvious, ask the user which of these it is:
-   - **Design feedback** → mirrors `.github/ISSUE_TEMPLATE/design-feedback.yml` (label: `design`) — feedback on the API, architecture, or scope described in `docs/`.
-   - **Use-case scenario** → mirrors `.github/ISSUE_TEMPLATE/use-case-scenario.yml` (label: `use-case`) — a real resilience-testing scenario that's hard to test today, used to validate v1 scope.
+   - **Bug report** → mirrors `.github/ISSUE_TEMPLATE/bug.yml` (label: `bug`) — netchaos behaves differently from a real `net.Conn`/`net.Listener` in a way `docs/` doesn't describe as a deliberate trade-off. Always capture the seed and whether the failure is inside a `testing/synctest` bubble; a fault-dependent bug can't be replayed without them.
+   - **Enhancement** → mirrors `.github/ISSUE_TEMPLATE/enhancement.yml` (label: `enhancement`) — a proposed addition or change: a new fault kind, an option, an ergonomic improvement. Check it against `docs/06-scope-and-roadmap.md`'s rubric first; several plausible ideas are already excluded there with reasons.
+   - **Design feedback** → mirrors `.github/ISSUE_TEMPLATE/design-feedback.yml` (label: `design`) — feedback on the API, architecture, or scope described in `docs/`, rather than a defect or a request.
+   - **Use-case scenario** → mirrors `.github/ISSUE_TEMPLATE/use-case-scenario.yml` (label: `use-case`) — a real resilience-testing scenario that's hard to test today, used to validate scope.
 
-   There is no bug-report or feature-request template yet (see `docs/07-contributing.md`) — a genuine gap now that v1 is implemented, not a deliberate one; adding templates is a repo-settings change, so don't add one without the user asking. If the request doesn't fit either type above, say so and ask the user how to proceed rather than forcing it into one of these forms.
+   The distinction that actually matters: behaviour the docs describe is `design`, not `bug`. If the request doesn't fit any type above, say so and ask the user how to proceed rather than forcing it into one of these forms.
 
 2. **Read the matching template file** before drafting — field order and required fields must match. `gh issue create --body` does not render the GitHub issue form, so reproduce the template's fields as plain Markdown headings in the body, in the same order.
 
@@ -16,7 +18,7 @@ Create a GitHub issue for this repository using `gh issue create`, always matchi
 
 5. **On confirmation**, create it:
    ```bash
-   gh issue create --title "<summary>" --label <design|use-case>[,needs-discussion] --body "$(cat <<'EOF'
+   gh issue create --title "<summary>" --label <bug|enhancement|design|use-case>[,needs-discussion] --body "$(cat <<'EOF'
    <body matching the template's fields>
    EOF
    )"
@@ -26,6 +28,6 @@ Create a GitHub issue for this repository using `gh issue create`, always matchi
 
 ## Constraints
 
-- Never create a blank/freeform issue — always follow one of the two templates above.
+- Never create a blank/freeform issue — always follow one of the four templates above.
 - Never skip the confirmation step.
-- Never label an issue `bug` or `enhancement` — no such labels exist in this repo yet (see step 1); use `design` or `use-case` instead, even for reports about implemented behavior, until those labels/templates are actually added.
+- Never apply a label outside the set in `.github/labels.yml`, and never create a new one — label definitions are synced from that file, so an ad-hoc label is deleted or drifts on the next sync.

@@ -74,14 +74,16 @@ Whether anything on the frozen surface should change before `v1.0.0`, and if so,
 
 ### M5-3 — Decide on bug/enhancement issue-template forms
 
-**Status:** todo
-**Decision:** *(not yet made — this is a decision task; adding templates is a repo-settings-adjacent change `AGENTS.md` says not to do without being asked)*
+**Status:** done
+**Decision:** **Add both forms** — the maintainer's call, taken 2026-08-30. Option 1 below.
 **Roadmap item:** the gap `AGENTS.md`'s "Issue & label conventions" section names directly: "with v1 implemented... bug reports are now a real, expected category this set doesn't cover — that's a genuine gap, not a deliberate omission."
 **Depends on:** —
 **Blocks:** —
 
 **Objective**
-`.github/labels.yml` already defines `bug` and `enhancement` labels (retained GitHub defaults), but `.github/ISSUE_TEMPLATE/` only has `design-feedback.yml` and `use-case-scenario.yml` — there is no structured form that applies either label. Reporters currently have to pick the closest-fitting existing form or open a blank issue. This task decides whether that gap gets closed, and drafts the fix, without landing it unilaterally.
+`.github/labels.yml` already defines `bug` and `enhancement` labels (retained GitHub defaults), but `.github/ISSUE_TEMPLATE/` only has `design-feedback.yml` and `use-case-scenario.yml` — there is no structured form that applies either label. This task decides whether that gap gets closed, and drafts the fix, without landing it unilaterally.
+
+**Correction:** this task originally said reporters "have to pick the closest-fitting existing form or open a blank issue." Blank issues are **disabled** — `.github/ISSUE_TEMPLATE/config.yml` sets `blank_issues_enabled: false`. A bug reporter's only escape hatch today is the Discussions contact link, which strengthens option 1 rather than weakening it: the gap is not "unstructured reports," it is "no path at all."
 
 **Options considered**
 1. **Add `bug.yml` and `enhancement.yml` forms**, matching the existing two templates' structure (see `.github/ISSUE_TEMPLATE/design-feedback.yml` for the house style: YAML issue form, not a Markdown template). Closes the gap `AGENTS.md` already flags as real.
@@ -90,11 +92,16 @@ Whether anything on the frozen surface should change before `v1.0.0`, and if so,
 Weighing input, not a decision: `AGENTS.md` itself calls the current state "a genuine gap," which leans toward option 1, but the same file is explicit that adding templates is the maintainer's call, not something to do as a side effect of other work.
 
 **Decision required**
-Add the two forms or not — the maintainer's call, per `AGENTS.md`'s "What not to do" section.
+Add the two forms or not — the maintainer's call, per `AGENTS.md`'s "What not to do" section. **Answered: add them.**
 
 **Where the decision gets recorded**
-- `.github/ISSUE_TEMPLATE/bug.yml` and `enhancement.yml` — drafted for review, not merged until accepted.
-- `AGENTS.md`'s "Issue & label conventions" section — update once decided, either to list the two new forms or to explicitly note the gap was considered and left as-is.
+- `.github/ISSUE_TEMPLATE/bug.yml` and `enhancement.yml` — added. `bug.yml` requires the **seed** and whether the failure is inside a `testing/synctest` bubble, because a fault-dependent report is unreplayable without the first and ambiguous between virtual and wall-clock time without the second. `enhancement.yml` points at [06](../06-scope-and-roadmap.md)'s scope rubric up front, so proposals arrive pre-filtered against the already-excluded list.
+- `AGENTS.md`'s "Issue & label conventions" section — rewritten to list four forms, and to state the distinction that actually decides routing: behaviour the docs describe as deliberate is `design`, not `bug`.
+- `docs/tasks/README.md`'s "On GitHub issues" section — updated; it pointed here as the open decision.
+
+**Widened beyond the task's own file list**, because all three sit in this change's blast radius:
+- `.github/ISSUE_TEMPLATE/design-feedback.yml` still said **"netchaos has no implementation yet"**, live on `main`. That falsified `M4-3`'s ticked box *"No file in the repository claims netchaos has no implementation"* — its status sweep covered prose and `.claude/commands/` but never `.github/`. It is also the house-style source a new `bug.yml` copies from, so the false banner would have propagated. `use-case-scenario.yml`'s dated "right now" / "validate the v1 scope" framing was refreshed in the same pass, and `config.yml`'s contact-link text no longer enumerates form names that go stale.
+- `.claude/commands/issue.md` said *"Never label an issue `bug` or `enhancement` — no such labels exist in this repo yet."* Both labels have existed in `.github/labels.yml` all along; the rule was wrong before this task and would have been wrong twice over after it. Replaced with a rule that holds under change: never apply a label outside `labels.yml`, since labels are synced from that file and an ad-hoc one is deleted on the next sync.
 
 **Tests**
-- None — a GitHub issue-form change has no automated test; verify by opening a test issue against the draft form in a fork or draft PR before merging.
+- None — a GitHub issue-form change has no automated test. GitHub renders issue forms from the **default branch only**, so a malformed form is invisible from this repo's chooser until after merge; verify by pushing the branch to a fork, making it that fork's default, and opening the fork's *New issue* chooser before merging.

@@ -1,12 +1,17 @@
 name: Use-case scenario
-description: Describe a real resilience-testing scenario that's hard to test today, to help validate the v1 scope.
+description: Describe a real resilience-testing scenario that's hard to test today, to help validate netchaos's scope.
 labels: ["use-case"]
 body:
   - type: markdown
     attributes:
       value: |
-        Concrete scenarios are the most useful input right now — they help validate whether the
-        [v1 scope](../../docs/06-scope-and-roadmap.md) actually covers the cases people need.
+        Concrete scenarios are the most useful input there is — they show whether the
+        [shipped scope](https://github.com/jpgomesr/netchaos/blob/main/docs/06-scope-and-roadmap.md) covers the cases
+        people actually need, and the two post-v1 questions still open (reordering, per-peer-pair fault scoping) are
+        gated on exactly this kind of real usage evidence.
+
+        Use this form to describe the problem. If you already know what netchaos should add, use
+        [enhancement](https://github.com/jpgomesr/netchaos/issues/new?template=enhancement.yml) instead.
 
   - type: textarea
     id: scenario
