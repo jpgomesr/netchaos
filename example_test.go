@@ -218,10 +218,13 @@ func ExampleNetwork_DialerFor() {
 	defer func() { _ = l.Close() }()
 	accepted := acceptOne(l)
 
-	// The type a client constructor would ask for; net.Dial satisfies it too.
-	var dial func(network, addr string) (net.Conn, error) = n.DialerFor("client")
+	// Stands in for a client constructor: it accepts exactly what net.Dial
+	// is, which is the property DialerFor exists to preserve.
+	newClient := func(dial func(network, addr string) (net.Conn, error)) (net.Conn, error) {
+		return dial("tcp", "server")
+	}
 
-	client, err := dial("tcp", "server")
+	client, err := newClient(n.DialerFor("client"))
 	if err != nil {
 		fmt.Println(err)
 		return

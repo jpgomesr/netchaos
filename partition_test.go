@@ -426,11 +426,16 @@ func TestDialerForIsPartitionTargetable(t *testing.T) {
 			}
 		}()
 
-		// The whole point: this is assignable to the same type a client
-		// constructor takes, and net.Dial satisfies.
-		var dial func(network, addr string) (net.Conn, error) = n.DialerFor("client")
+		// The whole point, checked by the compiler rather than by eye: what
+		// DialerFor returns goes wherever a net.Dial-shaped function goes.
+		// Written as a parameter rather than a typed variable so the
+		// assertion is a real use of the type — and so it survives
+		// staticcheck, which rejects a declared type it could have inferred.
+		newClient := func(dial func(network, addr string) (net.Conn, error)) (net.Conn, error) {
+			return dial("tcp", "server")
+		}
 
-		client, err := dial("tcp", "server")
+		client, err := newClient(n.DialerFor("client"))
 		if err != nil {
 			t.Fatal(err)
 		}
