@@ -326,6 +326,8 @@ Each half is deliberate and each is already documented *from the `WithPeerName` 
 - Add the cross-reference to `Partition` and `Heal`'s godoc: naming a dialer requires `WithPeerName`, and without it the dialer is not partition-targetable under any name.
 - Out of scope — and this is the substantive half: whether `Partition` should surface a diagnostic at all instead of silently no-op'ing. That is a semantics change to the frozen surface, and [M5-2](m5-hardening-and-ergonomics.md#m5-2--api-ergonomics-review-before-v100) already lists `Partition`/`Heal`'s silent-no-op behaviour as one of its three named review points. This finding is **input to that review** — recorded here, decided there. Do not change the semantics under this task.
 
+**Decided (M5-2, finding F3): the silent no-op stays.** The composed failure was reproduced empirically against the published `v0.1.0` — an unnamed dialer is `ephemeral:0`, `Partition("client","server")` is a no-op, and a subsequent write is delivered. But `Partition` cannot distinguish "peer not connected yet" from "peer will never exist" without breaking the legitimate "start partitioned" setup pattern. M5-2 located the real cause elsewhere: `Dial` is *structurally* unable to carry a peer name, because `WithPeerName` writes to a `context.Context` and `Dial` has no context parameter (M5-2 finding F2, raised as [#36](https://github.com/jpgomesr/netchaos/issues/36)). **This task's godoc cross-reference is still worth doing** and is unaffected by that decision — if anything it matters more, since the caveat is now known to be permanent for `Dial` rather than merely easy to miss.
+
 **Files**
 - `partition.go`
 
@@ -358,6 +360,8 @@ This is the one review finding that bears directly on the adoption claim in [01 
 3. **Document the limitation and do nothing.** Zero risk. The friction stays, and it stays invisible until someone hits it.
 
 Weighing input, not a decision: option 2 preserves every existing usage while removing the failure mode, but "the address is the peer name" is load-bearing simplicity that `addr.go`'s own comment calls out deliberately — and with no external users yet, there is no evidence anyone has hit this. Worth pairing with [M5-2](m5-hardening-and-ergonomics.md#m5-2--api-ergonomics-review-before-v100), which is looking at the same surface in the same window.
+
+**M5-2 confirmed the finding and filed [#37](https://github.com/jpgomesr/netchaos/issues/37)** (its finding F4) rather than deciding it — the change breaks every address string a test prints, so it belongs to [07](../07-contributing.md)'s issue-first process. The decision itself is still open and still this task's.
 
 **Decision required**
 Whether addresses gain any port structure before `v1.0.0`, given that adding one afterwards is a breaking change to every address string a test prints.
@@ -559,8 +563,10 @@ A user wanting to test their own back-pressure handling, or a listener under acc
 
 Weighing input, not a decision: option 3 has a real argument behind it — the values are chosen to be realistic (`listenerBacklog`'s comment calls it "analogous to a conventional `listen(2)` backlog default"), and every option added now is one `M5-2` has to weigh before `v1.0.0`. But option 1 is genuinely cheap and the in-package test constructor is evidence the need is real.
 
+**Gate resolved: this task does not wait for `M5-2`.** M5-2 has concluded (its finding F5), and the premise behind the "wait" option did not survive it. The concern was that two more names would burden a surface M5-2 might find too large; M5-2 found the opposite problem — the surface's weakness is a *missing* capability on `Dial`, not excess breadth. Option count is not the binding constraint, so decide this one on its own merits whenever it is picked up.
+
 **Decision required**
-Which of the three, and whether it waits for `M5-2`'s review to conclude first.
+Which of the three. (No longer gated on `M5-2`.)
 
 **Where the decision gets recorded**
 - [04 — API Design](../04-api-design.md#functional-options)'s options list, if either lands.

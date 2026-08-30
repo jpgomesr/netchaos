@@ -49,8 +49,8 @@
 
 ### M5-2 — API ergonomics review before v1.0.0
 
-**Status:** todo
-**Decision:** *(not yet made — this is a decision task)*
+**Status:** done
+**Decision:** **One doc correction landed directly; two questions raised as `needs-discussion` issues; nothing else on the frozen surface changes before `v1.0.0`.** See "Review outcome" below.
 **Roadmap item:** none — uses the time-boxed window `docs/07-contributing.md` describes: "`v0.1.0` leaves room to correct an ergonomics mistake or naming regret before committing to the stricter compatibility expectations a `v1.0.0` tag implies."
 **Depends on:** —
 **Blocks:** any future breaking-change PR to the frozen surface
@@ -77,8 +77,75 @@ Weighing input, not a decision: option 1 costs little (it's a review, not a rewr
 Whether anything on the frozen surface should change before `v1.0.0`, and if so, what — recorded as an issue (or issues) per the `M0` precedent's `needs-discussion` label, not landed directly.
 
 **Where the decision gets recorded**
-- A `needs-discussion`-labeled issue per finding, or a single issue if the review turns up nothing — either way, the outcome should be linked back here.
+- A `needs-discussion`-labeled issue per finding, or a single issue if the review turns up nothing — either way, the outcome should be linked back here. Filed: [#36](https://github.com/jpgomesr/netchaos/issues/36) (F2, cross-linked from `M6-9`) and [#37](https://github.com/jpgomesr/netchaos/issues/37) (F4, cross-linked from `M6-10`). These are the repository's first issues.
 - [07 — Contributing](../07-contributing.md), if the review changes the guidance about how much room `v0.1.0` actually has left.
+
+---
+
+## Review outcome
+
+The review covered M5-2's own three points plus the findings [M6](m6-review-findings.md) routed into it (`M6-9`, `M6-10`, `M6-17`). Findings in descending order of how much they matter.
+
+### F1 — `04`'s partition-establishment paragraph was factually wrong (fixed here)
+
+[04 — API Design](../04-api-design.md#dynamic-partition-control) said: *"`Dial` (which uses `context.Background()`) therefore hangs forever against a partitioned peer; give it a context with a deadline if that's not the intended behaviour."*
+
+`Dial` does not hang. It connects immediately. The claim was self-contradicted by the very next sentence in the same paragraph — *"Only a dialer that named itself via `WithPeerName` can be blocked this way"* — and `Dial` cannot name itself, because `WithPeerName` records the identity on a `context.Context` and `Dial` has no context parameter. The suggested remedy was impossible for the same reason: there is nowhere to put a deadline.
+
+Verified against the published `v0.1.0` from an external module, not the working tree:
+
+```
+1. Dial, with partition client<->server already declared
+    CONNECTED, LocalAddr=ephemeral:0
+2. DialContext + WithPeerName("client"), same partition
+    HUNG (still blocked after 500ms)
+```
+
+This is the same class as [`M6-1`](m6-review-findings.md#m6-1--reconcile-ordinal-assignment-with-the-determinism-contract) — a doc sentence overreaching past what the code does, on the frozen surface. Corrected in this task rather than deferred: it is prose only, no signature moves, so [07](../07-contributing.md)'s issue-first rule does not apply. `DialContext`'s godoc (`netchaos.go:138-143`) was checked and is already accurate; `Partition`'s (`partition.go:56-58`) attributes the blocking to `WithPeerName` and is not wrong, though `M6-9` may sharpen it.
+
+### F2 — `Dial` cannot participate in partition at all *(issue — the substantive finding)*
+
+F1's mechanism is the real finding, and it is not a documentation problem. `Dial` is the `net.Dial`-shaped drop-in the library's adoption claim rests on — [01 — Vision](../01-vision.md)'s no-rewrite promise — and it is *structurally incapable* of being partition-targetable, because peer identity travels by context and `Dial` has no context. A user who wants the headline partition feature must abandon the drop-in entry point.
+
+This subsumes M5-2's point (b), "`Dial`/`DialContext` symmetry": the asymmetry is not stylistic, it is a capability gap. It also reframes point (a): `WithPeerName`'s context-carried shape is defensible as the least-bad fit for `Dial`'s frozen signature (as [04](../04-api-design.md#frozen-v1-surface) argues), but F2 is the cost that argument was paying, and it was never written down.
+
+Raised as a `needs-discussion` issue rather than decided — it would add an exported identifier: [#36](https://github.com/jpgomesr/netchaos/issues/36).
+
+### F3 — `Partition` on an unnamed dialer is a silent no-op *(input from `M6-9`, folded into F2's issue)*
+
+`M6-9` recorded this and routed the semantics decision here. Reproduced empirically, same run:
+
+```
+3. Dial (unnamed), then Partition("client","server"), then send
+    dialer identity is ephemeral:0 - not "client"
+    read after Partition: "ping" DELIVERED - partition had no effect
+```
+
+**Decision: the silent no-op stays.** [04](../04-api-design.md#error-and-no-op-behaviour)'s argument holds — partitioning before either side connects is legitimate test setup ("start partitioned"), and erroring would force tests to order setup calls for no benefit. There is no way for `Partition` to distinguish "peer not connected yet" from "peer will never exist" without breaking that. The composed failure is real, but its cause is F2, and that is where the fix belongs. `M6-9`'s own godoc cross-reference remains worth doing on its own terms.
+
+### F4 — Addresses have no `host:port` structure *(input from `M6-10`, its own issue)*
+
+`peerName` is the identity function (`addr.go:32`), so `addr.String()` returns the peer name verbatim and `net.SplitHostPort` fails against netchaos where it succeeds against the real stack. Confirmed unchanged. `M6-10` asked for a `needs-discussion` issue cross-linked to this review: [#37](https://github.com/jpgomesr/netchaos/issues/37). Not decided here — it is a breaking change to every address string a test prints, so it belongs to the issue-first process.
+
+### F5 — `M6-17`'s gate: **not blocked by this review**
+
+`M6-17` asked whether `WithPipeBound` / `WithListenerBacklog` should wait for this review to conclude, on the grounds that they cost "two more names on a surface `M5-2` is about to review for being too large."
+
+**The premise does not survive the review.** The frozen surface's problem is not that it is too large — it is that one entry point is missing a capability (F2). Option count is not the binding constraint, so `M6-17` should be decided on its own merits, now, without waiting. Recorded on `M6-17` itself.
+
+### F6 — Panic on invalid option values: confirmed, no change
+
+[04](../04-api-design.md#error-and-no-op-behaviour) said this was "decided now, not deferred, because reversing it after v1 tags is expensive." Re-examined while reversal is still cheap: the reasoning holds. It matches `regexp.MustCompile`, invalid values are programmer errors in test code, and `options.go:37-48` documents the one non-obvious consequence (validation runs once after all options apply, so a later valid option rescues an earlier invalid one of the same kind).
+
+### `07 — Contributing` needs no change
+
+Its guidance — the API is "stable but not frozen until `v1.0.0`," and a breaking change "needs a real justification, not routine churn" — is exactly the process F2 and F4 now enter. The review found nothing that changes how much room `v0.1.0` has left; it found two things worth spending some of that room on, which is the guidance working rather than a reason to rewrite it.
+
+### Not examined, deliberately
+
+Reordering (`M6-15`) and per-peer-pair scoping (`M6-16`) stay gated on external usage evidence; `AGENTS.md` bars resolving reordering without the maintainer. Error-wrapping policy (`M6-2`) and exporting fault observability (`M6-14`) touch the frozen surface and therefore inherit this task's `Blocks:` edge, but each has its own M6 decision task and is not folded in here.
+
+`api_test.go` claims in a comment to assert "the frozen v1 API surface is honoured" but only checks `Dial`'s assignability and `net.Conn` conformance — there is no mechanical guard against an accidental exported-surface change. Noted as test tooling rather than ergonomics; it belongs in M6, not here.
 
 ---
 
