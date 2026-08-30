@@ -288,3 +288,106 @@ func TestLatencyDoesNotWedgeSlowReader(t *testing.T) {
 		}
 	})
 }
+
+// TestLatencyTimerNotRearmedBehindHead is M6-8's efficiency claim: pending is
+// release-ordered and new units append to the tail, so admitting a unit
+// changes the head only when pending was previously empty. Every other write
+// re-armed the timer for the same deadline it was already armed for.
+//
+// Asserted with a counter rather than an allocation count: conn.Write copies
+// its payload, so testing.AllocsPerRun on this path measures two things at
+// once, and a flaky assertion in a change whose whole risk is silent
+// non-delivery would be the wrong trade.
+func TestLatencyTimerNotRearmedBehindHead(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		client, server := newConnPairWithBound(&addr{"tcp", "client"}, &addr{"tcp", "server"}, 0, "tcp", defaultPipeBound)
+		defer func() { _ = client.Close() }()
+		defer func() { _ = server.Close() }()
+
+		p := client.writePipe
+		installFaultPolicy(p, faultPolicy{
+			latencyEnabled: true,
+			latencyMin:     time.Hour,
+			latencyMax:     time.Hour,
+		})
+
+		// The first write becomes the head, so it must arm.
+		if _, err := client.Write([]byte("a")); err != nil {
+			t.Fatal(err)
+		}
+		if got := latencyRearms(p); got != 1 {
+			t.Fatalf("arms after the first write = %d, want 1 (it became the head)", got)
+		}
+
+		// Every later write lands behind that head, which does not move.
+		for i := 0; i < 8; i++ {
+			if _, err := client.Write([]byte("b")); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if got := latencyRearms(p); got != 1 {
+			t.Fatalf("arms after 8 writes behind an existing head = %d, want 1: "+
+				"a unit appended to the tail cannot change the head, so the live timer already targets the right deadline", got)
+		}
+	})
+}
+
+// TestLatencyTimerRearmsAfterPartialDrain is the other direction, and the one
+// that matters: a re-arm guard that is wrong this way stops delivering
+// pending units, which is silent data loss on the library's core path rather
+// than a missed optimization.
+//
+// Three units are given distinct release times, so the first release drains
+// exactly one and leaves *two* behind. The head genuinely changed there, so
+// releaseDueLatency must re-arm — unconditionally, unlike the append path. If
+// it does not, the remaining units are never delivered and the reads below
+// block until synctest reports the bubble deadlocked.
+//
+// Three rather than two, and that is the whole point of the test: with two
+// units a partial drain leaves len(pending) == 1, which the append guard's
+// own condition happens to accept, so the bug passes unnoticed. Verified by
+// making it — pointing releaseDueLatency at armLatencyForAppendLocked leaves
+// a two-unit version of this test green and fails this one.
+func TestLatencyTimerRearmsAfterPartialDrain(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const latency = time.Hour
+		const gap = time.Minute
+
+		client, server := newConnPairWithBound(&addr{"tcp", "client"}, &addr{"tcp", "server"}, 0, "tcp", defaultPipeBound)
+		defer func() { _ = client.Close() }()
+		defer func() { _ = server.Close() }()
+
+		installFaultPolicy(client.writePipe, faultPolicy{
+			latencyEnabled: true,
+			latencyMin:     latency,
+			latencyMax:     latency,
+		})
+
+		want := []string{"first", "second", "third"}
+		for i, payload := range want {
+			if _, err := client.Write([]byte(payload)); err != nil {
+				t.Fatal(err)
+			}
+			if i < len(want)-1 {
+				time.Sleep(gap) // so each unit releases strictly later than the last
+			}
+		}
+
+		buf := make([]byte, 6)
+		for i, w := range want {
+			n, err := server.Read(buf)
+			if err != nil || string(buf[:n]) != w {
+				t.Fatalf("read %d = (%q, %v), want (%q, nil): "+
+					"a unit behind the drained head was never released, so the timer was not re-armed",
+					i, buf[:n], err, w)
+			}
+		}
+	})
+}
+
+// latencyRearms reports how many times p's latency timer has been armed.
+func latencyRearms(p *pipe) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.arms
+}

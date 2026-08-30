@@ -91,6 +91,6 @@ func installFaultPolicy(p *pipe, fp faultPolicy) {
 			p.trace.record(faultEvent{drawn: drawn, effective: releaseAt.Sub(now)})
 		}
 		p.pending = append(p.pending, pendingUnit{data: data, releaseAt: releaseAt})
-		p.armLatencyTimerLocked()
+		p.armLatencyForAppendLocked()
 	}
 }
