@@ -3,6 +3,7 @@ package netchaos
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"sync"
 	"testing"
@@ -173,6 +174,169 @@ func TestConcurrentDials(t *testing.T) {
 			t.Fatalf("duplicate ordinal %d among concurrent dials", o)
 		}
 		seen[o] = true
+	}
+}
+
+// TestBacklogFullOrdinalAccounting pins the determinism contract's claim
+// that "a dial that never establishes never burns one" against the dial path
+// itself. TestBacklogFull (listener_test.go) fills the queue by calling
+// enqueue directly, so it proves the capacity bound without ever reaching
+// the ordinal assignment; this test goes through Dial, which is the only way
+// the accounting is observable.
+func TestBacklogFullOrdinalAccounting(t *testing.T) {
+	n := NewNetwork()
+	l, err := n.Listen("tcp", "server")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = l.Close() }()
+
+	// Fill the accept queue without accepting anything: ordinals 0..127.
+	for i := 0; i < listenerBacklog; i++ {
+		c, err := n.Dial("tcp", "server")
+		if err != nil {
+			t.Fatalf("dial %d: %v", i, err)
+		}
+		defer func() { _ = c.Close() }()
+	}
+
+	if _, err := n.Dial("tcp", "server"); !errors.Is(err, ErrBacklogFull) {
+		t.Fatalf("dial past the backlog = %v, want errors.Is(ErrBacklogFull)", err)
+	}
+
+	// Make room and dial again. The failed dial established nothing, so the
+	// next connection that does establish must take the ordinal the failure
+	// did not consume.
+	if _, err := l.Accept(); err != nil {
+		t.Fatal(err)
+	}
+	c, err := n.Dial("tcp", "server")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+
+	if got, want := c.(*conn).ordinal, uint64(listenerBacklog); got != want {
+		t.Errorf("ordinal after a dial that failed with ErrBacklogFull = %d, want %d "+
+			"(the failed dial must not consume one, or every later connection draws from a shifted RNG stream)", got, want)
+	}
+	// The same fact, in the form a user can actually see.
+	if got, want := c.LocalAddr().String(), fmt.Sprintf("ephemeral:%d", listenerBacklog); got != want {
+		t.Errorf("LocalAddr() after a dial that failed with ErrBacklogFull = %q, want %q", got, want)
+	}
+}
+
+// TestClosedListenerDialOrdinalAccounting covers the second way the dial path
+// can fail after the listener lookup succeeds: the listener is closed in the
+// window between that lookup and the hand-off. Close deregisters the address,
+// so a plain dial afterwards is refused at the lookup — the path that was
+// always correct — and re-registering the closed listener is what reproduces
+// the window deterministically instead of racing for it.
+func TestClosedListenerDialOrdinalAccounting(t *testing.T) {
+	n := NewNetwork()
+	stale, err := n.Listen("tcp", "server")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stale.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	n.mu.Lock()
+	n.listeners["server"] = stale.(*listener)
+	n.mu.Unlock()
+
+	if _, err := n.Dial("tcp", "server"); !errors.Is(err, ErrConnectionRefused) {
+		t.Fatalf("dial into a closed listener = %v, want errors.Is(ErrConnectionRefused)", err)
+	}
+
+	n.mu.Lock()
+	delete(n.listeners, "server")
+	n.mu.Unlock()
+
+	live, err := n.Listen("tcp", "server")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = live.Close() }()
+
+	c, err := n.Dial("tcp", "server")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+
+	if got, want := c.(*conn).ordinal, uint64(0); got != want {
+		t.Errorf("ordinal after a dial refused by a closed listener = %d, want %d "+
+			"(the refused dial established nothing, so the first connection to establish is still the first)", got, want)
+	}
+}
+
+// TestConcurrentDialsAtBacklogBoundary guards the reserve/fill counter
+// itself, which is new machinery rather than the bug M6-1 started from: with
+// more dialers than the backlog can take and nobody accepting, exactly
+// listenerBacklog dials must succeed and the ordinals handed out must be
+// exactly 0..k-1. A reservation that is never released shows up here as
+// fewer successes than capacity; one released twice, as a duplicate ordinal
+// or a gap.
+//
+// It is deliberately not the regression test for M6-1 — it was checked
+// against the pre-fix code and passed, because the dials that win the
+// ordinal race are usually the same ones that win the enqueue race. The
+// deterministic assertions for the original defect are
+// TestBacklogFullOrdinalAccounting and TestClosedListenerDialOrdinalAccounting.
+func TestConcurrentDialsAtBacklogBoundary(t *testing.T) {
+	n := NewNetwork()
+	l, err := n.Listen("tcp", "server")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = l.Close() }()
+
+	const dialers = listenerBacklog + 32
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var ordinals []uint64
+	failures := 0
+
+	for i := 0; i < dialers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c, err := n.Dial("tcp", "server")
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				if !errors.Is(err, ErrBacklogFull) {
+					t.Errorf("Dial = %v, want nil or errors.Is(ErrBacklogFull)", err)
+				}
+				failures++
+				return
+			}
+			ordinals = append(ordinals, c.(*conn).ordinal)
+		}()
+	}
+	wg.Wait()
+
+	if got := len(ordinals); got != listenerBacklog {
+		t.Errorf("successful dials = %d, want %d (the backlog's capacity)", got, listenerBacklog)
+	}
+	if want := dialers - len(ordinals); failures != want {
+		t.Errorf("failed dials = %d, want %d", failures, want)
+	}
+
+	seen := make(map[uint64]bool, len(ordinals))
+	for _, o := range ordinals {
+		if seen[o] {
+			t.Fatalf("duplicate ordinal %d", o)
+		}
+		seen[o] = true
+	}
+	for i := uint64(0); i < uint64(len(ordinals)); i++ {
+		if !seen[i] {
+			t.Fatalf("ordinal %d was never handed out among %d successful dials", i, len(ordinals))
+		}
 	}
 }
 

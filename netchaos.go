@@ -142,17 +142,20 @@ func (n *Network) Dial(network, addr string) (net.Conn, error) {
 // WithPeerName is never partition-targetable (see WithPeerName), so it
 // never blocks here regardless of any partition's state.
 //
-// A dial that never establishes (blocked on a partition, then cancelled)
-// does not consume a connection ordinal — ordinals, and therefore RNG
-// streams (see the determinism contract on WithSeed), are assigned in the
-// order dials complete, not the order they're attempted. This means the
-// determinism contract does not apply to a dial that races a partition
-// against cancellation; give it a context whose deadline is what should
-// determine the outcome if that matters to a test.
+// A dial that never establishes does not consume a connection ordinal —
+// ordinals, and therefore RNG streams (see the determinism contract on
+// WithSeed), are assigned in the order dials complete, not the order they're
+// attempted. This holds for every way a dial can fail, not just for a dial
+// blocked on a partition and then cancelled: the accept-queue slot is
+// claimed first, so a dial refused with ErrConnectionRefused or ErrBacklogFull
+// returns before an ordinal is taken and leaves the sequence unshifted for
+// every connection after it. What the contract does not cover is a dial that
+// races a partition against cancellation; give it a context whose deadline
+// is what should determine the outcome if that matters to a test.
 //
 // Establishment is otherwise entirely synchronous: there is no blocking
-// step between validating the request and enqueuing the new connection on
-// the target listener. A full listener backlog fails immediately with
+// step between validating the request and handing the new connection to the
+// target listener. A full listener backlog fails immediately with
 // ErrBacklogFull rather than waiting for room.
 func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (net.Conn, error) {
 	// Checked once, up front, rather than folded into the enqueue select
@@ -179,10 +182,28 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 
 	n.mu.Lock()
 	l, ok := n.listeners[peer]
+	// Unlocked here, and deliberately not deferred: l.reserve below takes
+	// l.mu, while listener.Close takes l.mu and then n.mu through
+	// n.deregister. Holding n.mu across a call that acquires l.mu is the one
+	// thing that would close that into a lock cycle. n.mu is taken again
+	// below, on its own, for the ordinal.
+	n.mu.Unlock()
 	if !ok {
-		n.mu.Unlock()
 		return nil, n.dialOpError(network, dialAddr, ErrConnectionRefused)
 	}
+
+	// Claim the accept-queue slot before taking an ordinal, not after. Both
+	// remaining ways to fail — a full backlog, and a listener closed since
+	// the lookup — are decided here, so past this point establishment cannot
+	// fail and the ordinal below is only ever spent on a connection that
+	// establishes. That is what makes the determinism contract's "a dial
+	// that never establishes never burns one" true of every path rather than
+	// just the lookup (M6-1).
+	if err := l.reserve(); err != nil {
+		return nil, n.dialOpError(network, dialAddr, err)
+	}
+
+	n.mu.Lock()
 	ordinal := n.nextOrdinal
 	n.nextOrdinal++
 	n.mu.Unlock()
@@ -208,9 +229,7 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 	installFaultPolicy(client.writePipe, fp)
 	installFaultPolicy(server.writePipe, fp)
 
-	if err := l.enqueue(server); err != nil {
-		return nil, n.dialOpError(network, dialAddr, err)
-	}
+	l.fill(server)
 	return client, nil
 }
 
