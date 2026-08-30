@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strings"
 	"testing"
 )
 
@@ -56,6 +57,36 @@ func TestValidateNetworkAcceptsTCPVariants(t *testing.T) {
 func TestValidateNetworkRejectsUnknown(t *testing.T) {
 	if err := validateNetwork("carrier-pigeon"); err == nil {
 		t.Fatal("validateNetwork(\"carrier-pigeon\") = nil, want an error")
+	}
+}
+
+// TestValidateNetworkRejectsUDPVariants covers all three spellings of the
+// same exclusion. docs/06-scope-and-roadmap.md treats UDP as one excluded
+// thing, not three, so "udp4" and "udp6" get the explanation rather than
+// falling through to the generic message for a network nobody has heard of.
+func TestValidateNetworkRejectsUDPVariants(t *testing.T) {
+	const wantMsg = "udp support is out of scope for netchaos v1"
+	for _, network := range []string{"udp", "udp4", "udp6"} {
+		err := validateNetwork(network)
+		if !errors.Is(err, ErrUnsupportedNetwork) {
+			t.Errorf("validateNetwork(%q) = %v, want errors.Is(ErrUnsupportedNetwork)", network, err)
+			continue
+		}
+		if !strings.Contains(err.Error(), wantMsg) {
+			t.Errorf("validateNetwork(%q) = %q, want a message containing %q", network, err, wantMsg)
+		}
+	}
+}
+
+// TestValidateNetworkUnknownStaysGeneric guards the other half of M6-3: the
+// UDP explanation must not leak onto networks it does not explain.
+func TestValidateNetworkUnknownStaysGeneric(t *testing.T) {
+	err := validateNetwork("unix")
+	if !errors.Is(err, ErrUnsupportedNetwork) {
+		t.Fatalf("validateNetwork(\"unix\") = %v, want errors.Is(ErrUnsupportedNetwork)", err)
+	}
+	if got, want := err.Error(), `netchaos: unsupported network: "unix"`; got != want {
+		t.Fatalf("validateNetwork(\"unix\") = %q, want %q", got, want)
 	}
 }
 
