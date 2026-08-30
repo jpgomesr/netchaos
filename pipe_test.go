@@ -3,12 +3,90 @@ package netchaos
 import (
 	"errors"
 	"io"
+	"net"
+	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
 )
+
+// TestZeroLengthWrite pins what a Write of no bytes does, which nothing
+// asserted before: whether an empty write is a fault unit at all was
+// answered only by whichever line of code happened to run first.
+//
+// It is a fault unit. The write is admitted and draws from every configured
+// fault's stream exactly like any other unit — that is the draw discipline
+// the determinism contract fixes (docs/04, M2-5), and treating an empty
+// write as a no-op that consumes no draws would be a breaking change to it,
+// not a cleanup. So the draw consumption is asserted, deliberately, as
+// intended behaviour.
+//
+// What it must NOT do is surface at the reader. An empty payload carries
+// nothing to read, and delivering one as a (0, nil) Read is a wakeup no real
+// net.Conn produces — io.Reader discourages exactly that return for a
+// non-empty buffer.
+func TestZeroLengthWrite(t *testing.T) {
+	n := NewNetwork(WithSeed(7), WithPacketLoss(0.5), WithLatency(time.Millisecond, 2*time.Millisecond))
+	client, server := dialPair(t, n)
+
+	for _, payload := range [][]byte{nil, {}} {
+		got, err := client.Write(payload)
+		if got != 0 || err != nil {
+			t.Fatalf("Write(%#v) = (%d, %v), want (0, nil)", payload, got, err)
+		}
+	}
+
+	// Both empty writes were fault units: one recorded decision each.
+	if events := client.(*conn).writePipe.trace.snapshot(); len(events) != 2 {
+		t.Errorf("recorded fault events after two empty writes = %d, want 2 "+
+			"(an empty write is a unit and must consume its draws, per the draw discipline)", len(events))
+	}
+
+	// The reader must see nothing at all, not a zero-length read.
+	if err := server.SetReadDeadline(time.Now().Add(50 * time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	got, err := server.Read(make([]byte, 8))
+	if got != 0 {
+		t.Fatalf("Read after empty writes = %d bytes, want 0", got)
+	}
+	if !errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Errorf("Read after empty writes = %v, want os.ErrDeadlineExceeded "+
+			"(an empty write must not surface as a spurious (0, nil) read)", err)
+	}
+}
+
+// dialPair stands up one connected pair on n, failing the test rather than
+// making every caller repeat the accept goroutine.
+func dialPair(t *testing.T, n *Network) (client, server net.Conn) {
+	t.Helper()
+
+	l, err := n.Listen("tcp", "server")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = l.Close() })
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		c, err := l.Accept()
+		if err == nil {
+			accepted <- c
+		}
+	}()
+
+	client, err = n.Dial("tcp", "server")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+
+	server = <-accepted
+	t.Cleanup(func() { _ = server.Close() })
+	return client, server
+}
 
 func TestPipeRoundTrip(t *testing.T) {
 	p := newPipe(defaultPipeBound)

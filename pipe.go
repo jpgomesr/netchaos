@@ -101,7 +101,18 @@ func (p *pipe) tryRead(b []byte) (n int, ch <-chan struct{}, err error) {
 		}
 		p.bufBytes -= n
 		p.broadcastLocked() // may have freed space for a blocked writer
-		return n, nil, nil
+
+		// A zero-length write is admitted and draws from every configured
+		// fault stream like any other unit (the draw discipline in docs/04),
+		// but it carries nothing for a reader. Handing one back as (0, nil)
+		// would be a wakeup no real net.Conn produces, and io.Reader
+		// discourages that return for a non-empty buffer — so when every
+		// payload consumed here was empty, fall through and keep waiting for
+		// something real. len(b) == 0 is the one case where (0, nil) is the
+		// correct answer, and it keeps its existing behaviour.
+		if n > 0 || len(b) == 0 {
+			return n, nil, nil
+		}
 	}
 
 	if p.closed {
