@@ -77,10 +77,21 @@ func (s *stream) bernoulli(rate float64) bool {
 }
 
 // uniformDuration draws a duration uniformly from [min, max], inclusive,
-// consuming exactly one draw regardless of whether min == max — the fixed
-// case is not special-cased, so a fault kind's draw index always tracks the
-// unit index one-for-one (the draw discipline recorded in the determinism
-// contract, M2-5).
+// producing exactly one duration per unit regardless of whether min == max —
+// the fixed case is not special-cased, so a fault kind's value index always
+// tracks the unit index one-for-one (the draw discipline recorded in the
+// determinism contract, M2-5).
+//
+// One duration is not necessarily one raw draw. A ranged draw goes through
+// boundedUint64, whose rejection loop resamples when a value lands in the
+// biased zone, so the stream can advance more than once for a single
+// duration. (The fixed case is the exception rather than the rule: min==max
+// gives span 1, for which the rejection threshold is 0 and the loop can
+// never run — which is what TestUniformDurationFixedConsumesADraw pins.)
+//
+// The distinction does not reach determinism: each stream is scoped to one
+// (ordinal, side, kind), so however many raw draws a rejection consumes, the
+// sequence of durations is a deterministic function of that stream.
 func (s *stream) uniformDuration(min, max time.Duration) time.Duration {
 	span := uint64(max-min) + 1 // inclusive range; min==max gives span==1
 	return min + time.Duration(s.boundedUint64(span))

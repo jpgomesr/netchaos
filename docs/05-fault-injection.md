@@ -10,7 +10,7 @@ netchaos's v1 scope (per the root README's checklist) covers three fault categor
 
 **What it does:** Delays delivery of a write from one simulated peer to the other by some duration, instead of delivering it immediately.
 
-**Fixed vs. ranged:** `WithLatency(min, max time.Duration)` supports both — passing equal `min` and `max` applies a fixed delay to every write; passing a range draws a duration uniformly from `[min, max]` per write, using the connection direction's own seeded stream. The draw happens even when `min == max`, so the draw sequence's length always tracks the number of writes, fixed delays included.
+**Fixed vs. ranged:** `WithLatency(min, max time.Duration)` supports both — passing equal `min` and `max` applies a fixed delay to every write; passing a range draws a duration uniformly from `[min, max]` per write, using the connection direction's own seeded stream. A duration is produced even when `min == max`, so exactly one is produced per write, fixed delays included, and the sequence of durations always tracks the number of writes. (One duration is not necessarily one raw 64-bit draw: the unbiased bounded draw underneath resamples when a value lands in its biased zone. That is invisible to the sequence of durations, and to determinism, since each stream is scoped to a single connection direction and fault kind.)
 
 **Ordering:** Latency delays delivery; it never reorders. A connection direction releases writes in the order they were made, even when a later write happens to draw a shorter delay than an earlier one still in flight.
 
