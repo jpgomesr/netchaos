@@ -1,0 +1,50 @@
+name: Enhancement
+description: Propose a change or addition to netchaos — a new fault kind, an option, or an ergonomic improvement.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        [06 — Scope & Roadmap](https://github.com/jpgomesr/netchaos/blob/main/docs/06-scope-and-roadmap.md) records what
+        is deliberately out of scope and the rubric used to decide: does it operate at the connection/byte-stream layer,
+        can it be added without adopters rewriting how their program executes, and is the core shipped. Checking a
+        proposal against that first saves a round trip — several plausible ideas (DNS faults, TLS-level faults,
+        protocol-aware faults, UDP) are already excluded there with reasons.
+
+        A change to an exported signature needs this issue before a PR, per
+        [07 — Contributing](https://github.com/jpgomesr/netchaos/blob/main/docs/07-contributing.md).
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What should netchaos do that it doesn't today?
+      description: e.g. throttle a link to a fixed bandwidth, reset an established connection mid-stream.
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: What are you trying to test, and what do you have to do instead today?
+      description: The concrete testing problem behind the proposal. A workaround you've had to write is the strongest evidence.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Would this change the exported API surface?
+      description: See the frozen v1 surface in [04 — API Design](https://github.com/jpgomesr/netchaos/blob/main/docs/04-api-design.md#frozen-v1-surface).
+      options:
+        - "No — behaviour only"
+        - "Yes — adds a new exported identifier"
+        - "Yes — changes an existing signature or its behaviour"
+        - "Not sure"
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope-check
+    attributes:
+      label: How does this fare against the scope rubric?
+      description: Optional, but useful — especially if you think it's a case the rubric handles badly.

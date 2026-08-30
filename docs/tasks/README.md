@@ -100,4 +100,6 @@ Git workflow is unchanged: Conventional Commits, explicit `git add <path>`, bran
 
 ## On GitHub issues
 
-These tasks are shaped so they map onto issues one-to-one if that is wanted later. **No issues are being created from this document.** `AGENTS.md` notes the repo deliberately has only `design-feedback` and `use-case-scenario` forms, with no `bug`/`enhancement` workflow yet — introducing one is a decision for the maintainer, not a side effect of this breakdown. [M5-3](m5-hardening-and-ergonomics.md#m5-3--decide-on-bugenhancement-issue-template-forms) is where that decision is now tracked.
+These tasks are shaped so they map onto issues one-to-one if that is wanted later. **No issues are created from this document as a matter of course** — a task file is the record, and an issue is only opened when a task's own "Where the decision gets recorded" section calls for one.
+
+[M5-3](m5-hardening-and-ergonomics.md#m5-3--decide-on-bugenhancement-issue-template-forms) resolved the template gap this section used to flag: `bug.yml` and `enhancement.yml` now exist alongside `design-feedback.yml` and `use-case-scenario.yml`, so a defect found while working through these tasks has a form to go to.

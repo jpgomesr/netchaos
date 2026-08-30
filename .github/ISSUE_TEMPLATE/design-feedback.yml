@@ -1,12 +1,19 @@
 name: Design feedback
-description: Feedback on the proposed API, architecture, or scope while netchaos is still in the design stage.
+description: Feedback on netchaos's API, architecture, or scope — the design itself, not a defect in it.
 labels: ["design"]
 body:
   - type: markdown
     attributes:
       value: |
-        netchaos has no implementation yet — see [docs/](../../docs/README.md) for the current design docs.
-        This template is for feedback on the design itself (API shape, architecture, scope), not for bug reports.
+        v1 is implemented and released as `v0.1.0` — see
+        [docs/](https://github.com/jpgomesr/netchaos/blob/main/docs/README.md) for the design set that describes it.
+        The API is stable but not frozen until `v1.0.0`, so naming and ergonomics feedback is most useful now, while
+        there is still room to act on it.
+
+        This form is for the design itself. If netchaos behaves differently from a real `net.Conn` in a way the docs
+        don't describe, that's a [bug report](https://github.com/jpgomesr/netchaos/issues/new?template=bug.yml); if you
+        want it to do something new, that's an
+        [enhancement](https://github.com/jpgomesr/netchaos/issues/new?template=enhancement.yml).
 
   - type: dropdown
     id: doc
