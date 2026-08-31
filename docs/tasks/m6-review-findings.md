@@ -220,7 +220,7 @@ netchaos's headline claim is that its `net.Conn` substitutes for the real one. `
 - [x] The dependency decision is recorded (accepted with rationale, or the task is marked `dropped`).
 - [x] `nettest.TestConn` runs against a fault-free netchaos `Network` and passes, with any skipped subtest naming the design decision that makes it inapplicable. — **all 11 subtests pass, none skipped.**
 - [x] `go.mod`'s new requirement is test-only and does not appear in a consumer's build graph for non-test code. — verified with `go list -deps` vs `go list -deps -test`.
-- [ ] CI stays green on both Go 1.25 and 1.26. — confirm on the PR's CI run.
+- [x] CI stays green on both Go 1.25 and 1.26. — confirmed on PR #44: `test (1.25)` and `test (1.26)` both pass, along with `lint`, `CodeQL` and the two `Analyze` jobs.
 
 **What the first run reported — a real defect, not a design mismatch**
 9 of 11 subtests passed immediately. `WriteTimeout` and `PastTimeout` failed, both on the same cause: `conn.Read`/`conn.Write` consulted the deadline **only on the path where the operation had to block**. A read with data already buffered, or a write that fit in the pipe's remaining space, completed successfully with a deadline already in the past — `PastTimeout` saw `Write` return 1024 and a nil error where it required 0 and a `net.Error`.
