@@ -49,6 +49,11 @@ func (n *Network) SetPacketLoss(rate float64)
 
 func WithPeerName(ctx context.Context, name string) context.Context
 
+// Added by M7-6 (issue #52), post-v0.1.0. Both leave a package-default
+// bound in place when not given -- see Functional options.
+func WithPipeBound(bound int) Option
+func WithListenerBacklog(backlog int) Option
+
 var ErrUnsupportedNetwork = errors.New("netchaos: unsupported network")
 var ErrConnectionRefused = errors.New("netchaos: connection refused")
 var ErrAddressInUse = errors.New("netchaos: address already in use")
@@ -57,9 +62,7 @@ var ErrBacklogFull = errors.New("netchaos: accept backlog full")
 
 The four error sentinels are matched with `errors.Is`; see [Error and no-op behaviour](#error-and-no-op-behaviour) below and each sentinel's own godoc for which call returns it and why.
 
-**The surface above is what `v0.1.0` shipped. Four additions are accepted for `v0.2.0` and are not in it yet** — see [06 — Scope & Roadmap § Accepted for v0.2.0](06-scope-and-roadmap.md#accepted-for-v02) for the reasoning behind each, and note that all four are input to [M5-2](tasks/m5-hardening-and-ergonomics.md#m5-2--api-ergonomics-review-before-v100)'s review of this surface rather than exempt from it:
-
-- `WithPipeBound` and `WithListenerBacklog` ([M6-17](tasks/m6-review-findings.md#m6-17--decide-whether-the-pipe-bound-and-listener-backlog-become-configurable)) — see [Functional options](#functional-options).
+**The surface above is what `v0.1.0` shipped. Three additions are still accepted for `v0.2.0` and are not in it yet** — see [06 — Scope & Roadmap § Accepted for v0.2.0](06-scope-and-roadmap.md#accepted-for-v02) for the reasoning behind each, and note that all three are input to [M5-2](tasks/m5-hardening-and-ergonomics.md#m5-2--api-ergonomics-review-before-v100)'s review of this surface rather than exempt from it. `WithPipeBound` and `WithListenerBacklog` ([M6-17](tasks/m6-review-findings.md#m6-17--decide-whether-the-pipe-bound-and-listener-backlog-become-configurable)) **shipped** in [M7-6](tasks/m7-v0.2.0-implementation.md#m7-6--withpipebound-and-withlistenerbacklog) — see [Functional options](#functional-options).
 - `SetLatency` and `SetPacketLoss` ([M6-13](tasks/m6-review-findings.md#m6-13--decide-on-runtime-mutation-of-latency-and-loss)) — **shipped** in [M7-4](tasks/m7-v0.2.0-implementation.md#m7-4--setlatency-and-setpacketloss), after [M7-3](tasks/m7-v0.2.0-implementation.md#m7-3--widen-the-determinism-contract-for-runtime-fault-mutation) widened the contract ahead of the code, as that decision required. See [Runtime fault mutation](#runtime-fault-mutation).
 - A fault-trace accessor ([M6-14](tasks/m6-review-findings.md#m6-14--decide-whether-to-export-fault-observability)), closing the deferral `M2-1` recorded. The full trace was chosen over counters, so the `faultEvent` shape becomes public API — a compatibility surface at `v1.0.0`, on a format [M3-3](tasks/m3-synctest-and-reproducibility.md) deliberately made high-friction to change.
 - Options for the new fault kinds accepted by [M6-11](tasks/m6-review-findings.md#m6-11--decide-which-new-fault-kinds-if-any-enter-v02) (mid-stream reset, duplication, corruption). Bandwidth throttling and packet duplication, the first two of the four, **shipped** in [M7-5](tasks/m7-v0.2.0-implementation.md#m7-5--fault-kind-bandwidth-throttling) and [M7-8](tasks/m7-v0.2.0-implementation.md#m7-8--fault-kind-packet-duplication) as `WithBandwidth` and `WithDuplication`.
@@ -126,6 +129,15 @@ func WithPacketLoss(rate float64) Option
 // configured this way are static for the lifetime of the Network; see
 // Network.Partition / Network.Heal for dynamic control during a test.
 func WithPartition(peerA, peerB string) Option
+
+// WithPipeBound and WithListenerBacklog (M7-6, issue #52) are structural
+// bounds, not faults: the former decides when a Write blocks on
+// back-pressure, the latter when a Dial fails immediately with
+// ErrBacklogFull rather than the package defaults (64 KiB, 128). Both leave
+// the default in place when not given, and both panic on a non-positive
+// value.
+func WithPipeBound(bound int) Option
+func WithListenerBacklog(backlog int) Option
 
 // WithDuplication admits a delivered Write unit a second time, with the
 // given probability, in [0.0, 1.0]. The decision is drawn from the
