@@ -16,11 +16,23 @@ import (
 // a deadline timer (deadline.go) and a per-pipe latency delivery timer
 // (latency.go) — and both are owned by a single conn and stopped by
 // conn.Close/pipe.close, so nothing outlives the conn that created it and
-// there is nothing for a Network-wide Close to reap (see leak_test.go and
-// synctest_test.go). These callbacks are also the only place a
-// netchaos-internal goroutine acquires a sync.Mutex; the window is bounded
-// because no lock is ever held across a blocking operation. Revisit this
-// only if a resource appears that is not scoped to a single conn.
+// there is nothing for a Network-wide Close to reap in terms of goroutines
+// or timers (see leak_test.go and synctest_test.go). These callbacks are
+// also the only place a netchaos-internal goroutine acquires a sync.Mutex;
+// the window is bounded because no lock is ever held across a blocking
+// operation.
+//
+// traces (trace.go, M7-10) is the one resource that IS Network-scoped
+// rather than conn-scoped, growing for as long as n keeps dialing: unlike
+// resetTargets, an entry is deliberately never pruned when its conn
+// closes, since Network.Trace exists to be read after the connection that
+// produced it typically already has been (the common defer c.Close()
+// case). That still needs no Close, though — the "nothing to reap" claim
+// above was always about goroutines and timers, not about every field's
+// lifetime matching a conn's, and traces holds neither: only recorder
+// pointers whose memory is reclaimed with n itself. Revisit the "no Close"
+// design only if a future resource needs active cleanup, not merely a
+// lifetime wider than one conn's.
 //
 // A Network must be constructed inside the testing/synctest bubble that
 // will use it: synctest panics if a channel or timer created inside a
@@ -72,6 +84,12 @@ type Network struct {
 	// with the partition machinery.
 	resetMu      sync.Mutex
 	resetTargets map[pairKey][]*conn
+
+	// traceMu guards traces, the registry Network.Trace (M7-10) reads from.
+	// See trace.go's registerTrace and the type comment above for why
+	// entries here, unlike resetTargets, are never pruned on conn.Close.
+	traceMu sync.Mutex
+	traces  []traceHandle
 }
 
 // NewNetwork returns a new, empty Network configured by opts. Options are
@@ -353,6 +371,13 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 	client.nw, client.pair = n, fp.pair
 	server.nw, server.pair = n, fp.pair
 	n.registerReset(fp.pair, client, server)
+
+	// Registered for Network.Trace (M7-10): one handle per direction, in
+	// dial order, which is also ordinal order — the canonical order Trace
+	// returns needs no sort as a result. client.writePipe/server.writePipe
+	// are each direction's recorder (newConnPairWithSeed, conn.go).
+	n.registerTrace(ordinal, sideDialer, client.writePipe.trace)
+	n.registerTrace(ordinal, sideAcceptor, server.writePipe.trace)
 
 	l.fill(server)
 	return client, nil
