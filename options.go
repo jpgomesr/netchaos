@@ -63,18 +63,24 @@ func (c *networkConfig) validate() {
 // seed 1.
 //
 // The determinism guarantee: for a fixed seed and a fixed order in which
-// Dial, Listen, Partition, and Heal are called, every resulting connection
-// produces an identical sequence of injected faults across runs and across
-// machines. Each connection derives its own RNG stream from the seed, its
-// establishment order, and its direction, so the guarantee holds regardless
-// of how concurrently established connections do I/O afterward.
+// Dial, Listen, Partition, Heal, SetLatency, and SetPacketLoss are called,
+// every resulting connection produces an identical sequence of injected
+// faults across runs and across machines. Each connection derives its own
+// RNG stream from the seed, its establishment order, and its direction, so
+// the guarantee holds regardless of how concurrently established
+// connections do I/O afterward.
 //
 // The limit: the guarantee covers the order Network methods are called in,
-// not wall-clock concurrency of establishment itself. If two goroutines
-// race to Dial concurrently, which one is assigned which connection ordinal
-// — and therefore which RNG stream — is decided by the Go scheduler, not
-// the seed, so the guarantee does not apply to that race. Dial sequentially
-// before starting concurrent I/O if a test needs to reproduce exactly.
+// not wall-clock concurrency around them. Two cases, one fix. If two
+// goroutines race to Dial, which one is assigned which connection ordinal —
+// and therefore which RNG stream — is decided by the Go scheduler, not the
+// seed. And if a test calls SetLatency or SetPacketLoss from one goroutine
+// while another is writing, which unit is the first to see the new value is
+// likewise the scheduler's choice, not the seed's: the contract fixes a
+// setter's order against other Network calls, not against in-flight I/O.
+// Sequence the calls a test depends on — dial before starting concurrent
+// I/O, and write, then set, then write — rather than expecting netchaos to
+// pick a boundary.
 func WithSeed(seed int64) Option {
 	return func(c *networkConfig) {
 		c.seed = seed
