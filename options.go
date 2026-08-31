@@ -31,10 +31,34 @@ type networkConfig struct {
 	bandwidthEnabled bool
 	bandwidthBPS     int
 
+	// duplicateEnabled distinguishes "WithDuplication was never given" from
+	// WithDuplication(0.0) (an explicit, if degenerate, never-duplicate
+	// policy that still draws -- see WithDuplication's godoc). M7-8, #53
+	// candidate 3.
+	duplicateEnabled bool
+	duplicateRate    float64
+
+	// corruptEnabled distinguishes "WithCorruption was never given" from
+	// WithCorruption(0.0) (an explicit, if degenerate, never-corrupt policy
+	// that still draws -- see WithCorruption's godoc). M7-9, #53 candidate 4.
+	corruptEnabled bool
+	corruptRate    float64
+
 	// staticPartitions accumulates the raw peer-name pairs named by
 	// WithPartition, kept unresolved (not yet a pairKey) until validate()
 	// has checked them and NewNetwork applies them to Network.partitions.
 	staticPartitions []partitionPair
+
+	// pipeBoundEnabled distinguishes "WithPipeBound was never given" (use
+	// defaultPipeBound, pipe.go) from an explicit value (M7-6).
+	pipeBoundEnabled bool
+	pipeBound        int
+
+	// listenerBacklogEnabled distinguishes "WithListenerBacklog was never
+	// given" (use the package default, listenerBacklog in listener.go) from
+	// an explicit value (M7-6).
+	listenerBacklogEnabled bool
+	listenerBacklog        int
 }
 
 // Option configures a Network at construction time. No Option or NewNetwork
@@ -63,6 +87,18 @@ func (c *networkConfig) validate() {
 	}
 	if c.bandwidthEnabled {
 		validateBandwidthRate(c.bandwidthBPS)
+	}
+	if c.duplicateEnabled {
+		validateDuplicationRate(c.duplicateRate)
+	}
+	if c.corruptEnabled {
+		validateCorruptionRate(c.corruptRate)
+	}
+	if c.pipeBoundEnabled {
+		validatePipeBound(c.pipeBound)
+	}
+	if c.listenerBacklogEnabled {
+		validateListenerBacklog(c.listenerBacklog)
 	}
 	for _, p := range c.staticPartitions {
 		validatePartitionPair(p)

@@ -56,6 +56,15 @@ type Network struct {
 	// pre-existing nondeterminism is newly visible in test output.
 	nextListenPort int
 
+	// pipeBound and listenerBacklog are set once, from networkConfig, in
+	// NewNetwork, and read (never written again) by DialContext and Listen
+	// respectively (M7-6, #52). They default to the package constants
+	// defaultPipeBound and listenerBacklog when WithPipeBound /
+	// WithListenerBacklog are not given, so a plain NewNetwork() behaves
+	// exactly as it did before this pair of options existed.
+	pipeBound       int
+	listenerBacklog int
+
 	// resetMu guards resetTargets, Network.Reset's registry of currently
 	// established conns per peer pair (M7-7). Separate from partMu: reset
 	// is an imperative, one-shot action on conns that exist right now, not
@@ -85,6 +94,15 @@ func NewNetwork(opts ...Option) *Network {
 	}
 	cfg.validate()
 
+	pipeBound := defaultPipeBound
+	if cfg.pipeBoundEnabled {
+		pipeBound = cfg.pipeBound
+	}
+	backlog := listenerBacklog
+	if cfg.listenerBacklogEnabled {
+		backlog = cfg.listenerBacklog
+	}
+
 	n := &Network{
 		seed: cfg.seed,
 		faults: faultConfig{
@@ -95,12 +113,18 @@ func NewNetwork(opts ...Option) *Network {
 			latencyMax:       cfg.latencyMax,
 			bandwidthEnabled: cfg.bandwidthEnabled,
 			bandwidthBPS:     cfg.bandwidthBPS,
+			duplicateEnabled: cfg.duplicateEnabled,
+			duplicateRate:    cfg.duplicateRate,
+			corruptEnabled:   cfg.corruptEnabled,
+			corruptRate:      cfg.corruptRate,
 		},
-		partitions:     make(map[pairKey]struct{}, len(cfg.staticPartitions)),
-		partNotify:     make(chan struct{}),
-		listeners:      make(map[string]*listener),
-		nextListenPort: listenPortBase,
-		resetTargets:   make(map[pairKey][]*conn),
+		partitions:      make(map[pairKey]struct{}, len(cfg.staticPartitions)),
+		partNotify:      make(chan struct{}),
+		listeners:       make(map[string]*listener),
+		nextListenPort:  listenPortBase,
+		pipeBound:       pipeBound,
+		listenerBacklog: backlog,
+		resetTargets:    make(map[pairKey][]*conn),
 	}
 	for _, p := range cfg.staticPartitions {
 		n.partitions[newPairKey(peerName(p.peerA), peerName(p.peerB))] = struct{}{}
@@ -149,7 +173,7 @@ func (n *Network) Listen(network, laddr string) (net.Listener, error) {
 	l := &listener{
 		n:        n,
 		addr:     &addr{network: network, peer: peer, port: port},
-		incoming: make(chan *conn, listenerBacklog),
+		incoming: make(chan *conn, n.listenerBacklog),
 		closedCh: make(chan struct{}),
 	}
 	n.listeners[peer] = l
@@ -307,7 +331,7 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 	local := &addr{network: network, peer: localName, port: ephemeralPort(ordinal)}
 	remote := &addr{network: network, peer: peer, port: l.addr.port}
 
-	client, server := newConnPairWithSeed(local, remote, ordinal, network, defaultPipeBound, n.seed)
+	client, server := newConnPairWithSeed(local, remote, ordinal, network, n.pipeBound, n.seed)
 
 	// A single composed evaluator per direction (M2-5) — the only place
 	// fault policy is evaluated per unit, in the fixed order documented on

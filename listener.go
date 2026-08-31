@@ -1,15 +1,40 @@
 package netchaos
 
 import (
+	"fmt"
 	"net"
 	"sync"
 )
 
-// listenerBacklog is the accept-queue bound, analogous to a conventional
-// listen(2) backlog default. A Dial that finds the queue full fails with
-// ErrBacklogFull rather than blocking, so establishment stays a single
-// non-blocking step end to end (see Network.Dial in netchaos.go).
+// listenerBacklog is the accept-queue bound used when WithListenerBacklog is
+// not given, analogous to a conventional listen(2) backlog default. A Dial
+// that finds the queue full fails with ErrBacklogFull rather than blocking,
+// so establishment stays a single non-blocking step end to end (see
+// Network.Dial in netchaos.go).
 const listenerBacklog = 128
+
+// WithListenerBacklog sets the accept-queue bound for every listener n
+// creates, in place of the default (listenerBacklog, 128). A Dial that finds
+// a listener's queue already at this bound fails immediately with
+// ErrBacklogFull rather than blocking for room (M6-17, #52) — see
+// Network.DialContext.
+//
+// backlog must be positive; NewNetwork panics otherwise, naming
+// WithListenerBacklog and the offending value.
+func WithListenerBacklog(backlog int) Option {
+	return func(c *networkConfig) {
+		c.listenerBacklogEnabled = true
+		c.listenerBacklog = backlog
+	}
+}
+
+// validateListenerBacklog panics, naming WithListenerBacklog and the
+// offending value, if backlog is not positive.
+func validateListenerBacklog(backlog int) {
+	if backlog <= 0 {
+		panic(fmt.Sprintf("netchaos: WithListenerBacklog: backlog must be > 0, got %v", backlog))
+	}
+}
 
 // listener is netchaos's simulated net.Listener: an address registration in
 // a Network's topology plus a bounded queue of pending inbound connections

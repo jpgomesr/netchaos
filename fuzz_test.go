@@ -159,6 +159,13 @@ func checkPipeAccounting(t *testing.T, p *pipe) {
 	// so more than one non-empty payload over the bound would mean the
 	// admission check let something through that it should not have.
 	//
+	// This fuzz target drives p.tryWrite/tryRead directly against a raw pipe
+	// (passThroughDeliver, no fault policy installed), so it can never reach
+	// installFaultPolicy's other way bufBytes can legitimately exceed the
+	// bound with two non-empty payloads: WithDuplication (M7-8) admitting a
+	// second copy of an already-admitted unit. That path is covered by
+	// duplicate_test.go's TestDuplicationChargesBothCopies, not here.
+	//
 	// Counted in non-empty payloads rather than payloads, and the distinction
 	// is not pedantic: the fuzzer found it. A zero-length write is admitted
 	// and queued while leaving bufBytes at 0, so the input {write 0, write 65}

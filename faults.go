@@ -24,6 +24,21 @@ type faultConfig struct {
 	// already use.
 	bandwidthEnabled bool
 	bandwidthBPS     int
+
+	// duplicateEnabled/duplicateRate is WithDuplication's per-unit
+	// probability of admitting a delivered write a second time (M7-8, #53
+	// candidate 3). There is no runtime setter, matching bandwidth: #50
+	// named only latency and packet loss for M7-4's runtime-mutation
+	// contract.
+	duplicateEnabled bool
+	duplicateRate    float64
+
+	// corruptEnabled/corruptRate is WithCorruption's per-unit probability of
+	// flipping a bit in a delivered write (M7-9, #53 candidate 4). There is
+	// no runtime setter, matching bandwidth: #50 named only latency and
+	// packet loss for M7-4's runtime-mutation contract.
+	corruptEnabled bool
+	corruptRate    float64
 }
 
 // faultPolicy is the connection-direction-scoped fault configuration a
@@ -57,19 +72,22 @@ func (fp faultPolicy) current() faultConfig {
 
 // installFaultPolicy replaces p's deliver function with the single composed
 // evaluator for fp. This is the only place fault policy is evaluated per
-// unit (M2-5): latency, loss, bandwidth, and partition no longer install
-// independent hooks that happen to run in whatever order netchaos.DialContext
-// called them — there is exactly one hook, and its order is fixed by this
-// function's body:
+// unit (M2-5): latency, loss, bandwidth, corruption, duplication, and
+// partition no longer install independent hooks that happen to run in
+// whatever order netchaos.DialContext called them — there is exactly one
+// hook, and its order is fixed by this function's body:
 //
 //  1. Partition. A partitioned link drops everything, so nothing else is
 //     evaluated and no draw happens at all — partition must stay
 //     deterministic by nature, and drawing here would perturb the
-//     loss/latency streams for every future unit on this direction.
+//     loss/latency/duplicate/corrupt streams for every future unit on this
+//     direction.
 //  2. Loss. A dropped unit is never delivered, so any latency it might
 //     also have drawn is irrelevant to what the reader sees, and it never
 //     reaches the link: a dropped unit costs no serialization time either
-//     (step 3 below runs only for units that survive this step).
+//     (step 3 below runs only for units that survive this step), and is
+//     never corrupted or duplicated (steps 5 and 6 below have nothing left
+//     to act on).
 //  3. Bandwidth (throttle). Delays delivery by however long the unit takes
 //     to serialize onto a link of the configured rate, queued behind
 //     whatever this direction is already transmitting (pipe.busyUntil).
@@ -80,18 +98,32 @@ func (fp faultPolicy) current() faultConfig {
 //     loss decides whether there is anything to serialize.
 //  4. Latency. Propagation delay, added on top of whatever step 3
 //     produced.
+//  5. Corruption. A unit that survives loss may have a single bit flipped
+//     in its content, in place, before it is admitted to readable/pending
+//     — content only, never length (WithCorruption's godoc). Placed before
+//     duplication so that a duplicated unit's second copy carries whatever
+//     step 5 already did to the first, rather than an independently
+//     corrupted copy.
+//  6. Duplication. A unit that survives loss may be admitted a second
+//     time, with the same releaseAt steps 3 and 4 already computed for the
+//     first copy — the duplicate is the same physical unit (post-step-5
+//     content included) delivered twice, not an independently delayed or
+//     independently corrupted one (WithDuplication's godoc). Placed last
+//     because it is the only step that can turn one admitted unit into two.
 //
 // Draw discipline (part of the determinism contract, docs/04): a unit that
 // clears the partition gate draws from every *configured, drawing* fault's
 // stream unconditionally, even one that partition or an earlier fault in
 // this list already decided to drop. A latency draw still happens for a
-// unit loss just dropped. Bandwidth is not part of this — it has no stream
-// to draw from, so enabling it can never perturb the loss/latency sequence.
-// This keeps each drawing fault's draw index equal to the unit index on
-// that connection direction, independent of what any other configured
-// fault decided — the property that makes a fault trace diffable. Changing
-// this discipline later is a breaking change to the determinism contract,
-// not a bug fix.
+// unit loss just dropped, and so does duplication's and corruption's coin
+// flip — both recorded in the trace even though a dropped unit is never
+// actually duplicated or corrupted. Bandwidth is not part of this — it has
+// no stream to draw from, so enabling it can never perturb the
+// loss/latency/duplicate/corrupt sequence. This keeps each drawing fault's
+// draw index equal to the unit index on that connection direction,
+// independent of what any other configured fault decided — the property
+// that makes a fault trace diffable. Changing this discipline later is a
+// breaking change to the determinism contract, not a bug fix.
 func installFaultPolicy(p *pipe, fp faultPolicy) {
 	p.deliver = func(p *pipe, data []byte) {
 		if fp.network != nil && fp.network.isPartitioned(fp.pair) {
@@ -118,13 +150,33 @@ func installFaultPolicy(p *pipe, fp faultPolicy) {
 			drawn = p.latency.uniformDuration(cfg.latencyMin, cfg.latencyMax)
 		}
 
+		var duplicated bool
+		if cfg.duplicateEnabled {
+			duplicated = p.duplicate.bernoulli(cfg.duplicateRate)
+		}
+
+		var corrupted bool
+		if cfg.corruptEnabled {
+			corrupted = p.corrupt.bernoulli(cfg.corruptRate)
+		}
+
 		if dropped {
 			p.bufBytes -= len(data)
 			if p.trace != nil {
-				p.trace.record(faultEvent{dropped: true, drawn: drawn})
+				p.trace.record(faultEvent{dropped: true, drawn: drawn, duplicated: duplicated, corrupted: corrupted})
 			}
 			p.broadcastLocked()
 			return
+		}
+
+		// A dropped unit never reaches here, so the mutation below is exactly
+		// the content that will be delivered. len(data) > 0 is checked
+		// separately from corrupted: a zero-length write draws the same
+		// unconditional decision above, but there is no bit to flip in an
+		// empty payload, so the draw happens and nothing is mutated.
+		if corrupted && len(data) > 0 {
+			byteIndex, bitIndex := p.corrupt.corruptionSite(len(data))
+			data[byteIndex] ^= 1 << bitIndex
 		}
 
 		// base is when this unit finishes transmitting onto the (possibly
@@ -145,9 +197,14 @@ func installFaultPolicy(p *pipe, fp faultPolicy) {
 
 		if !cfg.latencyEnabled && !cfg.bandwidthEnabled {
 			if p.trace != nil {
-				p.trace.record(faultEvent{})
+				p.trace.record(faultEvent{duplicated: duplicated, corrupted: corrupted})
 			}
 			p.readable = append(p.readable, data)
+			if duplicated {
+				dup := append([]byte(nil), data...)
+				p.bufBytes += len(dup)
+				p.readable = append(p.readable, dup)
+			}
 			p.broadcastLocked()
 			return
 		}
@@ -159,9 +216,21 @@ func installFaultPolicy(p *pipe, fp faultPolicy) {
 			}
 		}
 		if p.trace != nil {
-			p.trace.record(faultEvent{drawn: drawn, serialized: serialized, effective: releaseAt.Sub(base)})
+			p.trace.record(faultEvent{drawn: drawn, serialized: serialized, effective: releaseAt.Sub(base), duplicated: duplicated, corrupted: corrupted})
 		}
 		p.pending = append(p.pending, pendingUnit{data: data, releaseAt: releaseAt})
 		p.armLatencyForAppendLocked()
+		if duplicated {
+			dup := append([]byte(nil), data...)
+			p.bufBytes += len(dup)
+			// Appended at the tail with the same releaseAt as the entry just
+			// armed above: pending's release-ordering invariant (each entry's
+			// releaseAt >= every earlier entry's) holds, and the timer already
+			// armed for the head covers this entry too, so no re-arm is
+			// needed here (armLatencyForAppendLocked only arms when the
+			// append made pending's length exactly 1, which duplication's
+			// second append never does).
+			p.pending = append(p.pending, pendingUnit{data: dup, releaseAt: releaseAt})
+		}
 	}
 }
