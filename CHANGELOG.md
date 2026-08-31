@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`Network.DialerFor(name)`** (`M7-2`, closes #36) — returns a
+  `net.Dial`-shaped dial function that names itself, so the connections it
+  creates are targetable by `Partition` and `Heal`:
+
+  ```go
+  client := myservice.NewClient(n.DialerFor("client"))
+  n.Partition("client", "server") // now actually affects that client
+  ```
+
+  `Dial` cannot be targetable and never will be: a dialer's identity travels
+  on a `context.Context` (`WithPeerName`), and `Dial`'s `net.Dial`-shaped
+  signature has no context parameter. That put partition — a headline feature
+  — out of reach of the drop-in entry point the library's no-rewrite adoption
+  claim rests on, since a user who wanted both had to rewrite their client to
+  take a `DialContext`. `DialerFor` closes that without changing `Dial`.
+
+  `WithPeerName` and `DialerFor` are complements, not alternatives: the former
+  for a dial that has a context anyway (and can therefore bound how long it
+  waits on a partition), the latter for code that wants a plain dial function.
+  **A `DialerFor` dialer does block on a partition until `Heal`**, with no
+  context to bound the wait — correct, since a partition drops the SYN, but
+  new for anyone who reached for `Dial` precisely because it never blocked.
+
 ### Changed
 
 - **Addresses now have a `host:port` shape** (`M7-1`, closes #49 and #37).

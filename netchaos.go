@@ -160,6 +160,42 @@ func (n *Network) Dial(network, addr string) (net.Conn, error) {
 	return n.DialContext(context.Background(), network, addr)
 }
 
+// DialerFor returns a dial function that names itself as name, so the
+// connections it creates are targetable by Network.Partition and
+// Network.Heal.
+//
+// It exists because Dial cannot be. A dialer's identity travels on a
+// context.Context (see WithPeerName), and Dial's net.Dial-shaped signature
+// has no context parameter — so a Dial call could never carry a peer name,
+// was never partition-targetable, and never blocked on a partition. That put
+// partition, a headline feature, out of reach of the drop-in entry point the
+// library's no-rewrite adoption claim rests on: a user who wanted both had to
+// abandon the drop-in and rewrite their client to take a DialContext instead
+// (issue #36, M5-2 finding F2).
+//
+// What DialerFor returns is still exactly net.Dial's shape, which is the
+// point — it goes wherever Dial went:
+//
+//	client := myservice.NewClient(n.DialerFor("client"))
+//	n.Partition("client", "server") // now actually affects that client
+//
+// name is a peer identity rather than an address: a port written into it is
+// stripped, so DialerFor("client") and DialerFor("client:1234") name the
+// same peer, the one Partition("client") targets.
+//
+// One behaviour to know, because it is new for anyone reaching for this
+// instead of Dial: a named dialer IS subject to the dial-time partition
+// check, so dialing a peer this one is partitioned from blocks until Heal.
+// A partition drops the SYN, so that is what a real dial does too — but
+// there is no context here to bound the wait with. Use DialContext with
+// WithPeerName and a deadline if the dial must fail rather than hang.
+func (n *Network) DialerFor(name string) func(network, addr string) (net.Conn, error) {
+	ctx := WithPeerName(context.Background(), name)
+	return func(network, addr string) (net.Conn, error) {
+		return n.DialContext(ctx, network, addr)
+	}
+}
+
 // DialContext creates a simulated connection from the calling peer to addr
 // within n. The dial is aborted, returning ctx.Err(), if ctx is cancelled
 // before the connection is established.

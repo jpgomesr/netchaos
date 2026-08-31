@@ -52,18 +52,29 @@ func validatePartitionPair(p partitionPair) {
 // and a no-op (not an error) if either peer has never Dialed or Listened —
 // partitioning before either side has connected is legitimate test setup.
 //
-// Naming a dialer requires WithPeerName. Dialing is not enough on its own: a
-// dial that never calls WithPeerName gets a synthesized ephemeral identity
-// (see WithPeerName), so that peer is not targetable here under any name.
-// This composes with the silent no-op above into a case worth stating
-// outright — Partition("client", "server") returns without error, and
-// traffic between them keeps flowing, if "client" only ever dialed as
-// n.Dial("tcp", "server"). A listener is always targetable by its Listen
-// address; only dialers need naming.
+// Naming a dialer is required, and dialing is not enough on its own: a dial
+// that never names itself gets a synthesized ephemeral identity (see
+// WithPeerName), so that peer is not targetable here under any name. This
+// composes with the silent no-op above into a case worth stating outright —
+// Partition("client", "server") returns without error, and traffic between
+// them keeps flowing, if "client" only ever dialed as n.Dial("tcp",
+// "server"). A listener is always targetable by its Listen address; only
+// dialers need naming.
 //
-// Partition affects both connection establishment (a Dial naming one of
-// these peers as itself, via WithPeerName, blocks until Heal or its
-// context expires) and already-established connections between the pair
+// Two ways to name one, and the choice is about how the dial waits rather
+// than about what is targetable:
+//
+//	client := myservice.NewClient(n.DialerFor("client"))
+//	c, err := n.DialContext(WithPeerName(ctx, "client"), "tcp", "server")
+//
+// Network.DialerFor keeps net.Dial's shape, so it drops into code that
+// accepts a dial function; DialContext takes a context, so its wait on a
+// partition can be bounded by a deadline.
+//
+// Partition affects both connection establishment (a dial naming one of
+// these peers as itself, via WithPeerName or Network.DialerFor, blocks until
+// Heal or, if it has a context, until that context expires) and
+// already-established connections between the pair
 // (writes are accepted and silently discarded; reads block until their
 // deadline).
 func (n *Network) Partition(peerA, peerB string) {
@@ -85,8 +96,9 @@ func (n *Network) Partition(peerA, peerB string) {
 // partition state separately.
 //
 // Heal identifies peers exactly as Partition does, so the same naming
-// caveat applies: a dialer that never called WithPeerName is not targetable
-// under any name, and a Heal aimed at one is one of the silent no-ops above.
+// caveat applies: a dialer that never named itself — with WithPeerName or
+// Network.DialerFor — is not targetable under any name, and a Heal aimed at
+// one is one of the silent no-ops above.
 func (n *Network) Heal(peerA, peerB string) {
 	k := newPairKey(peerName(peerA), peerName(peerB))
 
