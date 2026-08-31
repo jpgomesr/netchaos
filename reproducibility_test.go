@@ -106,15 +106,17 @@ type scenario struct {
 
 	// fields lists any optional per-unit golden columns this scenario's
 	// trace should carry, beyond the fixed base set every trace always has
-	// (ord side seq part drop drawn_ns eff_ns). Currently the only value is
-	// "thr" (faultEvent.serialized, M7-5's bandwidth throttle). This is
-	// declared here rather than inferred from which faults the scenario
-	// configures -- inferring from "was WithBandwidth given" would have to
-	// stay in sync with whatever a future runtime setter could turn on
-	// mid-scenario (M7-4 already made loss/latency's enabled bits dynamic
-	// this way), while a declared field set cannot drift. nil for the fixed
-	// base set, which is what keeps every scenario that predates M7-5 byte-
-	// identical: none of them names "thr".
+	// (ord side seq part drop drawn_ns eff_ns). Two values exist: "thr"
+	// (faultEvent.serialized, M7-5's bandwidth throttle) and "dup"
+	// (faultEvent.duplicated, M7-8's duplication). Rendered in that fixed
+	// order -- thr, then dup -- regardless of the order they're listed here.
+	// This is declared here rather than inferred from which faults the
+	// scenario configures -- inferring from "was WithBandwidth/WithDuplication
+	// given" would have to stay in sync with whatever a future runtime setter
+	// could turn on mid-scenario (M7-4 already made loss/latency's enabled
+	// bits dynamic this way), while a declared field set cannot drift. nil
+	// for the fixed base set, which is what keeps every scenario that
+	// predates M7-5 byte-identical: none of them names "thr" or "dup".
 	fields []string
 
 	fn func(t *testing.T, seed int64) []net.Conn
@@ -202,18 +204,24 @@ func boolInt(b bool) int {
 // render formats ct in the golden file line format: integer nanoseconds,
 // never time.Duration.String(), so formatting can never be a source of
 // cross-version drift (see the file comment). fields is the scenario's
-// declared optional-column set (scenario.fields); "thr" adds the throttle
-// column between drop and drawn. A scenario that never names "thr" -- every
-// one that predates M7-5 -- renders exactly as before, which is what keeps
-// their checked-in goldens byte-identical.
+// declared optional-column set (scenario.fields). The canonical column
+// order for the optional set, fixed here regardless of fields' order, is
+// thr, then dup, both between drop and drawn -- "thr" adds the throttle
+// column (M7-5), "dup" the duplication column (M7-8). A scenario that names
+// neither -- every one that predates M7-5 -- renders exactly as before,
+// which is what keeps their checked-in goldens byte-identical.
 func (ct canonicalTrace) render(fields []string) string {
 	includeThrottle := slices.Contains(fields, "thr")
+	includeDuplicate := slices.Contains(fields, "dup")
 	var b strings.Builder
 	for _, l := range ct {
 		fmt.Fprintf(&b, "ord=%d side=%-8s seq=%d part=%d drop=%d",
 			l.ordinal, sideName(l.side), l.seq, boolInt(l.partitioned), boolInt(l.dropped))
 		if includeThrottle {
 			fmt.Fprintf(&b, " thr=%d", int64(l.serialized))
+		}
+		if includeDuplicate {
+			fmt.Fprintf(&b, " dup=%d", boolInt(l.duplicated))
 		}
 		fmt.Fprintf(&b, " drawn=%d eff=%d\n", int64(l.drawn), int64(l.effective))
 	}
@@ -258,6 +266,9 @@ func writeGolden(path, scenarioName string, seed int64, fields []string, ct cano
 	if slices.Contains(fields, "thr") {
 		fieldsLine += " thr_ns"
 	}
+	if slices.Contains(fields, "dup") {
+		fieldsLine += " dup"
+	}
 	fieldsLine += " drawn_ns eff_ns"
 
 	var b strings.Builder
@@ -301,10 +312,11 @@ func readGolden(path string) (canonicalTrace, error) {
 		if err != nil {
 			return nil, fmt.Errorf("parsing golden line %q: %w", line, err)
 		}
-		// thr is optional: absent entirely from every golden that predates
-		// M7-5, since writeGolden only emits it for a scenario that declares
-		// "thr" in its fields. Absent parses as the zero value, matching an
-		// unthrottled faultEvent.serialized.
+		// thr and dup are both optional: absent entirely from every golden
+		// that predates their respective task (M7-5, M7-8), since
+		// writeGolden only emits either for a scenario that declares it in
+		// fields. Absent parses as the zero value, matching an unthrottled
+		// faultEvent.serialized / a never-duplicated faultEvent.duplicated.
 		var serialized int64
 		if v, ok := m["thr"]; ok {
 			serialized, err = strconv.ParseInt(v, 10, 64)
@@ -319,6 +331,7 @@ func readGolden(path string) (canonicalTrace, error) {
 				seq:         seq,
 				partitioned: m["part"] == "1",
 				dropped:     m["drop"] == "1",
+				duplicated:  m["dup"] == "1",
 				drawn:       time.Duration(drawn),
 				serialized:  time.Duration(serialized),
 				effective:   time.Duration(eff),
@@ -517,6 +530,29 @@ func scenarioThrottled(unitCount int) scenario {
 	}
 }
 
+// scenarioDuplicated dials one named pair with duplication configured and
+// no other fault, and writes unitCount fixed-size units on the
+// client->server direction -- exercising duplication's admit-twice stage
+// (faults.go) in isolation. Declares "dup" in its fields, so this is the one
+// scenario whose golden trace carries the duplication column.
+func scenarioDuplicated(unitCount int) scenario {
+	return scenario{
+		name:   "duplicated",
+		fields: []string{"dup"},
+		fn: func(t *testing.T, seed int64) []net.Conn {
+			n := NewNetwork(WithSeed(seed), WithDuplication(0.5))
+			client, server := dialNamedPair(t, n)
+
+			for i := 0; i < unitCount; i++ {
+				if _, err := client.Write([]byte{byte(i % 256)}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			return []net.Conn{client, server}
+		},
+	}
+}
+
 func TestSameSeedSameTrace(t *testing.T) {
 	sc := scenarioComposedBasic(20)
 	const seed = 42
@@ -649,6 +685,26 @@ func TestThrottledScenarioExercisesThrottlePath(t *testing.T) {
 	})
 }
 
+// TestDuplicatedScenarioExercisesDuplicationPath confirms scenarioDuplicated
+// actually produces at least one duplicated unit, so the golden trace built
+// from it below provably exercises the duplication stage rather than
+// happening to avoid it for this seed.
+func TestDuplicatedScenarioExercisesDuplicationPath(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		trace := runScenario(t, scenarioDuplicated(20), 33)
+
+		duplicated := 0
+		for _, l := range trace {
+			if l.duplicated {
+				duplicated++
+			}
+		}
+		if duplicated == 0 {
+			t.Fatal("duplicated scenario recorded no duplicated unit; it does not exercise the duplication stage for this seed")
+		}
+	})
+}
+
 func TestGoldenTraces(t *testing.T) {
 	cases := []struct {
 		sc   scenario
@@ -657,6 +713,7 @@ func TestGoldenTraces(t *testing.T) {
 		{scenarioComposedBasic(20), 42},
 		{scenarioClamping(30), 7},
 		{scenarioThrottled(20), 99},
+		{scenarioDuplicated(20), 33},
 	}
 
 	for _, c := range cases {

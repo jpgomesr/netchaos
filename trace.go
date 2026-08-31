@@ -11,6 +11,7 @@ type faultEvent struct {
 	seq         uint64
 	partitioned bool
 	dropped     bool
+	duplicated  bool          // whether a second copy of this unit was admitted (M7-8); recorded even when dropped is true, per the draw discipline
 	drawn       time.Duration // duration drawn from the latency stream; zero if latency isn't configured
 	serialized  time.Duration // this unit's contribution to link-busy time under a throttle (M7-5); zero if bandwidth isn't configured
 	effective   time.Duration // duration actually applied, relative to when serialization finished, after any clamping (M2-2)

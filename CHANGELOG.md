@@ -25,6 +25,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   test against — a throttle slower than the reader — rather than a synthetic
   one, and the acceptance test does exactly that.
 
+- **`WithDuplication(rate float64)`** (`M7-8`, part of #53) — admits a
+  delivered `Write` unit a second time, with the given probability, drawn
+  from its own stream (`kindDuplicate`) independent of loss and latency.
+  Real TCP hides duplication from the application, but `M0-3` already chose
+  to model packet loss as a visible silent gap despite real TCP hiding that
+  too (by retransmitting), precisely so a test can exercise what the
+  application sees when the transport misbehaves; duplication is accepted
+  on the same reasoning.
+
+  The duplicate is delivered with the **same** release timing already
+  computed for the original — whatever `WithLatency`/`WithBandwidth`
+  decided applies to both copies, never an independently drawn delay for
+  the second one. A dropped unit is never duplicated, but duplication's
+  coin flip is still drawn for it, per the draw discipline.
+
+  **Accounting:** the duplicate counts against the pipe's buffer bound like
+  any other delivered bytes, and is an independent byte slice — mutating
+  one copy can never affect the other, which matters once a future
+  corruption fault can mutate a delivered payload in place.
+
+  **Trace format:** `faultEvent` gained a `duplicated` field, following
+  `M7-5`'s answer — emitted in a scenario's golden trace only when that
+  scenario declares it, so every golden trace that predates this change
+  stays byte-identical.
+
 - **`WithBandwidth(bytesPerSecond int)`** (`M7-5`, closes #53) — throttles
   delivery to a configured rate, applied per connection direction. Modelled
   as a serialization clock, not a flat per-write delay: a direction tracks
