@@ -32,6 +32,11 @@ func (n *Network) DialerFor(name string) func(network, addr string) (net.Conn, e
 func (n *Network) Partition(peerA, peerB string)
 func (n *Network) Heal(peerA, peerB string)
 
+// Added by M7-4 (issue #50), post-v0.1.0. Same live semantics as
+// Partition/Heal — see the determinism contract's Runtime fault mutation.
+func (n *Network) SetLatency(min, max time.Duration)
+func (n *Network) SetPacketLoss(rate float64)
+
 func WithPeerName(ctx context.Context, name string) context.Context
 
 var ErrUnsupportedNetwork = errors.New("netchaos: unsupported network")
@@ -45,7 +50,7 @@ The four error sentinels are matched with `errors.Is`; see [Error and no-op beha
 **The surface above is what `v0.1.0` shipped. Four additions are accepted for `v0.2.0` and are not in it yet** — see [06 — Scope & Roadmap § Accepted for v0.2.0](06-scope-and-roadmap.md#accepted-for-v02) for the reasoning behind each, and note that all four are input to [M5-2](tasks/m5-hardening-and-ergonomics.md#m5-2--api-ergonomics-review-before-v100)'s review of this surface rather than exempt from it:
 
 - `WithPipeBound` and `WithListenerBacklog` ([M6-17](tasks/m6-review-findings.md#m6-17--decide-whether-the-pipe-bound-and-listener-backlog-become-configurable)) — see [Functional options](#functional-options).
-- `SetLatency` and `SetPacketLoss` ([M6-13](tasks/m6-review-findings.md#m6-13--decide-on-runtime-mutation-of-latency-and-loss)) — the gate is cleared: the [determinism contract](#determinism-contract) now covers runtime fault mutation, written ahead of the implementation as that decision required. See [Runtime fault mutation](#runtime-fault-mutation).
+- `SetLatency` and `SetPacketLoss` ([M6-13](tasks/m6-review-findings.md#m6-13--decide-on-runtime-mutation-of-latency-and-loss)) — **shipped** in [M7-4](tasks/m7-v0.2.0-implementation.md#m7-4--setlatency-and-setpacketloss), after [M7-3](tasks/m7-v0.2.0-implementation.md#m7-3--widen-the-determinism-contract-for-runtime-fault-mutation) widened the contract ahead of the code, as that decision required. See [Runtime fault mutation](#runtime-fault-mutation).
 - A fault-trace accessor ([M6-14](tasks/m6-review-findings.md#m6-14--decide-whether-to-export-fault-observability)), closing the deferral `M2-1` recorded. The full trace was chosen over counters, so the `faultEvent` shape becomes public API — a compatibility surface at `v1.0.0`, on a format [M3-3](tasks/m3-synctest-and-reproducibility.md) deliberately made high-friction to change.
 - Options for the new fault kinds accepted by [M6-11](tasks/m6-review-findings.md#m6-11--decide-which-new-fault-kinds-if-any-enter-v02) (throttling, mid-stream reset, duplication, corruption).
 

@@ -50,7 +50,7 @@ func BenchmarkWriteUnderLoss(b *testing.B) {
 	defer func() { _ = client.Close() }()
 	defer func() { _ = server.Close() }()
 
-	installFaultPolicy(client.writePipe, faultPolicy{lossEnabled: true, lossRate: 1.0})
+	installFaultPolicy(client.writePipe, faultPolicy{static: faultConfig{lossEnabled: true, lossRate: 1.0}})
 
 	payload := make([]byte, benchPayload)
 
@@ -91,11 +91,11 @@ func BenchmarkWriteUnderLatency(b *testing.B) {
 	defer func() { _ = client.Close() }()
 	defer func() { _ = server.Close() }()
 
-	installFaultPolicy(client.writePipe, faultPolicy{
+	installFaultPolicy(client.writePipe, faultPolicy{static: faultConfig{
 		latencyEnabled: true,
 		latencyMin:     time.Hour,
 		latencyMax:     time.Hour,
-	})
+	}})
 
 	payload := make([]byte, benchPayload)
 

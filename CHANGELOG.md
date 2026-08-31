@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`Network.SetLatency` and `Network.SetPacketLoss`** (`M7-4`, closes #50) —
+  latency and loss are now changeable mid-test, with the same live semantics
+  `Partition`/`Heal` already had: **a change reaches connections that already
+  exist**, not only subsequent dials. "Healthy, then degraded, then healthy"
+  no longer means building a second `Network`, which meant new connections and
+  a reset of every ordinal.
+
+  Both validate exactly as their `With*` counterparts do, and panic on an
+  invalid value naming the offending call — the same programmer-error
+  convention `NewNetwork` uses.
+
+  **The determinism contract widened first, in a separate change** (`M7-3`),
+  because settling it afterwards would have meant the implementation had
+  already picked the answer. The setters are now ordered `Network` calls
+  alongside `Dial`, `Listen`, `Partition` and `Heal`. What the contract
+  deliberately does *not* fix is a setter's order against in-flight I/O on
+  another goroutine: which unit first sees a new value is the scheduler's
+  choice, not the seed's, so sequence the calls a test depends on — write,
+  then set, then write.
+
+  **Draw discipline is unchanged.** Every configured fault still draws
+  unconditionally on every unit past the partition gate, so `SetLatency(0, 0)`
+  changes the value a draw produces, not whether it happens. Disabling a fault
+  mid-run saves no draws and re-enabling it does not resume a paused stream.
+
+  One internal cost, accepted knowingly by #50 rather than as a side effect:
+  the per-unit fault read was lock-free and now takes a read lock, since the
+  configuration it reads can change underneath it.
+
 - **`Network.DialerFor(name)`** (`M7-2`, closes #36) — returns a
   `net.Dial`-shaped dial function that names itself, so the connections it
   creates are targetable by `Partition` and `Heal`:
