@@ -2,7 +2,6 @@ package netchaos
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"sync"
 	"time"
@@ -46,6 +45,15 @@ type Network struct {
 	mu          sync.Mutex
 	listeners   map[string]*listener // key: peerName(addr)
 	nextOrdinal uint64
+
+	// nextListenPort is the port the next listener that named none will be
+	// given (M7-1). It advances in Listen order, which the determinism
+	// contract already fixes, so it needs no widening of that contract — and
+	// it inherits the contract's stated limit unchanged: two goroutines
+	// racing to Listen get ports in whichever order the scheduler picks.
+	// Unlike an ordinal, a port is visible in RemoteAddr().String(), so that
+	// pre-existing nondeterminism is newly visible in test output.
+	nextListenPort int
 }
 
 // NewNetwork returns a new, empty Network configured by opts. Options are
@@ -78,6 +86,7 @@ func NewNetwork(opts ...Option) *Network {
 		partitions:     make(map[pairKey]struct{}, len(cfg.staticPartitions)),
 		partNotify:     make(chan struct{}),
 		listeners:      make(map[string]*listener),
+		nextListenPort: listenPortBase,
 	}
 	for _, p := range cfg.staticPartitions {
 		n.partitions[newPairKey(peerName(p.peerA), peerName(p.peerB))] = struct{}{}
@@ -85,16 +94,32 @@ func NewNetwork(opts ...Option) *Network {
 	return n
 }
 
-// Listen registers a simulated listener at addr within n. Connections
-// dialed to addr from elsewhere in n are delivered to this listener's
+// Listen registers a simulated listener at laddr within n. Connections
+// dialed to laddr from elsewhere in n are delivered to this listener's
 // Accept. network must be "tcp", "tcp4", or "tcp6" (v1 is TCP-shaped only;
 // "udp" is rejected). Listening on an address already registered by another
 // open listener returns an error satisfying errors.Is(err, ErrAddressInUse).
+//
+// laddr may be written with or without a port. "server" and "server:0" both
+// ask netchaos to synthesize one, the way ":0" does against the real stack;
+// "server:8080" keeps the port the caller wrote. Either way the peer's
+// identity — what Partition, Heal and a dial resolve against — is the host
+// half alone, so a listener on "server:8080" is still the peer named
+// "server". A malformed address is rejected with a *net.AddrError, matching
+// what net.Listen produces for the same input.
+//
+// Addresses that name the same host collide regardless of port: a second
+// Listen on "server:9090" while "server:8080" is open returns
+// ErrAddressInUse. One peer, one listener — see the addr type for why
+// identity deliberately stops at the host half.
 func (n *Network) Listen(network, laddr string) (net.Listener, error) {
 	if err := validateNetwork(network); err != nil {
 		return nil, n.listenOpError(network, laddr, err)
 	}
-	peer := peerName(laddr)
+	peer, port, explicit, err := splitAddr(laddr)
+	if err != nil {
+		return nil, n.listenOpError(network, laddr, err)
+	}
 
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -102,10 +127,14 @@ func (n *Network) Listen(network, laddr string) (net.Listener, error) {
 	if _, ok := n.listeners[peer]; ok {
 		return nil, n.listenOpError(network, laddr, ErrAddressInUse)
 	}
+	if !explicit {
+		port = n.nextListenPort
+		n.nextListenPort++
+	}
 
 	l := &listener{
 		n:        n,
-		addr:     &addr{network: network, peer: peer},
+		addr:     &addr{network: network, peer: peer, port: port},
 		incoming: make(chan *conn, listenerBacklog),
 		closedCh: make(chan struct{}),
 	}
@@ -171,9 +200,19 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 	if err := validateNetwork(network); err != nil {
 		return nil, n.dialOpError(network, dialAddr, err)
 	}
-	peer := peerName(dialAddr)
+	peer, _, _, err := splitAddr(dialAddr)
+	if err != nil {
+		return nil, n.dialOpError(network, dialAddr, err)
+	}
 
 	localName, named := peerNameFromContext(ctx)
+	if named {
+		// A peer name is an identity, not an address, but callers reach for
+		// the same strings for both. Strip a port here so
+		// WithPeerName(ctx, "client:1234") targets the same peer
+		// Partition("client") does.
+		localName = peerName(localName)
+	}
 	if named && localName != "" {
 		if err := n.waitUnpartitioned(ctx, newPairKey(localName, peer)); err != nil {
 			return nil, n.dialOpError(network, dialAddr, err)
@@ -209,10 +248,16 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 	n.mu.Unlock()
 
 	if !named || localName == "" {
-		localName = fmt.Sprintf("ephemeral:%d", ordinal)
+		localName = ephemeralPeerName(ordinal)
 	}
 
-	client, server := newConnPairWithSeed(&addr{network: network, peer: localName}, &addr{network: network, peer: peer}, ordinal, network, defaultPipeBound, n.seed)
+	// The remote address takes the listener's port rather than re-deriving
+	// one: the two ends must agree on what the server's address is, and the
+	// listener is the only thing that knows which port it was given.
+	local := &addr{network: network, peer: localName, port: ephemeralPort(ordinal)}
+	remote := &addr{network: network, peer: peer, port: l.addr.port}
+
+	client, server := newConnPairWithSeed(local, remote, ordinal, network, defaultPipeBound, n.seed)
 
 	// A single composed evaluator per direction (M2-5) — the only place
 	// fault policy is evaluated per unit, in the fixed order documented on
@@ -263,9 +308,9 @@ func (n *Network) waitUnpartitioned(ctx context.Context, k pairKey) error {
 // was a decision rather than a cleanup; errors.go documents the sentinels as
 // errors.Is targets.
 func (n *Network) dialOpError(network, dialAddr string, err error) error {
-	return &net.OpError{Op: "dial", Net: network, Addr: &addr{network: network, peer: dialAddr}, Err: err}
+	return &net.OpError{Op: "dial", Net: network, Addr: errAddr(network, dialAddr), Err: err}
 }
 
 func (n *Network) listenOpError(network, laddr string, err error) error {
-	return &net.OpError{Op: "listen", Net: network, Addr: &addr{network: network, peer: laddr}, Err: err}
+	return &net.OpError{Op: "listen", Net: network, Addr: errAddr(network, laddr), Err: err}
 }

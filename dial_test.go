@@ -3,7 +3,6 @@ package netchaos
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"sync"
 	"testing"
@@ -42,10 +41,13 @@ func TestDialAcceptRoundTrip(t *testing.T) {
 	}
 	defer func() { _ = server.Close() }()
 
-	if got, want := client.RemoteAddr().String(), "server"; got != want {
+	// Compared against the listener's own address rather than a literal: the
+	// invariant is that both ends agree on where the server is, not that the
+	// port synthesis picked any particular number.
+	if got, want := client.RemoteAddr().String(), l.Addr().String(); got != want {
 		t.Fatalf("client.RemoteAddr() = %q, want %q", got, want)
 	}
-	if got, want := server.LocalAddr().String(), "server"; got != want {
+	if got, want := server.LocalAddr().String(), l.Addr().String(); got != want {
 		t.Fatalf("server.LocalAddr() = %q, want %q", got, want)
 	}
 	if client.LocalAddr().String() != server.RemoteAddr().String() {
@@ -221,7 +223,7 @@ func TestBacklogFullOrdinalAccounting(t *testing.T) {
 			"(the failed dial must not consume one, or every later connection draws from a shifted RNG stream)", got, want)
 	}
 	// The same fact, in the form a user can actually see.
-	if got, want := c.LocalAddr().String(), fmt.Sprintf("ephemeral:%d", listenerBacklog); got != want {
+	if got, want := c.LocalAddr().String(), (&addr{peer: ephemeralPeerName(listenerBacklog), port: ephemeralPort(listenerBacklog)}).String(); got != want {
 		t.Errorf("LocalAddr() after a dial that failed with ErrBacklogFull = %q, want %q", got, want)
 	}
 }

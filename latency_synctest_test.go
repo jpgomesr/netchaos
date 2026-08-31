@@ -231,7 +231,7 @@ func TestLatencyDoesNotWedgeSlowReader(t *testing.T) {
 			latency = 50 * time.Millisecond
 		)
 
-		client, server := newConnPairWithBound(&addr{"tcp", "client"}, &addr{"tcp", "server"}, 0, "tcp", bound)
+		client, server := newConnPairWithBound(&addr{network: "tcp", peer: "client"}, &addr{network: "tcp", peer: "server"}, 0, "tcp", bound)
 		defer func() { _ = client.Close() }()
 		defer func() { _ = server.Close() }()
 
@@ -300,7 +300,7 @@ func TestLatencyDoesNotWedgeSlowReader(t *testing.T) {
 // non-delivery would be the wrong trade.
 func TestLatencyTimerNotRearmedBehindHead(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		client, server := newConnPairWithBound(&addr{"tcp", "client"}, &addr{"tcp", "server"}, 0, "tcp", defaultPipeBound)
+		client, server := newConnPairWithBound(&addr{network: "tcp", peer: "client"}, &addr{network: "tcp", peer: "server"}, 0, "tcp", defaultPipeBound)
 		defer func() { _ = client.Close() }()
 		defer func() { _ = server.Close() }()
 
@@ -353,7 +353,7 @@ func TestLatencyTimerRearmsAfterPartialDrain(t *testing.T) {
 		const latency = time.Hour
 		const gap = time.Minute
 
-		client, server := newConnPairWithBound(&addr{"tcp", "client"}, &addr{"tcp", "server"}, 0, "tcp", defaultPipeBound)
+		client, server := newConnPairWithBound(&addr{network: "tcp", peer: "client"}, &addr{network: "tcp", peer: "server"}, 0, "tcp", defaultPipeBound)
 		defer func() { _ = client.Close() }()
 		defer func() { _ = server.Close() }()
 

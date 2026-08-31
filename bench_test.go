@@ -20,7 +20,7 @@ const benchPayload = 512
 // BenchmarkRoundTrip measures the fault-free write/read path: the floor every
 // other benchmark here is compared against.
 func BenchmarkRoundTrip(b *testing.B) {
-	client, server := newConnPairWithBound(&addr{"tcp", "client"}, &addr{"tcp", "server"}, 0, "tcp", defaultPipeBound)
+	client, server := newConnPairWithBound(&addr{network: "tcp", peer: "client"}, &addr{network: "tcp", peer: "server"}, 0, "tcp", defaultPipeBound)
 	defer func() { _ = client.Close() }()
 	defer func() { _ = server.Close() }()
 
@@ -46,7 +46,7 @@ func BenchmarkRoundTrip(b *testing.B) {
 // branch worth measuring: it still draws, still records a trace event, and
 // still has to release the unit's bufBytes accounting.
 func BenchmarkWriteUnderLoss(b *testing.B) {
-	client, server := newConnPairWithBound(&addr{"tcp", "client"}, &addr{"tcp", "server"}, 0, "tcp", defaultPipeBound)
+	client, server := newConnPairWithBound(&addr{network: "tcp", peer: "client"}, &addr{network: "tcp", peer: "server"}, 0, "tcp", defaultPipeBound)
 	defer func() { _ = client.Close() }()
 	defer func() { _ = server.Close() }()
 
@@ -87,7 +87,7 @@ func BenchmarkWriteUnderLatency(b *testing.B) {
 		drainEvery = 4096
 	)
 
-	client, server := newConnPairWithBound(&addr{"tcp", "client"}, &addr{"tcp", "server"}, 0, "tcp", bound)
+	client, server := newConnPairWithBound(&addr{network: "tcp", peer: "client"}, &addr{network: "tcp", peer: "server"}, 0, "tcp", bound)
 	defer func() { _ = client.Close() }()
 	defer func() { _ = server.Close() }()
 

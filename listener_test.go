@@ -16,8 +16,15 @@ func TestListenRegistersAddr(t *testing.T) {
 	}
 	defer func() { _ = l.Close() }()
 
-	if got, want := l.Addr().String(), "server"; got != want {
-		t.Fatalf("Addr() = %q, want %q", got, want)
+	host, port, err := net.SplitHostPort(l.Addr().String())
+	if err != nil {
+		t.Fatalf("net.SplitHostPort(%q): %v", l.Addr(), err)
+	}
+	if got, want := host, "server"; got != want {
+		t.Fatalf("host of Addr() = %q, want %q", got, want)
+	}
+	if port == "" || port == "0" {
+		t.Fatalf("Addr() = %q, want a synthesized port", l.Addr())
 	}
 }
 
@@ -159,7 +166,7 @@ func TestBacklogFull(t *testing.T) {
 }
 
 func dummyConn() *conn {
-	c, _ := newConnPair(&addr{"tcp", "x"}, &addr{"tcp", "y"}, 0, "tcp")
+	c, _ := newConnPair(&addr{network: "tcp", peer: "x"}, &addr{network: "tcp", peer: "y"}, 0, "tcp")
 	return c
 }
 

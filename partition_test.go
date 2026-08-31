@@ -373,3 +373,31 @@ func TestPartitionedWriteDiscardedSilently(t *testing.T) {
 		}
 	})
 }
+
+// TestPartitionTargetsHostHalf answers the sub-question M6-10 named inside
+// its decision: what Partition("server") means once the peer's address is
+// "server:8080". The port is presentation; the host is identity. A test that
+// listened on an address with a port must still be partitionable by the name
+// it was given, or every existing Partition call in a suite breaks the day
+// addresses gain structure.
+func TestPartitionTargetsHostHalf(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		n := NewNetwork(WithPartition("client", "server"))
+		l, err := n.Listen("tcp", "server:8080")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = l.Close() }()
+
+		ctx := WithPeerName(context.Background(), "client")
+		ctx, cancel := context.WithTimeout(ctx, 20*time.Millisecond)
+		defer cancel()
+
+		// The listener is "server:8080"; the partition names "server". If the
+		// port were part of the identity these would be different peers and
+		// the dial would succeed.
+		if _, err := n.DialContext(ctx, "tcp", "server:8080"); !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("DialContext to a partitioned peer addressed with a port = %v, want errors.Is(context.DeadlineExceeded)", err)
+		}
+	})
+}

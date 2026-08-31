@@ -174,7 +174,7 @@ func TestUniformDurationFixedConsumesADraw(t *testing.T) {
 // ordinal, the writing side, and the fault kind.
 func TestConnPairAttachesPerDirectionStreams(t *testing.T) {
 	const seed, ordinal = int64(7), uint64(3)
-	client, server := newConnPairWithSeed(&addr{"tcp", "client"}, &addr{"tcp", "server"}, ordinal, "tcp", defaultPipeBound, seed)
+	client, server := newConnPairWithSeed(&addr{network: "tcp", peer: "client"}, &addr{network: "tcp", peer: "server"}, ordinal, "tcp", defaultPipeBound, seed)
 	defer func() { _ = client.Close() }()
 	defer func() { _ = server.Close() }()
 
