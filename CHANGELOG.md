@@ -90,6 +90,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   context to bound the wait — correct, since a partition drops the SYN, but
   new for anyone who reached for `Dial` precisely because it never blocked.
 
+- **`net.Conn` conformance suite.** `TestConnConformance` runs
+  `golang.org/x/net/nettest`'s standard `TestConn` against a fault-free
+  `Network`, validating the library's central "drop-in `net.Conn`" claim
+  against the same harness the standard library validates `net.Pipe` with.
+  This adds `golang.org/x/net` as the module's first dependency; it is
+  test-only and does not appear in a consumer's non-test build graph.
+
 ### Changed
 
 - **Addresses now have a `host:port` shape** (`M7-1`, closes #49 and #37).
@@ -120,34 +127,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pre-existing nondeterminism the determinism contract already documents, now
   visible in test output.
 
-### Fixed
-
-- **An already-expired deadline now fails a `Read`/`Write` that could have
-  completed without blocking.** Previously the deadline was only consulted on
-  the path where the operation had to wait, so a `Read` with data already
-  buffered, or a `Write` that fit in the pipe's remaining space, succeeded
-  even with a deadline in the past. Both now return `os.ErrDeadlineExceeded`,
-  matching `net.Pipe` (which checks its deadline before touching the buffer)
-  and a real `net.Conn` (whose poller rejects the operation before the
-  syscall). Found by running `golang.org/x/net/nettest`'s `TestConn`
-  conformance suite (`M6-5`), whose `WriteTimeout` and `PastTimeout` subtests
-  both failed against `v0.1.0`.
-
-  This is a behaviour change: code that set a past deadline and still relied
-  on the operation succeeding will now see a timeout. That combination was
-  not something a real `net.Conn` ever permitted, which is why this is
-  recorded as a fix rather than a breaking change.
-
-### Added
-
-- **`net.Conn` conformance suite.** `TestConnConformance` runs
-  `golang.org/x/net/nettest`'s standard `TestConn` against a fault-free
-  `Network`, validating the library's central "drop-in `net.Conn`" claim
-  against the same harness the standard library validates `net.Pipe` with.
-  This adds `golang.org/x/net` as the module's first dependency; it is
-  test-only and does not appear in a consumer's non-test build graph.
-### Changed
-
 - **Every error from `Listen`, `Dial` and `DialContext` is now a
   `*net.OpError`, uniformly** (`M6-2`). Previously the shape depended on which
   line produced the error: a refused dial was wrapped, while an unsupported
@@ -165,6 +144,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (for example `err == ErrAddressInUse`, which used to succeed for `Listen`)
   no longer matches. That cost was accepted deliberately while `v0.1.0` has
   no external users.
+
+### Fixed
+
+- **An already-expired deadline now fails a `Read`/`Write` that could have
+  completed without blocking.** Previously the deadline was only consulted on
+  the path where the operation had to wait, so a `Read` with data already
+  buffered, or a `Write` that fit in the pipe's remaining space, succeeded
+  even with a deadline in the past. Both now return `os.ErrDeadlineExceeded`,
+  matching `net.Pipe` (which checks its deadline before touching the buffer)
+  and a real `net.Conn` (whose poller rejects the operation before the
+  syscall). Found by running `golang.org/x/net/nettest`'s `TestConn`
+  conformance suite (`M6-5`), whose `WriteTimeout` and `PastTimeout` subtests
+  both failed against `v0.1.0`.
+
+  This is a behaviour change: code that set a past deadline and still relied
+  on the operation succeeding will now see a timeout. That combination was
+  not something a real `net.Conn` ever permitted, which is why this is
+  recorded as a fix rather than a breaking change.
 
 ## [v0.1.0] — 2026-08-26
 
