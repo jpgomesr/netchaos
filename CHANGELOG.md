@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`WithBandwidth(bytesPerSecond int)`** (`M7-5`, closes #53) — throttles
+  delivery to a configured rate, applied per connection direction. Modelled
+  as a serialization clock, not a flat per-write delay: a direction tracks
+  when its link finishes transmitting everything admitted so far, so
+  back-to-back writes on a slow link queue behind each other instead of each
+  drawing an independent delay — the shape of delay that produces sustained
+  back-pressure once the throttle is slower than the reader. Composes
+  additively with `WithLatency`'s propagation delay, evaluated as a new
+  fourth stage in the fixed evaluation order: **partition, then packet loss,
+  then bandwidth, then latency**.
+
+  **Deterministic, not drawn.** Unlike every other fault, the throttle's
+  delay is a function of a unit's size and the configured rate — there is
+  nothing random about it, so it has no `faultKind` byte and no derived
+  stream. This is a change from `M7-5`'s own task text, which specified a
+  drawing kind; a deterministic delay has no draw index that could ever
+  misalign, so it cannot perturb the loss/latency sequence regardless of
+  whether it is configured, and reserving a draw it would never use bought
+  nothing.
+
+  No `SetBandwidth`: unlike `SetLatency`/`SetPacketLoss`, the rate is
+  construction-time only — `#50` named only latency and packet loss for
+  runtime mutation.
+
+  **Trace format:** `faultEvent` gained a `serialized` field, emitted in a
+  scenario's golden trace only when that scenario declares it, so every
+  golden trace that predates this change stays byte-identical. `M7-7`
+  through `M7-9` inherit the same per-configured-kind answer.
+
 - **`Network.SetLatency` and `Network.SetPacketLoss`** (`M7-4`, closes #50) —
   latency and loss are now changeable mid-test, with the same live semantics
   `Partition`/`Heal` already had: **a change reaches connections that already

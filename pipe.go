@@ -53,14 +53,24 @@ type pipe struct {
 	latency *stream
 	trace   *traceRecorder
 
-	// pending holds units admitted but held back for latency (M2-2),
-	// release-ordered (each entry's releaseAt is >= every earlier entry's),
-	// so a single timer armed for the head always fires in write order
-	// regardless of the delay any individual unit drew. timer is that one
-	// live *time.AfterFunc, or nil when pending is empty. Both are nil for
-	// a pipe with no latency configured.
+	// pending holds units admitted but held back for latency (M2-2) or
+	// bandwidth (M7-5), release-ordered (each entry's releaseAt is >= every
+	// earlier entry's), so a single timer armed for the head always fires in
+	// write order regardless of the delay any individual unit drew. timer is
+	// that one live *time.AfterFunc, or nil when pending is empty. Both are
+	// nil for a pipe with neither latency nor bandwidth configured.
 	pending []pendingUnit
 	timer   *time.Timer
+
+	// busyUntil is the instant this direction's (possibly throttled) link
+	// finishes transmitting everything admitted so far (M7-5). It is the
+	// serialization clock WithBandwidth models delay against: each unit's
+	// transmission starts no earlier than max(now, busyUntil), so back-to-
+	// back writes on a slow link queue behind each other instead of each
+	// drawing its delay independently. Zero (its default) is a no-op when
+	// bandwidth isn't configured, since every comparison against it is
+	// max(now, busyUntil), and now is never before the zero time.
+	busyUntil time.Time
 
 	// arms counts how many times the latency timer has been armed, purely so
 	// a test can assert that a write appended behind an existing pending head

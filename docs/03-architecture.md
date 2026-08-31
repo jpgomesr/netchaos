@@ -39,17 +39,18 @@ To support server-side code (`net.Listener.Accept()`), the `Network` also needs 
 
 ### Fault-injection layer
 
-This is where the three fault categories from [05 — Fault Injection](05-fault-injection.md) are applied — latency, packet loss, and partition; reordering was considered and [deferred out of v1](05-fault-injection.md#reordering-deferred-not-in-v1):
+This is where the fault categories from [05 — Fault Injection](05-fault-injection.md) are applied — latency, packet loss, bandwidth throttling, and partition; reordering was considered and [deferred out of v1](05-fault-injection.md#reordering-deferred-not-in-v1):
 
 - **Latency** — delays delivery of a write to the other end by some duration (fixed or ranged), drawn per `Write` call from the connection's derived RNG stream.
 - **Packet loss** — probabilistically drops a `Write` call in its entirety instead of delivering it, using the connection's derived RNG stream to decide per write.
+- **Bandwidth throttling** ([M7-5](tasks/m7-v0.2.0-implementation.md#m7-5--fault-kind-bandwidth-throttling), v0.2.0) — delays delivery in proportion to a write's size and the configured rate, computed deterministically rather than drawn from a stream: unlike the other three, it has nothing random to draw, so enabling it cannot perturb any other fault's sequence.
 - **Partition** — when two simulated peers are partitioned, all traffic between them is dropped (typically indefinitely, until the partition is healed), rather than probabilistically, and consumes no random draws.
 
-Latency and packet loss apply globally to every connection the `Network` simulates; partition is scoped to the specific peer pair named in `WithPartition`/`Partition`/`Heal` — a deliberate asymmetry, see [04 — API Design](04-api-design.md#fault-scoping-global-vs-per-peer-pair).
+Latency, packet loss, and bandwidth apply globally to every connection the `Network` simulates; partition is scoped to the specific peer pair named in `WithPartition`/`Partition`/`Heal` — a deliberate asymmetry, see [04 — API Design](04-api-design.md#fault-scoping-global-vs-per-peer-pair).
 
-Each connection's random draws come from its own stream, derived from `(masterSeed, connectionOrdinal, direction, faultKind)` rather than from one `rand.Rand` shared across the `Network`. This is what keeps a full test run reproducible end to end without making one connection's fault sequence depend on how the Go scheduler happened to interleave it with unrelated connections — see the [determinism contract](04-api-design.md#determinism-contract) for the full model.
+Each connection's random draws come from its own stream, derived from `(masterSeed, connectionOrdinal, direction, faultKind)` rather than from one `rand.Rand` shared across the `Network`. This is what keeps a full test run reproducible end to end without making one connection's fault sequence depend on how the Go scheduler happened to interleave it with unrelated connections — see the [determinism contract](04-api-design.md#determinism-contract) for the full model. Bandwidth has no `faultKind` byte and no derived stream of its own, precisely because it draws nothing.
 
-When more than one fault is configured on the same connection direction, there is exactly **one** evaluation point per unit, not three hooks chained or overwriting one another — a unit is checked against partition, then loss, then latency, in that fixed order, with the draw discipline (which faults draw unconditionally vs. not at all) spelled out in the [determinism contract](04-api-design.md#determinism-contract).
+When more than one fault is configured on the same connection direction, there is exactly **one** evaluation point per unit, not four hooks chained or overwriting one another — a unit is checked against partition, then loss, then bandwidth, then latency, in that fixed order, with the draw discipline (which faults draw unconditionally vs. not at all) spelled out in the [determinism contract](04-api-design.md#determinism-contract).
 
 ### Composing with `testing/synctest`
 

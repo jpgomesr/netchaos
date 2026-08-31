@@ -190,7 +190,7 @@ func TestScenarioRetryUnderLossGolden(t *testing.T) {
 
 	path := filepath.Join("testdata", "traces", fmt.Sprintf("%s-seed%d.golden", sc.name, seed))
 	if *updateGolden {
-		if err := writeGolden(path, sc.name, seed, trace); err != nil {
+		if err := writeGolden(path, sc.name, seed, sc.fields, trace); err != nil {
 			t.Fatal(err)
 		}
 		return

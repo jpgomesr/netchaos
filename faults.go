@@ -13,6 +13,17 @@ type faultConfig struct {
 
 	latencyEnabled         bool
 	latencyMin, latencyMax time.Duration
+
+	// bandwidthEnabled/bandwidthBPS is the throttle SetLatency/SetPacketLoss
+	// have no counterpart for -- #50 named only latency and packet loss for
+	// runtime mutation (M7-5), so this pair is set once, from
+	// networkConfig, in NewNetwork, and never written again. It lives here
+	// rather than in a construction-only struct so the evaluator below reads
+	// it from the same single copy taken under fp.current()'s lock, with the
+	// same nil-Network fallback to faultPolicy.static that loss and latency
+	// already use.
+	bandwidthEnabled bool
+	bandwidthBPS     int
 }
 
 // faultPolicy is the connection-direction-scoped fault configuration a
@@ -46,9 +57,9 @@ func (fp faultPolicy) current() faultConfig {
 
 // installFaultPolicy replaces p's deliver function with the single composed
 // evaluator for fp. This is the only place fault policy is evaluated per
-// unit (M2-5): latency, loss, and partition no longer install independent
-// hooks that happen to run in whatever order netchaos.DialContext called
-// them — there is exactly one hook, and its order is fixed by this
+// unit (M2-5): latency, loss, bandwidth, and partition no longer install
+// independent hooks that happen to run in whatever order netchaos.DialContext
+// called them — there is exactly one hook, and its order is fixed by this
 // function's body:
 //
 //  1. Partition. A partitioned link drops everything, so nothing else is
@@ -56,18 +67,31 @@ func (fp faultPolicy) current() faultConfig {
 //     deterministic by nature, and drawing here would perturb the
 //     loss/latency streams for every future unit on this direction.
 //  2. Loss. A dropped unit is never delivered, so any latency it might
-//     also have drawn is irrelevant to what the reader sees.
-//  3. Latency. Applied to whatever survives loss.
+//     also have drawn is irrelevant to what the reader sees, and it never
+//     reaches the link: a dropped unit costs no serialization time either
+//     (step 3 below runs only for units that survive this step).
+//  3. Bandwidth (throttle). Delays delivery by however long the unit takes
+//     to serialize onto a link of the configured rate, queued behind
+//     whatever this direction is already transmitting (pipe.busyUntil).
+//     Unlike loss and latency this is a deterministic function of the
+//     unit's size and the configured rate — it draws nothing (see
+//     WithBandwidth's godoc for why that is safe), so it has no ordering
+//     constraint relative to loss/latency's draws and is placed here, after
+//     loss decides whether there is anything to serialize.
+//  4. Latency. Propagation delay, added on top of whatever step 3
+//     produced.
 //
 // Draw discipline (part of the determinism contract, docs/04): a unit that
-// clears the partition gate draws from every *configured* fault's stream
-// unconditionally, even one that partition or an earlier fault in this
-// list already decided to drop. A latency draw still happens for a unit
-// loss just dropped. This keeps each configured fault's draw index equal
-// to the unit index on that connection direction, independent of what any
-// other configured fault decided — the property that makes a fault trace
-// diffable. Changing this discipline later is a breaking change to the
-// determinism contract, not a bug fix.
+// clears the partition gate draws from every *configured, drawing* fault's
+// stream unconditionally, even one that partition or an earlier fault in
+// this list already decided to drop. A latency draw still happens for a
+// unit loss just dropped. Bandwidth is not part of this — it has no stream
+// to draw from, so enabling it can never perturb the loss/latency sequence.
+// This keeps each drawing fault's draw index equal to the unit index on
+// that connection direction, independent of what any other configured
+// fault decided — the property that makes a fault trace diffable. Changing
+// this discipline later is a breaking change to the determinism contract,
+// not a bug fix.
 func installFaultPolicy(p *pipe, fp faultPolicy) {
 	p.deliver = func(p *pipe, data []byte) {
 		if fp.network != nil && fp.network.isPartitioned(fp.pair) {
@@ -103,7 +127,23 @@ func installFaultPolicy(p *pipe, fp faultPolicy) {
 			return
 		}
 
-		if !cfg.latencyEnabled {
+		// base is when this unit finishes transmitting onto the (possibly
+		// throttled) link -- "now" when bandwidth isn't configured, which is
+		// what keeps effective's meaning below identical to what it was
+		// before this fault kind existed.
+		now := time.Now()
+		base := now
+		var serialized time.Duration
+		if cfg.bandwidthEnabled {
+			if p.busyUntil.After(base) {
+				base = p.busyUntil
+			}
+			base = base.Add(serializationDelay(len(data), cfg.bandwidthBPS))
+			p.busyUntil = base
+			serialized = base.Sub(now)
+		}
+
+		if !cfg.latencyEnabled && !cfg.bandwidthEnabled {
 			if p.trace != nil {
 				p.trace.record(faultEvent{})
 			}
@@ -112,15 +152,14 @@ func installFaultPolicy(p *pipe, fp faultPolicy) {
 			return
 		}
 
-		now := time.Now()
-		releaseAt := now.Add(drawn)
+		releaseAt := base.Add(drawn)
 		if n := len(p.pending); n > 0 {
 			if prev := p.pending[n-1].releaseAt; releaseAt.Before(prev) {
 				releaseAt = prev
 			}
 		}
 		if p.trace != nil {
-			p.trace.record(faultEvent{drawn: drawn, effective: releaseAt.Sub(now)})
+			p.trace.record(faultEvent{drawn: drawn, serialized: serialized, effective: releaseAt.Sub(base)})
 		}
 		p.pending = append(p.pending, pendingUnit{data: data, releaseAt: releaseAt})
 		p.armLatencyForAppendLocked()

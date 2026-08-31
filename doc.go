@@ -1,10 +1,10 @@
 // Package netchaos provides deterministic, in-process simulated net.Conn
 // and net.Listener implementations for Go tests. A Network, created with
 // NewNetwork, lets peers Dial and Listen against each other subject to a
-// configurable fault policy: latency, packet loss, and network partition.
-// It is meant to be imported directly into a test — no external process,
-// proxy, or daemon — so a test can prove its retry logic, timeout handling,
-// or circuit breaker reacts correctly to a bad network.
+// configurable fault policy: latency, packet loss, bandwidth throttling, and
+// network partition. It is meant to be imported directly into a test — no
+// external process, proxy, or daemon — so a test can prove its retry logic,
+// timeout handling, or circuit breaker reacts correctly to a bad network.
 //
 // See the package-level Example for a minimal dial/listen round trip, and
 // the other Example functions for latency, packet loss, partition, and
@@ -53,13 +53,18 @@
 //
 // When more than one fault is configured on the same connection direction,
 // they are evaluated in one fixed order: partition, then packet loss, then
-// latency. A partitioned unit is discarded before any random draw happens,
-// so partition never perturbs the loss or latency sequence. Every other
-// configured fault draws from its stream unconditionally, even if an
+// bandwidth, then latency. A partitioned unit is discarded before any random
+// draw happens, so partition never perturbs the loss or latency sequence. A
+// unit dropped by packet loss never reaches the bandwidth stage either, so a
+// dropped unit costs no simulated link time. Every other configured fault
+// that draws from a random stream does so unconditionally, even if an
 // earlier fault in the order already dropped the unit — a unit dropped by
-// packet loss still draws (and discards) a latency duration. This keeps
-// each fault's draw index locked to the unit index, which is what makes a
-// fault trace diffable across runs.
+// packet loss still draws (and discards) a latency duration. Bandwidth is
+// not part of that: it computes a deterministic delay from a unit's size and
+// the configured rate, drawing nothing, so enabling it can never perturb the
+// loss or latency sequence. This keeps each drawing fault's draw index
+// locked to the unit index, which is what makes a fault trace diffable
+// across runs.
 //
 // # Reproducing a failure
 //

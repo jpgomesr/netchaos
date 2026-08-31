@@ -65,6 +65,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -102,7 +103,21 @@ type canonicalTrace []traceLine
 // returns every conn end it created so the caller can capture a trace.
 type scenario struct {
 	name string
-	fn   func(t *testing.T, seed int64) []net.Conn
+
+	// fields lists any optional per-unit golden columns this scenario's
+	// trace should carry, beyond the fixed base set every trace always has
+	// (ord side seq part drop drawn_ns eff_ns). Currently the only value is
+	// "thr" (faultEvent.serialized, M7-5's bandwidth throttle). This is
+	// declared here rather than inferred from which faults the scenario
+	// configures -- inferring from "was WithBandwidth given" would have to
+	// stay in sync with whatever a future runtime setter could turn on
+	// mid-scenario (M7-4 already made loss/latency's enabled bits dynamic
+	// this way), while a declared field set cannot drift. nil for the fixed
+	// base set, which is what keeps every scenario that predates M7-5 byte-
+	// identical: none of them names "thr".
+	fields []string
+
+	fn func(t *testing.T, seed int64) []net.Conn
 }
 
 // runScenario runs sc under seed and captures the resulting trace. Must be
@@ -184,15 +199,23 @@ func boolInt(b bool) int {
 	return 0
 }
 
-// String renders ct in the golden file line format: integer nanoseconds,
+// render formats ct in the golden file line format: integer nanoseconds,
 // never time.Duration.String(), so formatting can never be a source of
-// cross-version drift (see the file comment).
-func (ct canonicalTrace) String() string {
+// cross-version drift (see the file comment). fields is the scenario's
+// declared optional-column set (scenario.fields); "thr" adds the throttle
+// column between drop and drawn. A scenario that never names "thr" -- every
+// one that predates M7-5 -- renders exactly as before, which is what keeps
+// their checked-in goldens byte-identical.
+func (ct canonicalTrace) render(fields []string) string {
+	includeThrottle := slices.Contains(fields, "thr")
 	var b strings.Builder
 	for _, l := range ct {
-		fmt.Fprintf(&b, "ord=%d side=%-8s seq=%d part=%d drop=%d drawn=%d eff=%d\n",
-			l.ordinal, sideName(l.side), l.seq, boolInt(l.partitioned), boolInt(l.dropped),
-			int64(l.drawn), int64(l.effective))
+		fmt.Fprintf(&b, "ord=%d side=%-8s seq=%d part=%d drop=%d",
+			l.ordinal, sideName(l.side), l.seq, boolInt(l.partitioned), boolInt(l.dropped))
+		if includeThrottle {
+			fmt.Fprintf(&b, " thr=%d", int64(l.serialized))
+		}
+		fmt.Fprintf(&b, " drawn=%d eff=%d\n", int64(l.drawn), int64(l.effective))
 	}
 	return b.String()
 }
@@ -227,15 +250,21 @@ func (ct canonicalTrace) diff(other canonicalTrace) string {
 	return "(no diff)"
 }
 
-func writeGolden(path, scenarioName string, seed int64, ct canonicalTrace) error {
+func writeGolden(path, scenarioName string, seed int64, fields []string, ct canonicalTrace) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
+	fieldsLine := "ord side seq part drop"
+	if slices.Contains(fields, "thr") {
+		fieldsLine += " thr_ns"
+	}
+	fieldsLine += " drawn_ns eff_ns"
+
 	var b strings.Builder
 	b.WriteString("# netchaos-trace v1\n")
 	fmt.Fprintf(&b, "# scenario=%s seed=%d\n", scenarioName, seed)
-	b.WriteString("# fields: ord side seq part drop drawn_ns eff_ns\n")
-	b.WriteString(ct.String())
+	fmt.Fprintf(&b, "# fields: %s\n", fieldsLine)
+	b.WriteString(ct.render(fields))
 	return os.WriteFile(path, []byte(b.String()), 0o644)
 }
 
@@ -272,6 +301,17 @@ func readGolden(path string) (canonicalTrace, error) {
 		if err != nil {
 			return nil, fmt.Errorf("parsing golden line %q: %w", line, err)
 		}
+		// thr is optional: absent entirely from every golden that predates
+		// M7-5, since writeGolden only emits it for a scenario that declares
+		// "thr" in its fields. Absent parses as the zero value, matching an
+		// unthrottled faultEvent.serialized.
+		var serialized int64
+		if v, ok := m["thr"]; ok {
+			serialized, err = strconv.ParseInt(v, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("parsing golden line %q: %w", line, err)
+			}
+		}
 		ct = append(ct, traceLine{
 			ordinal: ord,
 			side:    sideFromName(m["side"]),
@@ -280,6 +320,7 @@ func readGolden(path string) (canonicalTrace, error) {
 				partitioned: m["part"] == "1",
 				dropped:     m["drop"] == "1",
 				drawn:       time.Duration(drawn),
+				serialized:  time.Duration(serialized),
 				effective:   time.Duration(eff),
 			},
 		})
@@ -451,6 +492,31 @@ func scenarioConcurrentIO(writesPerDirection int) scenario {
 	}
 }
 
+// scenarioThrottled dials one named pair with a bandwidth throttle and a
+// latency range both configured and writes unitCount fixed-size units on
+// the client->server direction with nothing draining the pipe between them
+// -- exercising the throttle's serialization-clock stage (faults.go)
+// composed with latency's propagation delay on top of it. Declares "thr" in
+// its fields, so this is the one scenario whose golden trace carries the
+// throttle column.
+func scenarioThrottled(unitCount int) scenario {
+	return scenario{
+		name:   "throttled",
+		fields: []string{"thr"},
+		fn: func(t *testing.T, seed int64) []net.Conn {
+			n := NewNetwork(WithSeed(seed), WithBandwidth(2000), WithLatency(time.Millisecond, 5*time.Millisecond))
+			client, server := dialNamedPair(t, n)
+
+			for i := 0; i < unitCount; i++ {
+				if _, err := client.Write([]byte{byte(i % 256)}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			return []net.Conn{client, server}
+		},
+	}
+}
+
 func TestSameSeedSameTrace(t *testing.T) {
 	sc := scenarioComposedBasic(20)
 	const seed = 42
@@ -563,6 +629,26 @@ func TestClampingScenarioExercisesClampPath(t *testing.T) {
 	})
 }
 
+// TestThrottledScenarioExercisesThrottlePath confirms scenarioThrottled
+// actually produces at least one unit whose serialized delay is nonzero, so
+// the golden trace built from it below provably exercises the throttle
+// stage rather than degenerating to latency alone for this seed.
+func TestThrottledScenarioExercisesThrottlePath(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		trace := runScenario(t, scenarioThrottled(20), 99)
+
+		throttled := 0
+		for _, l := range trace {
+			if l.serialized > 0 {
+				throttled++
+			}
+		}
+		if throttled == 0 {
+			t.Fatal("throttled scenario recorded no unit with serialized > 0; it does not exercise the bandwidth stage for this seed")
+		}
+	})
+}
+
 func TestGoldenTraces(t *testing.T) {
 	cases := []struct {
 		sc   scenario
@@ -570,6 +656,7 @@ func TestGoldenTraces(t *testing.T) {
 	}{
 		{scenarioComposedBasic(20), 42},
 		{scenarioClamping(30), 7},
+		{scenarioThrottled(20), 99},
 	}
 
 	for _, c := range cases {
@@ -583,7 +670,7 @@ func TestGoldenTraces(t *testing.T) {
 			path := filepath.Join("testdata", "traces", fmt.Sprintf("%s-seed%d.golden", c.sc.name, c.seed))
 
 			if *updateGolden {
-				if err := writeGolden(path, c.sc.name, c.seed, trace); err != nil {
+				if err := writeGolden(path, c.sc.name, c.seed, c.sc.fields, trace); err != nil {
 					t.Fatal(err)
 				}
 				return
