@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`WithCorruption(rate float64)`** (`M7-9`, part of #53) — flips a single
+  bit, chosen uniformly at random, in a delivered `Write` unit's content,
+  with the given probability, drawn from its own stream (`kindCorrupt`)
+  independent of loss and latency. Real TCP hides corruption from the
+  application (the checksum drops a corrupt segment), but `M0-3` already
+  chose to model packet loss as a visible silent gap despite real TCP
+  hiding that too (by retransmitting), precisely so a test can exercise
+  what the application sees when the transport misbehaves; corruption is
+  accepted on the same reasoning.
+
+  A corrupted unit's **length is unchanged**. A dropped unit is never
+  corrupted, but corruption's coin flip is still drawn for it, per the
+  draw discipline; a zero-length write draws the same decision but has no
+  bit to flip. The caller's original buffer is never mutated: `conn.Write`
+  already copies it before the data reaches the pipe.
+
+  **Trace format:** `faultEvent` gained a `corrupted` field, following
+  `M7-5`'s answer — emitted in a scenario's golden trace only when that
+  scenario declares it, so every golden trace that predates this change
+  stays byte-identical.
+
 - **`WithBandwidth(bytesPerSecond int)`** (`M7-5`, closes #53) — throttles
   delivery to a configured rate, applied per connection direction. Modelled
   as a serialization clock, not a flat per-write delay: a direction tracks

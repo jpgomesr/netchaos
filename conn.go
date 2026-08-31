@@ -74,10 +74,12 @@ func newConnPairWithSeed(clientAddr, serverAddr *addr, ordinal uint64, network s
 
 	clientToServer.loss = deriveStream(seed, ordinal, sideDialer, kindLoss)
 	clientToServer.latency = deriveStream(seed, ordinal, sideDialer, kindLatency)
+	clientToServer.corrupt = deriveStream(seed, ordinal, sideDialer, kindCorrupt)
 	clientToServer.trace = &traceRecorder{}
 
 	serverToClient.loss = deriveStream(seed, ordinal, sideAcceptor, kindLoss)
 	serverToClient.latency = deriveStream(seed, ordinal, sideAcceptor, kindLatency)
+	serverToClient.corrupt = deriveStream(seed, ordinal, sideAcceptor, kindCorrupt)
 	serverToClient.trace = &traceRecorder{}
 
 	client = &conn{

@@ -31,6 +31,12 @@ type networkConfig struct {
 	bandwidthEnabled bool
 	bandwidthBPS     int
 
+	// corruptEnabled distinguishes "WithCorruption was never given" from
+	// WithCorruption(0.0) (an explicit, if degenerate, never-corrupt policy
+	// that still draws -- see WithCorruption's godoc). M7-9, #53 candidate 4.
+	corruptEnabled bool
+	corruptRate    float64
+
 	// staticPartitions accumulates the raw peer-name pairs named by
 	// WithPartition, kept unresolved (not yet a pairKey) until validate()
 	// has checked them and NewNetwork applies them to Network.partitions.
@@ -63,6 +69,9 @@ func (c *networkConfig) validate() {
 	}
 	if c.bandwidthEnabled {
 		validateBandwidthRate(c.bandwidthBPS)
+	}
+	if c.corruptEnabled {
+		validateCorruptionRate(c.corruptRate)
 	}
 	for _, p := range c.staticPartitions {
 		validatePartitionPair(p)
