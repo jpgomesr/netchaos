@@ -6,6 +6,7 @@ import (
 	"net"
 	"syscall"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -53,37 +54,44 @@ func TestResetSurfacesECONNRESETToWriter(t *testing.T) {
 // goroutine unblocks with ECONNRESET rather than hanging to its deadline --
 // the property that makes Reset useful for testing reconnect logic instead
 // of a caller having to poll.
+//
+// Runs inside a synctest bubble, using synctest.Wait (mirroring
+// TestDialUnblocksOnHeal, partition_test.go) rather than a real
+// time.Sleep to let the reader goroutine reach its blocking point before
+// Reset fires -- a wall-clock sleep here would be a timing assumption a
+// slow or -race-instrumented CI runner could violate.
 func TestResetUnblocksInFlightRead(t *testing.T) {
-	n := NewNetwork()
-	_, server := dialNamedPair(t, n)
+	synctest.Test(t, func(t *testing.T) {
+		n := NewNetwork()
+		_, server := dialNamedPair(t, n)
 
-	if err := server.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
-		t.Fatal(err)
-	}
-
-	result := make(chan error, 1)
-	go func() {
-		buf := make([]byte, 1)
-		_, err := server.Read(buf)
-		result <- err
-	}()
-
-	// Give the goroutine a chance to actually block in Read before
-	// resetting, so this test exercises the in-flight-unblock path rather
-	// than the already-checked-at-entry path TestResetSurfacesECONNRESETToReader
-	// covers.
-	time.Sleep(20 * time.Millisecond)
-
-	n.Reset("client", "server")
-
-	select {
-	case err := <-result:
-		if !errors.Is(err, syscall.ECONNRESET) {
-			t.Fatalf("blocked Read unblocked with %v, want errors.Is(syscall.ECONNRESET)", err)
+		if err := server.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			t.Fatal(err)
 		}
-	case <-time.After(time.Second):
-		t.Fatal("blocked Read did not unblock after Reset")
-	}
+
+		result := make(chan error, 1)
+		go func() {
+			buf := make([]byte, 1)
+			_, err := server.Read(buf)
+			result <- err
+		}()
+
+		// Blocks until every other goroutine in the bubble is durably
+		// blocked, which for the goroutine above means it has reached the
+		// select inside Read -- deterministic, unlike a real sleep.
+		synctest.Wait()
+
+		n.Reset("client", "server")
+
+		select {
+		case err := <-result:
+			if !errors.Is(err, syscall.ECONNRESET) {
+				t.Fatalf("blocked Read unblocked with %v, want errors.Is(syscall.ECONNRESET)", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("blocked Read did not unblock after Reset")
+		}
+	})
 }
 
 // TestResetConnectionStaysReset asserts a reset connection has no path back
