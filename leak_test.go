@@ -35,8 +35,9 @@ import (
 //     because the bubble provably does *not* cover it: an armed-but-unfired
 //     time.AfterFunc owns no goroutine, so removing conn.Close's rd.stop()
 //     leaves this test green if the bubble is the only assertion. The same
-//     is true of the latency timer and TestCloseWithInFlightWorkInBubble —
-//     see M6-18, which records that finding rather than fixing it here.
+//     is true of the delivery timer (latency, M2-2, or bandwidth, M7-5) and
+//     TestCloseWithInFlightWorkInBubble — see M6-18, which found that gap
+//     and closed it with assertPipeTimerDisarmed.
 func TestNoGoroutineLeaks(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		n := NewNetwork()
@@ -135,5 +136,38 @@ func assertDeadlineTimerDisarmed(t *testing.T, c *conn) {
 		if live {
 			t.Errorf("%s deadline timer still armed after Close, so it outlives the conn that owns it", d.name)
 		}
+	}
+}
+
+// assertPipeTimerDisarmed checks directly that p's delivery timer (latency,
+// M2-2, or bandwidth, M7-5) was stopped by close, the same gap
+// assertDeadlineTimerDisarmed closes on the deadline side: time.AfterFunc
+// allocates no goroutine until it fires, so an armed-but-unfired timer is
+// invisible both to runtime.NumGoroutine and to synctest's bubble-exit
+// check. See M6-18, which found that no test previously proved this.
+//
+// A bare nil check on p.timer is not enough: pipe.close both stops the
+// timer and nils the field in the same block, so deleting only the Stop
+// call leaves the field nil-checked-clean while the timer stays armed and
+// will still fire later against a closed pipe. before must be the *live*
+// *time.Timer captured under p.mu before close was called; this function
+// calls Stop on it itself, so it must run after close and must run last —
+// Stop consumes the "did I actually disarm something" signal, so a second
+// call on the same timer answers false regardless of history.
+func assertPipeTimerDisarmed(t *testing.T, p *pipe, before *time.Timer) {
+	t.Helper()
+
+	p.mu.Lock()
+	live := p.timer != nil
+	p.mu.Unlock()
+	if live {
+		t.Error("pipe delivery timer still armed after Close, so it outlives the conn that owns it")
+	}
+
+	if before == nil {
+		return
+	}
+	if before.Stop() {
+		t.Error("pipe delivery timer was still running after Close; Close should have stopped it")
 	}
 }

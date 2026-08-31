@@ -318,13 +318,15 @@ func TestBubbleIdleOnPartitionDialWait(t *testing.T) {
 	})
 }
 
-// TestCloseWithInFlightWorkInBubble is the primary evidence that a latency
-// delivery timer does not outlive the conn that created it: a unit is
-// admitted and held back by a 1h latency, never read, and both ends are
-// closed immediately. synctest.Test fails this test if any bubble goroutine
-// is still running when it returns, so simply completing is the assertion
-// that pipe.close's timer.Stop (pipe.go) actually disarmed the pending
-// AfterFunc rather than leaving it to fire later against a closed pipe.
+// TestCloseWithInFlightWorkInBubble drives a unit that is admitted and held
+// back by a 1h latency, never read, with both ends closed immediately.
+// synctest.Test fails this test if any bubble goroutine is still running
+// when it returns, which proves no goroutine outlives the conn — but that
+// alone does *not* prove the pending delivery timer (pipe.go) was disarmed:
+// an armed-but-unfired time.AfterFunc owns no goroutine, so it is invisible
+// to the bubble's exit check either way. assertPipeTimerDisarmed
+// (leak_test.go) is what proves the disarm directly; see M6-18, which found
+// that this test's completion alone had been mistaken for that proof.
 func TestCloseWithInFlightWorkInBubble(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		n := NewNetwork(WithLatency(time.Hour, time.Hour))
@@ -334,12 +336,19 @@ func TestCloseWithInFlightWorkInBubble(t *testing.T) {
 			t.Fatal(err)
 		}
 
+		wp := client.(*conn).writePipe
+		wp.mu.Lock()
+		armed := wp.timer
+		wp.mu.Unlock()
+
 		if err := client.Close(); err != nil {
 			t.Fatal(err)
 		}
 		if err := server.Close(); err != nil {
 			t.Fatal(err)
 		}
+
+		assertPipeTimerDisarmed(t, wp, armed)
 	})
 }
 
@@ -427,10 +436,11 @@ func TestNoGoroutinesOutliveBubble(t *testing.T) {
 // TestNoLatencyTimerLeaks is a backstop, not the real proof: time.AfterFunc
 // allocates no goroutine until it fires, so runtime.NumGoroutine cannot
 // observe a latency timer that was stopped before it ever ran.
-// TestCloseWithInFlightWorkInBubble is what actually proves pipe.close
-// disarms a pending latency timer; this test only catches the (different,
-// grosser) failure of a timer being left running long enough to fire and
-// leave its callback goroutine behind.
+// assertPipeTimerDisarmed, called from TestCloseWithInFlightWorkInBubble
+// (leak_test.go), is what actually proves pipe.close disarms a pending
+// delivery timer — not the bubble's completion by itself (M6-18). This
+// test only catches the (different, grosser) failure of a timer being left
+// running long enough to fire and leave its callback goroutine behind.
 func TestNoLatencyTimerLeaks(t *testing.T) {
 	before := runtime.NumGoroutine()
 

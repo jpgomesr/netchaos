@@ -56,6 +56,8 @@ The consequence for netchaos: a `Read` waiting for data, an `Accept` waiting for
 
 **Decision:** the leak criterion is carried by `TestCloseWithInFlightWorkInBubble`, not by goroutine counting. `time.AfterFunc` spawns no goroutine until it fires, so `runtime.NumGoroutine` cannot observe an unstopped latency timer; `TestNoLatencyTimerLeaks` is retained as a backstop and its docstring says so explicitly.
 
+> **Superseded in part by [M6-18](m6-review-findings.md#m6-18--two-leak-tests-claim-a-property-their-assertion-cannot-observe).** The half about `runtime.NumGoroutine` still holds — it genuinely cannot see an unstopped timer, which is why `TestNoLatencyTimerLeaks` stays a backstop. What does not hold is "the leak criterion is carried by `TestCloseWithInFlightWorkInBubble`": that test's completion only proves no goroutine outlived the bubble, and an armed-but-unfired `time.AfterFunc` owns no goroutine either, so the bubble cannot see a missing `Stop` any more than the counter can. M6-18 found that gap empirically — deleting `pipe.close`'s `timer.Stop()` left this test green — and closed it with a direct assertion, `assertPipeTimerDisarmed` (`leak_test.go`), called from `TestCloseWithInFlightWorkInBubble` itself. That test still carries the criterion; it does so by that added assertion now, not by its own completion.
+
 **Tests**
 - `TestBubbleIdleOnBlockedRead`, `TestBubbleIdleOnBlockedAccept`, `TestBubbleIdleOnBlockedWrite`
 - `TestBubbleIdleOnLatencyDelivery`, `TestBubbleIdleOnDeadlineWait`, `TestBubbleIdleOnPartitionDialWait`
