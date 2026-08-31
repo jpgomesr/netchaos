@@ -107,6 +107,8 @@ func NewNetwork(opts ...Option) *Network {
 			bandwidthBPS:     cfg.bandwidthBPS,
 			duplicateEnabled: cfg.duplicateEnabled,
 			duplicateRate:    cfg.duplicateRate,
+			corruptEnabled:   cfg.corruptEnabled,
+			corruptRate:      cfg.corruptRate,
 		},
 		partitions:      make(map[pairKey]struct{}, len(cfg.staticPartitions)),
 		partNotify:      make(chan struct{}),

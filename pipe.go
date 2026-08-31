@@ -75,17 +75,18 @@ type pipe struct {
 	bound    int
 	deliver  deliverFunc
 
-	// loss, latency, and duplicate are this pipe's per-fault-kind draw
-	// streams (M0-4), derived once at creation from the owning connection's
-	// ordinal and the side writing into this pipe. trace records the fault
-	// decisions made for this direction, in write order. All four are nil
-	// for a pipe created without fault wiring (e.g. by pipe-level tests);
-	// fault code added from M2-2 onward must handle that case, since M1
-	// semantics (pass-through delivery) are still reachable with none of
-	// them set.
+	// loss, latency, duplicate, and corrupt are this pipe's per-fault-kind
+	// draw streams (M0-4), derived once at creation from the owning
+	// connection's ordinal and the side writing into this pipe. trace
+	// records the fault decisions made for this direction, in write order.
+	// All five are nil for a pipe created without fault wiring (e.g. by
+	// pipe-level tests); fault code added from M2-2 onward must handle that
+	// case, since M1 semantics (pass-through delivery) are still reachable
+	// with none of them set.
 	loss      *stream
 	latency   *stream
 	duplicate *stream // M7-8
+	corrupt   *stream // M7-9
 	trace     *traceRecorder
 
 	// pending holds units admitted but held back for latency (M2-2) or

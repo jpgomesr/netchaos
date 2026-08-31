@@ -25,6 +25,14 @@ const (
 	// per-unit Bernoulli decision and therefore does draw -- see
 	// installFaultPolicy's draw discipline (faults.go).
 	kindDuplicate
+
+	// kindCorrupt (M7-9, #53 candidate 4) has its own stream for the same
+	// reason kindLoss and kindLatency do: enabling WithCorruption on an
+	// existing test must not shift that test's loss or latency sequence.
+	// Like duplication (kindDuplicate), corruption is a per-unit Bernoulli
+	// decision and therefore does draw -- see installFaultPolicy's draw
+	// discipline (faults.go).
+	kindCorrupt
 )
 
 // stream is a connection-direction-fault-kind-scoped random source (M0-4).
@@ -103,6 +111,18 @@ func (s *stream) bernoulli(rate float64) bool {
 func (s *stream) uniformDuration(min, max time.Duration) time.Duration {
 	span := uint64(max-min) + 1 // inclusive range; min==max gives span==1
 	return min + time.Duration(s.boundedUint64(span))
+}
+
+// corruptionSite draws a byte index into a slice of length n (n > 0) and a
+// bit index in [0, 8) to flip within that byte, for WithCorruption (M7-9).
+// Two draws, both through boundedUint64 rather than math/rand/v2's
+// convenience API, for the same reason uniformDuration is: Go's
+// compatibility promise covers the ChaCha8 byte stream, not the exact
+// output of a helper like IntN. As with uniformDuration, "two draws" means
+// two calls to boundedUint64, not necessarily two raw Uint64 draws --
+// either can consume more than one via its rejection loop.
+func (s *stream) corruptionSite(n int) (byteIndex int, bitIndex uint) {
+	return int(s.boundedUint64(uint64(n))), uint(s.boundedUint64(8))
 }
 
 // boundedUint64 returns a uniform value in [0, n), n > 0, using Lemire's

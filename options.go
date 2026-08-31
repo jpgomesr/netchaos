@@ -38,6 +38,12 @@ type networkConfig struct {
 	duplicateEnabled bool
 	duplicateRate    float64
 
+	// corruptEnabled distinguishes "WithCorruption was never given" from
+	// WithCorruption(0.0) (an explicit, if degenerate, never-corrupt policy
+	// that still draws -- see WithCorruption's godoc). M7-9, #53 candidate 4.
+	corruptEnabled bool
+	corruptRate    float64
+
 	// staticPartitions accumulates the raw peer-name pairs named by
 	// WithPartition, kept unresolved (not yet a pairKey) until validate()
 	// has checked them and NewNetwork applies them to Network.partitions.
@@ -84,6 +90,9 @@ func (c *networkConfig) validate() {
 	}
 	if c.duplicateEnabled {
 		validateDuplicationRate(c.duplicateRate)
+	}
+	if c.corruptEnabled {
+		validateCorruptionRate(c.corruptRate)
 	}
 	if c.pipeBoundEnabled {
 		validatePipeBound(c.pipeBound)
