@@ -64,6 +64,14 @@ type Network struct {
 	// exactly as it did before this pair of options existed.
 	pipeBound       int
 	listenerBacklog int
+
+	// resetMu guards resetTargets, Network.Reset's registry of currently
+	// established conns per peer pair (M7-7). Separate from partMu: reset
+	// is an imperative, one-shot action on conns that exist right now, not
+	// standing state a per-unit evaluator reads, so it shares no data path
+	// with the partition machinery.
+	resetMu      sync.Mutex
+	resetTargets map[pairKey][]*conn
 }
 
 // NewNetwork returns a new, empty Network configured by opts. Options are
@@ -116,6 +124,7 @@ func NewNetwork(opts ...Option) *Network {
 		nextListenPort:  listenPortBase,
 		pipeBound:       pipeBound,
 		listenerBacklog: backlog,
+		resetTargets:    make(map[pairKey][]*conn),
 	}
 	for _, p := range cfg.staticPartitions {
 		n.partitions[newPairKey(peerName(p.peerA), peerName(p.peerB))] = struct{}{}
@@ -336,6 +345,14 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 	}
 	installFaultPolicy(client.writePipe, fp)
 	installFaultPolicy(server.writePipe, fp)
+
+	// Registered for Network.Reset (M7-7) under the same pair the fault
+	// policy above uses, so a reset targets exactly the connections a
+	// partition targeting the same names would. nw/pair let Close
+	// deregister without n needing to track conn lifetime itself.
+	client.nw, client.pair = n, fp.pair
+	server.nw, server.pair = n, fp.pair
+	n.registerReset(fp.pair, client, server)
 
 	l.fill(server)
 	return client, nil

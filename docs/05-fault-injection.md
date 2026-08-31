@@ -82,6 +82,16 @@ netchaos's v1 scope (per the root README's checklist) covers three fault categor
 
 **What it's for:** Testing idempotency — does your code handle a message arriving twice without double-processing it (an at-least-once delivery assumption made concrete), does a retry-safe RPC layer's deduplication actually work.
 
+## Mid-stream connection reset
+
+**What it does:** Abruptly terminates every currently-established connection between two named simulated peers — the clearest gap `Partition` leaves rather than an enhancement of it. `Partition` is deliberately a silent black hole (writes accepted and discarded, reads blocking to their deadline), never an `ECONNRESET`. Testing "the peer dropped the connection" previously meant holding the server-side `net.Conn` and calling `Close` yourself.
+
+**Configuration:** `Network.Reset(peerA, peerB string)` — an imperative method, like `Partition`/`Heal`, decided by the maintainer rather than a per-unit drawn `Option`. See [04 — API Design § Mid-stream connection reset](04-api-design.md#mid-stream-connection-reset) for the full contract, including how it differs from `Partition` in three deliberate ways (no effect on `Dial`, does not persist past the connections live at the moment it is called, and is a no-op for an unestablished pair).
+
+**Not a per-unit fault:** unlike every other kind in this document, `Reset` takes no random draws, has no `faultKind`, and plays no part in `installFaultPolicy`'s composed evaluator or its fixed order above. It cannot perturb, and is not perturbed by, any connection's loss/latency/bandwidth/duplication/corruption sequence.
+
+**What it's for:** Testing reconnect and retry logic against an abrupt failure — does your client detect `ECONNRESET` and reconnect rather than treating it like a timeout, does a connection pool evict a reset connection instead of returning it to a caller again.
+
 ## Partition
 
 **What it does:** Drops **all** traffic between two named simulated peers, unlike packet loss which drops probabilistically. A partition is binary and (per the [API](04-api-design.md#dynamic-partition-control)) persists until explicitly healed. Unlike latency and packet loss, partition consumes no random draws — see [04 — API Design § Determinism contract](04-api-design.md#determinism-contract) — so partitioning one pair can never perturb another connection's fault sequence.
@@ -96,11 +106,9 @@ netchaos's v1 scope (per the root README's checklist) covers three fault categor
 
 ## Accepted for v0.2.0, not yet implemented
 
-[M6-11](tasks/m6-review-findings.md#m6-11--decide-which-new-fault-kinds-if-any-enter-v02) accepted four further fault kinds into `v0.2.0` scope. Bandwidth throttling **shipped** in [M7-5](tasks/m7-v0.2.0-implementation.md#m7-5--fault-kind-bandwidth-throttling), packet duplication **shipped** in [M7-8](tasks/m7-v0.2.0-implementation.md#m7-8--fault-kind-packet-duplication), and data corruption **shipped** in [M7-9](tasks/m7-v0.2.0-implementation.md#m7-9--fault-kind-data-corruption) — see the sections above. The remaining one is not implemented; it gets its own task. Recorded here so this document stays the place a reader looks for what netchaos can fault, and [06 — Scope & Roadmap § Accepted for v0.2.0](06-scope-and-roadmap.md#accepted-for-v02) carries the reasoning.
+[M6-11](tasks/m6-review-findings.md#m6-11--decide-which-new-fault-kinds-if-any-enter-v02) accepted four further fault kinds into `v0.2.0` scope, and **all four have shipped**: bandwidth throttling in [M7-5](tasks/m7-v0.2.0-implementation.md#m7-5--fault-kind-bandwidth-throttling), packet duplication in [M7-8](tasks/m7-v0.2.0-implementation.md#m7-8--fault-kind-packet-duplication), data corruption in [M7-9](tasks/m7-v0.2.0-implementation.md#m7-9--fault-kind-data-corruption), and mid-stream connection reset in [M7-7](tasks/m7-v0.2.0-implementation.md#m7-7--fault-kind-mid-stream-connection-reset) — see the sections above. Recorded here so this document stays the place a reader looks for what netchaos can fault, and [06 — Scope & Roadmap § Accepted for v0.2.0](06-scope-and-roadmap.md#accepted-for-v02) carries the reasoning.
 
-- **Mid-stream connection reset** — an established conn failing abruptly. This is a genuine gap rather than an enhancement: `Partition` is the nearest thing today and is deliberately a silent black hole (writes accepted and discarded, reads blocking to their deadline), not an `ECONNRESET`.
-
-A new kind that draws gets its own `faultKind` byte and therefore its own derived stream, so **adding one cannot perturb any existing test's latency, loss, duplication, or corruption sequence** — new kinds are additive rather than a golden-trace break. Bandwidth is the counterexample worth naming: it draws nothing at all, so it needed neither a byte nor a stream, and the same non-perturbation guarantee holds for the stronger reason that there is no draw to place anywhere in the sequence. Each remaining kind that does draw must respect the M2-5 draw discipline above: draw unconditionally on every unit past the partition gate, like loss, latency, duplication, and corruption.
+A new kind that draws gets its own `faultKind` byte and therefore its own derived stream, so **adding one cannot perturb any existing test's latency, loss, duplication, or corruption sequence** — new kinds are additive rather than a golden-trace break. Bandwidth and mid-stream reset are both counterexamples worth naming, for different reasons: bandwidth draws nothing at all, so it needed neither a byte nor a stream; reset is not a per-unit fault at all, so the question of a draw does not apply to it either. Every kind that does draw respects the M2-5 draw discipline above: it draws unconditionally on every unit past the partition gate, like loss, latency, duplication, and corruption.
 
 ## Reordering (deferred, not in v1)
 

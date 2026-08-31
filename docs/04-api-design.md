@@ -52,6 +52,12 @@ func (n *Network) Heal(peerA, peerB string)
 func (n *Network) SetLatency(min, max time.Duration)
 func (n *Network) SetPacketLoss(rate float64)
 
+// Added by M7-7 (issue #53, candidate 2), post-v0.1.0. Imperative, like
+// Partition/Heal, not a drawn Option -- takes no random draws and has no
+// faultKind. Unlike Partition, has no effect on Dial and does not persist:
+// it acts only on connections established at the moment it is called.
+func (n *Network) Reset(peerA, peerB string)
+
 func WithPeerName(ctx context.Context, name string) context.Context
 
 // Added by M7-6 (issue #52), post-v0.1.0. Both leave a package-default
@@ -70,7 +76,7 @@ The four error sentinels are matched with `errors.Is`; see [Error and no-op beha
 **The surface above is what `v0.1.0` shipped. Three additions are still accepted for `v0.2.0` and are not in it yet** — see [06 — Scope & Roadmap § Accepted for v0.2.0](06-scope-and-roadmap.md#accepted-for-v02) for the reasoning behind each, and note that all three are input to [M5-2](tasks/m5-hardening-and-ergonomics.md#m5-2--api-ergonomics-review-before-v100)'s review of this surface rather than exempt from it. `WithPipeBound` and `WithListenerBacklog` ([M6-17](tasks/m6-review-findings.md#m6-17--decide-whether-the-pipe-bound-and-listener-backlog-become-configurable)) **shipped** in [M7-6](tasks/m7-v0.2.0-implementation.md#m7-6--withpipebound-and-withlistenerbacklog) — see [Functional options](#functional-options).
 - `SetLatency` and `SetPacketLoss` ([M6-13](tasks/m6-review-findings.md#m6-13--decide-on-runtime-mutation-of-latency-and-loss)) — **shipped** in [M7-4](tasks/m7-v0.2.0-implementation.md#m7-4--setlatency-and-setpacketloss), after [M7-3](tasks/m7-v0.2.0-implementation.md#m7-3--widen-the-determinism-contract-for-runtime-fault-mutation) widened the contract ahead of the code, as that decision required. See [Runtime fault mutation](#runtime-fault-mutation).
 - A fault-trace accessor ([M6-14](tasks/m6-review-findings.md#m6-14--decide-whether-to-export-fault-observability)), closing the deferral `M2-1` recorded. The full trace was chosen over counters, so the `faultEvent` shape becomes public API — a compatibility surface at `v1.0.0`, on a format [M3-3](tasks/m3-synctest-and-reproducibility.md) deliberately made high-friction to change.
-- Options for the new fault kinds accepted by [M6-11](tasks/m6-review-findings.md#m6-11--decide-which-new-fault-kinds-if-any-enter-v02) (mid-stream reset, duplication, corruption). Bandwidth throttling, packet duplication, and data corruption, three of the four, **shipped** in [M7-5](tasks/m7-v0.2.0-implementation.md#m7-5--fault-kind-bandwidth-throttling), [M7-8](tasks/m7-v0.2.0-implementation.md#m7-8--fault-kind-packet-duplication), and [M7-9](tasks/m7-v0.2.0-implementation.md#m7-9--fault-kind-data-corruption) as `WithBandwidth`, `WithDuplication`, and `WithCorruption`.
+- Options for the new fault kinds accepted by [M6-11](tasks/m6-review-findings.md#m6-11--decide-which-new-fault-kinds-if-any-enter-v02) (mid-stream reset, duplication, corruption). All four **shipped**: bandwidth throttling in [M7-5](tasks/m7-v0.2.0-implementation.md#m7-5--fault-kind-bandwidth-throttling) as `WithBandwidth`, packet duplication in [M7-8](tasks/m7-v0.2.0-implementation.md#m7-8--fault-kind-packet-duplication) as `WithDuplication`, data corruption in [M7-9](tasks/m7-v0.2.0-implementation.md#m7-9--fault-kind-data-corruption) as `WithCorruption`, and mid-stream reset in [M7-7](tasks/m7-v0.2.0-implementation.md#m7-7--fault-kind-mid-stream-connection-reset) as `Network.Reset` — an imperative method, decided by the maintainer, rather than a drawn `Option`.
 
 Address strings also change shape: [M6-10](tasks/m6-review-findings.md#m6-10--decide-whether-addresses-should-have-a-hostport-shape) accepted a synthesized port, so `net.SplitHostPort` succeeds against a netchaos address. That must land before `v1.0.0` — adding port structure afterwards breaks every address string a test prints.
 
@@ -249,6 +255,26 @@ The trade between the first two is the wait: a `DialerFor` dialer blocks for the
 The wait happens **before** the connection's ordinal is assigned, so a dial that blocks and is then cancelled does not burn an ordinal; see the [determinism contract](#determinism-contract)'s note on this.
 
 **Effect on already-established connections:** writes into a partitioned pair are accepted and silently discarded (the same silent-gap model as packet loss — see [Fault unit and drop semantics](#fault-unit-and-drop-semantics)); reads block until their deadline. `Heal` restores traffic without requiring a re-dial. Data written while partitioned is **discarded**, not buffered for delivery on `Heal` — matching what a real partition looks like to a sender (the kernel doesn't retain it either).
+
+## Mid-stream connection reset
+
+```go
+// Reset abruptly terminates every currently-established connection between
+// the named peers.
+func (n *Network) Reset(peerA, peerB string)
+```
+
+Closes the gap `Partition` deliberately does not: `Partition` is a silent black hole, never an `ECONNRESET`. `Reset` ([M7-7](tasks/m7-v0.2.0-implementation.md#m7-7--fault-kind-mid-stream-connection-reset), issue [#53](https://github.com/jpgomesr/netchaos/issues/53) candidate 2, decided by [M6-11](tasks/m6-review-findings.md#m6-11--decide-which-new-fault-kinds-if-any-enter-v02)) makes both ends' subsequent `Read` and `Write` — and any already in flight on another goroutine — fail with an error satisfying `errors.Is(err, syscall.ECONNRESET)`, wrapped in a `*net.OpError` (the same uniform shape [M6-2](tasks/m6-review-findings.md) established). A reset connection **stays reset**: there is no `Un-reset` the way `Heal` reverses a partition.
+
+**Decided as an imperative `Network` method, not a drawn `Option`** — the maintainer's call, made explicitly before implementation the same way `M7-3` preceded `M7-4`. `Reset` takes no random draws, has no `faultKind`, and is not evaluated anywhere near `installFaultPolicy`'s per-unit evaluator; enabling or calling it can never perturb any connection's loss/latency/duplication/corruption sequence.
+
+**Three ways this differs from `Partition`, all deliberate:**
+
+1. **No effect on `Dial`.** `Reset` does not gate establishment the way a partition blocks a named dialer; it has nothing to do with connections that don't exist yet.
+2. **Does not persist.** A partition stays in effect until `Heal`; a reset acts once, on whatever is established *at the moment it is called*, and has no effect on a connection dialed afterward — the real-RST analogy: an RST invalidates existing TCP state, it does not prevent a fresh connection to the same peer.
+3. **A no-op if nothing is currently established** between the named peers, the same convention `Partition`/`Heal` use for an unrecognized or not-yet-connected pair — not an error, safe to call speculatively.
+
+Peer names are resolved exactly as `Partition`/`Heal` resolve them (`peerName` strips a port, per `M7-1`), so the same naming caveat applies: an unnamed dialer's synthesized `ephemeral-N` identity is not one a caller can predict in advance, so it is not practically targetable here either.
 
 ## Error and no-op behaviour
 

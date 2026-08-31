@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`Network.Reset(peerA, peerB string)`** (`M7-7`, closes #53) — abruptly
+  terminates every currently-established connection between two named
+  peers: both ends' subsequent `Read`/`Write` calls, and any already
+  in-flight on another goroutine, fail with an error satisfying
+  `errors.Is(err, syscall.ECONNRESET)`, wrapped in a `*net.OpError`. Closes
+  the gap `Partition` deliberately leaves — `Partition` is a silent black
+  hole, never an `ECONNRESET`.
+
+  **Decided as an imperative method, not a drawn `Option`**, the same
+  discipline `M7-3` used ahead of `M7-4`: `Reset` takes no random draws,
+  has no `faultKind`, and is not evaluated anywhere near
+  `installFaultPolicy`'s per-unit evaluator, so it cannot perturb any
+  connection's loss/latency/duplication/corruption sequence.
+
+  Three deliberate differences from `Partition`: no effect on `Dial` (it
+  never gates establishment), does not persist (it acts once, on
+  connections live at the moment it is called, and has no effect on a
+  connection dialed afterward — an RST invalidates existing state, it
+  doesn't prevent a fresh connection), and is a no-op if nothing is
+  currently established between the named peers.
+
 - **`WithPipeBound(bound int)` and `WithListenerBacklog(backlog int)`**
   (`M7-6`, closes #52) — the per-connection-direction buffer bound
   (`defaultPipeBound`, 64 KiB) and the accept-queue bound (`listenerBacklog`,
