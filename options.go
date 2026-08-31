@@ -35,6 +35,17 @@ type networkConfig struct {
 	// WithPartition, kept unresolved (not yet a pairKey) until validate()
 	// has checked them and NewNetwork applies them to Network.partitions.
 	staticPartitions []partitionPair
+
+	// pipeBoundEnabled distinguishes "WithPipeBound was never given" (use
+	// defaultPipeBound, pipe.go) from an explicit value (M7-6).
+	pipeBoundEnabled bool
+	pipeBound        int
+
+	// listenerBacklogEnabled distinguishes "WithListenerBacklog was never
+	// given" (use the package default, listenerBacklog in listener.go) from
+	// an explicit value (M7-6).
+	listenerBacklogEnabled bool
+	listenerBacklog        int
 }
 
 // Option configures a Network at construction time. No Option or NewNetwork
@@ -63,6 +74,12 @@ func (c *networkConfig) validate() {
 	}
 	if c.bandwidthEnabled {
 		validateBandwidthRate(c.bandwidthBPS)
+	}
+	if c.pipeBoundEnabled {
+		validatePipeBound(c.pipeBound)
+	}
+	if c.listenerBacklogEnabled {
+		validateListenerBacklog(c.listenerBacklog)
 	}
 	for _, p := range c.staticPartitions {
 		validatePartitionPair(p)
