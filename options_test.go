@@ -100,8 +100,8 @@ func TestOptionValidation(t *testing.T) {
 // by a later, valid option of the same kind must not panic.
 func TestOptionValidationUsesFinalValue(t *testing.T) {
 	n := NewNetwork(WithPacketLoss(-1), WithPacketLoss(0.5))
-	if n.lossRate != 0.5 {
-		t.Fatalf("lossRate = %v, want 0.5 (the later, valid option should win and not panic on the earlier invalid intermediate value)", n.lossRate)
+	if n.faults.lossRate != 0.5 {
+		t.Fatalf("lossRate = %v, want 0.5 (the later, valid option should win and not panic on the earlier invalid intermediate value)", n.faults.lossRate)
 	}
 }
 

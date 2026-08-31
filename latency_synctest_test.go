@@ -235,11 +235,11 @@ func TestLatencyDoesNotWedgeSlowReader(t *testing.T) {
 		defer func() { _ = client.Close() }()
 		defer func() { _ = server.Close() }()
 
-		installFaultPolicy(client.writePipe, faultPolicy{
+		installFaultPolicy(client.writePipe, faultPolicy{static: faultConfig{
 			latencyEnabled: true,
 			latencyMin:     latency,
 			latencyMax:     latency,
-		})
+		}})
 
 		written := make(chan error, 1)
 		go func() {
@@ -305,11 +305,11 @@ func TestLatencyTimerNotRearmedBehindHead(t *testing.T) {
 		defer func() { _ = server.Close() }()
 
 		p := client.writePipe
-		installFaultPolicy(p, faultPolicy{
+		installFaultPolicy(p, faultPolicy{static: faultConfig{
 			latencyEnabled: true,
 			latencyMin:     time.Hour,
 			latencyMax:     time.Hour,
-		})
+		}})
 
 		// The first write becomes the head, so it must arm.
 		if _, err := client.Write([]byte("a")); err != nil {
@@ -357,11 +357,11 @@ func TestLatencyTimerRearmsAfterPartialDrain(t *testing.T) {
 		defer func() { _ = client.Close() }()
 		defer func() { _ = server.Close() }()
 
-		installFaultPolicy(client.writePipe, faultPolicy{
+		installFaultPolicy(client.writePipe, faultPolicy{static: faultConfig{
 			latencyEnabled: true,
 			latencyMin:     latency,
 			latencyMax:     latency,
-		})
+		}})
 
 		want := []string{"first", "second", "third"}
 		for i, payload := range want {
