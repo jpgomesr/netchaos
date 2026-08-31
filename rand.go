@@ -18,6 +18,14 @@ const (
 	kindLoss faultKind = iota
 	kindLatency
 
+	// kindDuplicate (M7-8, #53 candidate 3) has its own stream for the same
+	// reason kindLoss and kindLatency do: enabling WithDuplication on an
+	// existing test must not shift that test's loss or latency sequence.
+	// Unlike WithBandwidth (M7-5), which draws nothing, duplication is a
+	// per-unit Bernoulli decision and therefore does draw -- see
+	// installFaultPolicy's draw discipline (faults.go).
+	kindDuplicate
+
 	// kindCorrupt (M7-9, #53 candidate 4) has its own stream for the same
 	// reason kindLoss and kindLatency do: enabling WithCorruption on an
 	// existing test must not shift that test's loss or latency sequence.

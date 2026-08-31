@@ -1,17 +1,50 @@
 package netchaos
 
 import (
+	"fmt"
 	"io"
 	"sync"
 	"time"
 )
 
-// defaultPipeBound is the buffer bound used by pipes when no other bound is
-// specified. It is an arbitrary but reasonable analogue of a small OS socket
+// defaultPipeBound is the buffer bound used by pipes when WithPipeBound is
+// not given. It is an arbitrary but reasonable analogue of a small OS socket
 // receive buffer: large enough that ordinary test traffic doesn't spuriously
 // hit back-pressure, small enough that an unread connection still applies
 // back-pressure to its writer instead of buffering without limit.
 const defaultPipeBound = 64 * 1024
+
+// WithPipeBound sets the per-connection-direction buffer bound applied to
+// every connection n handles, in place of the default (defaultPipeBound, 64
+// KiB). The bound is what decides when a Write blocks on back-pressure: once
+// a direction's buffered-but-unread bytes would exceed it, the next Write
+// blocks until a Read frees enough room (M6-17, #52) — the same mechanism
+// newConnPairWithBound (conn.go) already varied from in-package tests, now
+// reachable from outside the package.
+//
+// One write is always admitted whole even if it exceeds the bound: a fault
+// unit is a whole Write (M0-3), never split, so a payload larger than the
+// bound is accepted only into a direction currently holding no buffered
+// bytes, and that single write's bytes may then sit above the configured
+// bound until read. Nothing else can be admitted alongside it until the
+// buffer drains back to (or below) the bound.
+//
+// bound must be positive; NewNetwork panics otherwise, naming WithPipeBound
+// and the offending value.
+func WithPipeBound(bound int) Option {
+	return func(c *networkConfig) {
+		c.pipeBoundEnabled = true
+		c.pipeBound = bound
+	}
+}
+
+// validatePipeBound panics, naming WithPipeBound and the offending value, if
+// bound is not positive.
+func validatePipeBound(bound int) {
+	if bound <= 0 {
+		panic(fmt.Sprintf("netchaos: WithPipeBound: bound must be > 0, got %v", bound))
+	}
+}
 
 // deliverFunc is the seam between a write being admitted (accounted against
 // the pipe's bound) and its data becoming visible to readers. M1 wires only
@@ -42,18 +75,19 @@ type pipe struct {
 	bound    int
 	deliver  deliverFunc
 
-	// loss, latency, and corrupt are this pipe's per-fault-kind draw streams
-	// (M0-4), derived once at creation from the owning connection's ordinal
-	// and the side writing into this pipe. trace records the fault
-	// decisions made for this direction, in write order. All four are nil
-	// for a pipe created without fault wiring (e.g. by pipe-level tests);
-	// fault code added from M2-2 onward must handle that case, since M1
-	// semantics (pass-through delivery) are still reachable with none of
-	// them set.
-	loss    *stream
-	latency *stream
-	corrupt *stream // M7-9
-	trace   *traceRecorder
+	// loss, latency, duplicate, and corrupt are this pipe's per-fault-kind
+	// draw streams (M0-4), derived once at creation from the owning
+	// connection's ordinal and the side writing into this pipe. trace
+	// records the fault decisions made for this direction, in write order.
+	// All five are nil for a pipe created without fault wiring (e.g. by
+	// pipe-level tests); fault code added from M2-2 onward must handle that
+	// case, since M1 semantics (pass-through delivery) are still reachable
+	// with none of them set.
+	loss      *stream
+	latency   *stream
+	duplicate *stream // M7-8
+	corrupt   *stream // M7-9
+	trace     *traceRecorder
 
 	// pending holds units admitted but held back for latency (M2-2) or
 	// bandwidth (M7-5), release-ordered (each entry's releaseAt is >= every

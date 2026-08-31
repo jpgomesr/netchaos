@@ -9,6 +9,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`WithPipeBound(bound int)` and `WithListenerBacklog(backlog int)`**
+  (`M7-6`, closes #52) — the per-connection-direction buffer bound
+  (`defaultPipeBound`, 64 KiB) and the accept-queue bound (`listenerBacklog`,
+  128) are now configurable rather than fixed constants reachable only from
+  in-package tests. `WithPipeBound` decides when a `Write` blocks on
+  back-pressure; `WithListenerBacklog` decides when a `Dial` fails
+  immediately with `ErrBacklogFull` instead of when the fixed default would.
+
+  Both validate as positive, panicking on an invalid value the same way
+  every other `Option` does, and both leave a default in place when not
+  given — a plain `NewNetwork()` behaves exactly as it did before this pair
+  existed. `M6-17` (#52) recommended landing this after `WithBandwidth`
+  (`M7-5`) specifically so the bound has a real back-pressure scenario to
+  test against — a throttle slower than the reader — rather than a synthetic
+  one, and the acceptance test does exactly that.
+
+- **`WithDuplication(rate float64)`** (`M7-8`, part of #53) — admits a
+  delivered `Write` unit a second time, with the given probability, drawn
+  from its own stream (`kindDuplicate`) independent of loss and latency.
+  Real TCP hides duplication from the application, but `M0-3` already chose
+  to model packet loss as a visible silent gap despite real TCP hiding that
+  too (by retransmitting), precisely so a test can exercise what the
+  application sees when the transport misbehaves; duplication is accepted
+  on the same reasoning.
+
+  The duplicate is delivered with the **same** release timing already
+  computed for the original — whatever `WithLatency`/`WithBandwidth`
+  decided applies to both copies, never an independently drawn delay for
+  the second one. A dropped unit is never duplicated, but duplication's
+  coin flip is still drawn for it, per the draw discipline.
+
+  **Accounting:** the duplicate counts against the pipe's buffer bound like
+  any other delivered bytes, and is an independent byte slice — mutating
+  one copy can never affect the other, which matters once a future
+  corruption fault can mutate a delivered payload in place.
+
+  **Trace format:** `faultEvent` gained a `duplicated` field, following
+  `M7-5`'s answer — emitted in a scenario's golden trace only when that
+  scenario declares it, so every golden trace that predates this change
+  stays byte-identical.
+
 - **`WithCorruption(rate float64)`** (`M7-9`, part of #53) — flips a single
   bit, chosen uniformly at random, in a delivered `Write` unit's content,
   with the given probability, drawn from its own stream (`kindCorrupt`)

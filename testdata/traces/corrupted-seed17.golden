@@ -2,22 +2,22 @@
 # scenario=corrupted seed=17
 # fields: ord side seq part drop corrupt drawn_ns eff_ns
 ord=0 side=dialer   seq=0 part=0 drop=0 corrupt=0 drawn=0 eff=0
-ord=0 side=dialer   seq=1 part=0 drop=0 corrupt=0 drawn=0 eff=0
+ord=0 side=dialer   seq=1 part=0 drop=0 corrupt=1 drawn=0 eff=0
 ord=0 side=dialer   seq=2 part=0 drop=0 corrupt=0 drawn=0 eff=0
 ord=0 side=dialer   seq=3 part=0 drop=0 corrupt=0 drawn=0 eff=0
 ord=0 side=dialer   seq=4 part=0 drop=0 corrupt=1 drawn=0 eff=0
-ord=0 side=dialer   seq=5 part=0 drop=0 corrupt=1 drawn=0 eff=0
-ord=0 side=dialer   seq=6 part=0 drop=0 corrupt=1 drawn=0 eff=0
-ord=0 side=dialer   seq=7 part=0 drop=0 corrupt=1 drawn=0 eff=0
-ord=0 side=dialer   seq=8 part=0 drop=0 corrupt=0 drawn=0 eff=0
+ord=0 side=dialer   seq=5 part=0 drop=0 corrupt=0 drawn=0 eff=0
+ord=0 side=dialer   seq=6 part=0 drop=0 corrupt=0 drawn=0 eff=0
+ord=0 side=dialer   seq=7 part=0 drop=0 corrupt=0 drawn=0 eff=0
+ord=0 side=dialer   seq=8 part=0 drop=0 corrupt=1 drawn=0 eff=0
 ord=0 side=dialer   seq=9 part=0 drop=0 corrupt=1 drawn=0 eff=0
-ord=0 side=dialer   seq=10 part=0 drop=0 corrupt=1 drawn=0 eff=0
-ord=0 side=dialer   seq=11 part=0 drop=0 corrupt=0 drawn=0 eff=0
+ord=0 side=dialer   seq=10 part=0 drop=0 corrupt=0 drawn=0 eff=0
+ord=0 side=dialer   seq=11 part=0 drop=0 corrupt=1 drawn=0 eff=0
 ord=0 side=dialer   seq=12 part=0 drop=0 corrupt=0 drawn=0 eff=0
 ord=0 side=dialer   seq=13 part=0 drop=0 corrupt=0 drawn=0 eff=0
 ord=0 side=dialer   seq=14 part=0 drop=0 corrupt=1 drawn=0 eff=0
 ord=0 side=dialer   seq=15 part=0 drop=0 corrupt=0 drawn=0 eff=0
 ord=0 side=dialer   seq=16 part=0 drop=0 corrupt=1 drawn=0 eff=0
-ord=0 side=dialer   seq=17 part=0 drop=0 corrupt=0 drawn=0 eff=0
+ord=0 side=dialer   seq=17 part=0 drop=0 corrupt=1 drawn=0 eff=0
 ord=0 side=dialer   seq=18 part=0 drop=0 corrupt=1 drawn=0 eff=0
 ord=0 side=dialer   seq=19 part=0 drop=0 corrupt=0 drawn=0 eff=0
