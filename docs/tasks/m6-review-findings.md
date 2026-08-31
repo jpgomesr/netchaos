@@ -648,7 +648,7 @@ Which of the three. (No longer gated on `M5-2`.)
 
 ### M6-18 — Two leak tests claim a property their assertion cannot observe
 
-**Status:** todo
+**Status:** done
 **Roadmap item:** none (test correctness — found while doing [M6-6](#m6-6--close-the-three-named-test-coverage-gaps))
 **Depends on:** —
 **Blocks:** —
@@ -676,12 +676,35 @@ The consequence is narrow but real: **no test in the repo currently proves that 
 - `docs/tasks/m3-synctest-and-reproducibility.md` — the decision note, if it is corrected
 
 **Acceptance criteria**
-- [ ] A test fails when `pipe.close`'s `timer.Stop()` is removed, demonstrated rather than assumed.
-- [ ] `TestCloseWithInFlightWorkInBubble` and `TestNoLatencyTimerLeaks` describe what their assertions actually observe.
-- [ ] The bubble's real value — catching goroutines still running at exit — is still stated, not thrown out with the overstatement.
+- [x] A test fails when `pipe.close`'s `timer.Stop()` is removed, demonstrated rather than assumed.
+- [x] `TestCloseWithInFlightWorkInBubble` and `TestNoLatencyTimerLeaks` describe what their assertions actually observe.
+- [x] The bubble's real value — catching goroutines still running at exit — is still stated, not thrown out with the overstatement.
+
+**How it was resolved**
+
+A bare nil check on `pipe.timer` turned out not to satisfy the task's own red recipe. `pipe.close`'s block is:
+
+```go
+if p.timer != nil {
+    p.timer.Stop()
+    p.timer = nil
+}
+```
+
+Removing only `p.timer.Stop()` leaves `p.timer = nil` in place, so a nil check alone stays green against exactly the mutation the acceptance criterion names — it only catches deleting the *whole* block. So `assertPipeTimerDisarmed` (`leak_test.go`, next to `assertDeadlineTimerDisarmed`, which it mirrors) makes two checks, not one:
+
+1. `p.timer == nil` after close, under `p.mu` — catches the whole block disappearing.
+2. The timer captured *before* `Close` (read under `p.mu` immediately after the write that arms it) is actually disarmed: calling `Stop()` on it after both closes returns `false` when `pipe.close` already stopped it, and `true` when this call is what stopped a still-armed timer. `true` is the failure — this is the check that catches deleting `timer.Stop()` alone.
+
+Both mutations were run and confirmed red independently: deleting only `timer.Stop()` failed check (2) with `"pipe delivery timer was still running after Close"`; deleting the whole block failed both checks. `git diff pipe.go` was empty before committing — `pipe.close` and `conn.Close` are unchanged, as scoped.
+
+`TestCloseWithInFlightWorkInBubble` now calls the helper after both closes, capturing the armed timer via `client.(*conn).writePipe` right after the in-flight write. Its docstring and `TestNoLatencyTimerLeaks`'s were both rewritten to stop crediting the bubble's completion with proving the disarm, while keeping the bubble's real, narrower claim — no goroutine outlives it — stated plainly. `TestNoGoroutineLeaks`'s comment (`leak_test.go`), which repeated the same overstatement as an open gap rather than a fixed one, was swept too, though it wasn't named in the task's own files list.
+
+[`docs/tasks/m3-synctest-and-reproducibility.md`](m3-synctest-and-reproducibility.md)'s `M3-1` decision note — the one this task's own text said to consider correcting — now carries a superseded-in-part blockquote pointing here, in the shape `M7-2` used on `M6-9`.
 
 **Tests**
 - Red first, by deletion: remove `timer.Stop()` from `pipe.close`, confirm the new assertion fails, restore it.
+- `assertPipeTimerDisarmed`, called from `TestCloseWithInFlightWorkInBubble`.
 - Verify: `go build ./... && go vet ./... && gofmt -l . && go test -race ./... && golangci-lint run`
 
 ---
