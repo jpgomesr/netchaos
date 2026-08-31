@@ -4,6 +4,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -42,6 +43,25 @@ type conn struct {
 
 	closeOnce sync.Once
 	closed    chan struct{}
+
+	// resetCh and resetOnce are Network.Reset's mechanism (M7-7): always
+	// allocated (even for a conn built without a Network, e.g. by
+	// pipe-level tests) so Read/Write can select on resetCh
+	// unconditionally, but only ever closed by conn.triggerReset, which
+	// only Network.Reset calls. Closing it -- once, via resetOnce -- is
+	// what makes a reset stick: every Read/Write after the close observes
+	// the same already-closed channel, so "stays reset" falls out of the
+	// channel's own semantics rather than a separate flag to keep in sync.
+	resetCh   chan struct{}
+	resetOnce sync.Once
+
+	// nw and pair identify this conn to Network.Reset's registry, so
+	// Close can deregister it (nw.deregisterReset) rather than leaking a
+	// reference for the life of the Network. nw is nil for a conn built
+	// without a Network (pipe-level tests), which is never registered and
+	// so never needs deregistering -- the nil check in Close covers it.
+	nw   *Network
+	pair pairKey
 
 	rd, wd *deadline
 }
@@ -89,6 +109,7 @@ func newConnPairWithSeed(clientAddr, serverAddr *addr, ordinal uint64, network s
 		writePipe: clientToServer,
 		readPipe:  serverToClient,
 		closed:    make(chan struct{}),
+		resetCh:   make(chan struct{}),
 		rd:        newDeadline(),
 		wd:        newDeadline(),
 	}
@@ -101,10 +122,21 @@ func newConnPairWithSeed(clientAddr, serverAddr *addr, ordinal uint64, network s
 		writePipe: serverToClient,
 		readPipe:  clientToServer,
 		closed:    make(chan struct{}),
+		resetCh:   make(chan struct{}),
 		rd:        newDeadline(),
 		wd:        newDeadline(),
 	}
 	return client, server
+}
+
+// triggerReset closes c.resetCh, idempotently, causing every current and
+// future Read/Write on c to fail with an error satisfying
+// errors.Is(err, syscall.ECONNRESET) -- Network.Reset's mechanism (M7-7).
+// Unexported: only Network.Reset calls it, never a conn on itself.
+func (c *conn) triggerReset() {
+	c.resetOnce.Do(func() {
+		close(c.resetCh)
+	})
 }
 
 func (c *conn) opError(op string, err error) error {
@@ -113,11 +145,18 @@ func (c *conn) opError(op string, err error) error {
 
 // Read implements net.Conn. See the package-level pipe documentation for
 // coalescing/partial-read behaviour.
+//
+// A reset connection (Network.Reset, M7-7) always fails Read with an error
+// satisfying errors.Is(err, syscall.ECONNRESET), checked first and
+// unconditionally: unlike the pipe-state checks below it, a reset does not
+// let already-buffered data drain first.
 func (c *conn) Read(b []byte) (int, error) {
 	for {
 		select {
 		case <-c.closed:
 			return 0, c.opError("read", net.ErrClosed)
+		case <-c.resetCh:
+			return 0, c.opError("read", syscall.ECONNRESET)
 		default:
 		}
 
@@ -134,12 +173,17 @@ func (c *conn) Read(b []byte) (int, error) {
 		case <-ch:
 		case <-dch:
 		case <-c.closed:
+		case <-c.resetCh:
 		}
 	}
 }
 
 // Write implements net.Conn. It never reports a short write without a
 // non-nil error, per io.Writer's contract.
+//
+// A reset connection (Network.Reset, M7-7) always fails Write with an error
+// satisfying errors.Is(err, syscall.ECONNRESET), checked first and
+// unconditionally, the same as Read.
 func (c *conn) Write(b []byte) (int, error) {
 	// io.Writer callers may reuse b once Write returns; the pipe retains
 	// queued data beyond this call, so it needs its own copy.
@@ -149,6 +193,8 @@ func (c *conn) Write(b []byte) (int, error) {
 		select {
 		case <-c.closed:
 			return 0, c.opError("write", net.ErrClosed)
+		case <-c.resetCh:
+			return 0, c.opError("write", syscall.ECONNRESET)
 		default:
 		}
 
@@ -175,6 +221,7 @@ func (c *conn) Write(b []byte) (int, error) {
 		case <-ch:
 		case <-dch:
 		case <-c.closed:
+		case <-c.resetCh:
 		}
 	}
 }
@@ -183,6 +230,9 @@ func (c *conn) Write(b []byte) (int, error) {
 func (c *conn) Close() error {
 	c.closeOnce.Do(func() {
 		close(c.closed)
+		if c.nw != nil {
+			c.nw.deregisterReset(c.pair, c)
+		}
 		_ = c.writePipe.close()
 		_ = c.readPipe.close()
 		c.rd.stop()

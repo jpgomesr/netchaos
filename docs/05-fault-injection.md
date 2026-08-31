@@ -50,6 +50,16 @@ netchaos's v1 scope (per the root README's checklist) covers three fault categor
 
 **What it's for:** Testing behaviour under a slow link — does a client's timeout budget account for a large payload taking real time to transfer, does streaming logic keep up with (or correctly apply back-pressure against) a constrained connection.
 
+## Mid-stream connection reset
+
+**What it does:** Abruptly terminates every currently-established connection between two named simulated peers — the clearest gap `Partition` leaves rather than an enhancement of it. `Partition` is deliberately a silent black hole (writes accepted and discarded, reads blocking to their deadline), never an `ECONNRESET`. Testing "the peer dropped the connection" previously meant holding the server-side `net.Conn` and calling `Close` yourself.
+
+**Configuration:** `Network.Reset(peerA, peerB string)` — an imperative method, like `Partition`/`Heal`, decided by the maintainer rather than a per-unit drawn `Option`. See [04 — API Design § Mid-stream connection reset](04-api-design.md#mid-stream-connection-reset) for the full contract, including how it differs from `Partition` in three deliberate ways (no effect on `Dial`, does not persist past the connections live at the moment it is called, and is a no-op for an unestablished pair).
+
+**Not a per-unit fault:** unlike every other kind in this document, `Reset` takes no random draws, has no `faultKind`, and plays no part in `installFaultPolicy`'s composed evaluator or its fixed order above. It cannot perturb, and is not perturbed by, any connection's loss/latency/bandwidth/duplication/corruption sequence.
+
+**What it's for:** Testing reconnect and retry logic against an abrupt failure — does your client detect `ECONNRESET` and reconnect rather than treating it like a timeout, does a connection pool evict a reset connection instead of returning it to a caller again.
+
 ## Partition
 
 **What it does:** Drops **all** traffic between two named simulated peers, unlike packet loss which drops probabilistically. A partition is binary and (per the [API](04-api-design.md#dynamic-partition-control)) persists until explicitly healed. Unlike latency and packet loss, partition consumes no random draws — see [04 — API Design § Determinism contract](04-api-design.md#determinism-contract) — so partitioning one pair can never perturb another connection's fault sequence.
@@ -64,12 +74,11 @@ netchaos's v1 scope (per the root README's checklist) covers three fault categor
 
 ## Accepted for v0.2.0, not yet implemented
 
-[M6-11](tasks/m6-review-findings.md#m6-11--decide-which-new-fault-kinds-if-any-enter-v02) accepted four further fault kinds into `v0.2.0` scope. Bandwidth throttling **shipped** in [M7-5](tasks/m7-v0.2.0-implementation.md#m7-5--fault-kind-bandwidth-throttling) — see the Bandwidth throttling section above. The remaining three are not implemented; each gets its own task. Recorded here so this document stays the place a reader looks for what netchaos can fault, and [06 — Scope & Roadmap § Accepted for v0.2.0](06-scope-and-roadmap.md#accepted-for-v02) carries the reasoning.
+[M6-11](tasks/m6-review-findings.md#m6-11--decide-which-new-fault-kinds-if-any-enter-v02) accepted four further fault kinds into `v0.2.0` scope. Bandwidth throttling **shipped** in [M7-5](tasks/m7-v0.2.0-implementation.md#m7-5--fault-kind-bandwidth-throttling) and mid-stream connection reset **shipped** in [M7-7](tasks/m7-v0.2.0-implementation.md#m7-7--fault-kind-mid-stream-connection-reset) — see the sections above. The remaining two are not implemented; each gets its own task. Recorded here so this document stays the place a reader looks for what netchaos can fault, and [06 — Scope & Roadmap § Accepted for v0.2.0](06-scope-and-roadmap.md#accepted-for-v02) carries the reasoning.
 
-- **Mid-stream connection reset** — an established conn failing abruptly. This is a genuine gap rather than an enhancement: `Partition` is the nearest thing today and is deliberately a silent black hole (writes accepted and discarded, reads blocking to their deadline), not an `ECONNRESET`.
 - **Packet duplication** and **data corruption / bit flips** — accepted on the [M0-3](tasks/m0-decisions-and-foundations.md#m0-3--decide-fault-granularity-per-write-vs-per-simulated-packet) precedent. Real TCP hides both from the application, as it also hides packet *loss* by retransmitting; netchaos chose the silent-gap model for loss anyway, precisely so a test can exercise what the application sees when the transport does not behave. The same reasoning extends here, and was applied explicitly rather than by analogy.
 
-A new kind that draws gets its own `faultKind` byte and therefore its own derived stream, so **adding one cannot perturb any existing test's latency or loss sequence** — new kinds are additive rather than a golden-trace break. Bandwidth is the counterexample worth naming: it draws nothing at all, so it needed neither a byte nor a stream, and the same non-perturbation guarantee holds for the stronger reason that there is no draw to place anywhere in the sequence. Each remaining kind that does draw must respect the M2-5 draw discipline above: draw unconditionally on every unit past the partition gate, like the existing two.
+A new kind that draws gets its own `faultKind` byte and therefore its own derived stream, so **adding one cannot perturb any existing test's latency or loss sequence** — new kinds are additive rather than a golden-trace break. Bandwidth and mid-stream reset are both counterexamples worth naming, for different reasons: bandwidth draws nothing at all, so it needed neither a byte nor a stream; reset is not a per-unit fault at all, so the question of a draw does not apply to it either. Each remaining kind that does draw must respect the M2-5 draw discipline above: draw unconditionally on every unit past the partition gate, like the existing two.
 
 ## Reordering (deferred, not in v1)
 
