@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.2.0] — 2026-08-31
+
+Implements every item [`docs/06` § Accepted for v0.2.0](docs/06-scope-and-roadmap.md#accepted-for-v02) accepted, plus `Network.DialerFor` — the one thing [M7](docs/tasks/m7-v0.2.0-implementation.md) decided itself rather than inherited from a prior milestone's decision. Ten tasks, ten PRs, each tracked against an open issue (`#36`, `#49` through `#53`); see `docs/tasks/m7-v0.2.0-implementation.md` for the full sequencing and how each was resolved.
+
+No breaking change in the sense of code that fails to compile against `v0.1.0` — every addition below is a new identifier. **One behavioural change worth flagging on upgrade:** address strings now carry a synthesized port (`RemoteAddr().String()` returns `"server:8000"`, not `"server"`), so any test asserting an address string literally will need updating; peer identity (what `Partition`/`Heal`/`Reset` target) is unaffected, since it stays the host half alone.
+
+**Not yet done:** the `v0.2.0` surface added below has not had its own pass through [M5-2](docs/tasks/m5-hardening-and-ergonomics.md#m5-2--api-ergonomics-review-before-v100)'s ergonomics review — that review closed before these ten tasks existed. `docs/04` flags this as a gate still open before `v1.0.0`.
+
 ### Added
 
 - **`Network.Trace() []FaultEvent`** (`M7-10`, closes #51) — exports the

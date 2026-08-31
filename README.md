@@ -8,7 +8,7 @@
 [![golangci-lint](https://github.com/jpgomesr/netchaos/actions/workflows/golangci-lint.yml/badge.svg)](https://github.com/jpgomesr/netchaos/actions/workflows/golangci-lint.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> **Status: `v0.1.0` released.** v1 is implemented, tested, and documented. The API is stable but not frozen until `v1.0.0` — see [docs/07 — Contributing](docs/07-contributing.md). Requires Go 1.25+ (`testing/synctest`).
+> **Status: `v0.2.0` released.** v1's simulated transport and its three core faults are implemented, tested, and documented; `v0.2.0` adds bandwidth throttling, packet duplication, data corruption, mid-stream connection reset, live mutation of latency/loss on established connections, and an exported fault trace on top of it. The API is stable but not frozen until `v1.0.0` — see [docs/07 — Contributing](docs/07-contributing.md). Requires Go 1.25+ (`testing/synctest`).
 
 **Full design documentation:** [`docs/`](docs/README.md)
 
@@ -16,7 +16,7 @@
 
 ## What this is
 
-`netchaos` is a Go library that provides simulated `net.Conn` and `net.Listener` implementations with deterministic fault injection: latency, packet loss, and partitions. It's designed to be imported directly into `go test`, with no external process, no proxy, and no daemon — and to compose naturally with Go's own `testing/synctest` for virtual time.
+`netchaos` is a Go library that provides simulated `net.Conn` and `net.Listener` implementations with deterministic fault injection: latency, packet loss, bandwidth throttling, packet duplication, data corruption, network partition, and mid-stream connection reset (see [docs/05 — Fault Injection](docs/05-fault-injection.md)). It's designed to be imported directly into `go test`, with no external process, no proxy, and no daemon — and to compose naturally with Go's own `testing/synctest` for virtual time.
 
 The goal is narrow and specific: let you write a **unit test** that proves your retry logic, timeout handling, or circuit breaker reacts correctly to a bad network — in milliseconds, deterministically, reproducibly, on any CI runner, with zero setup.
 
@@ -97,12 +97,26 @@ To avoid the trap of "framework covering everything" — the same trap that turn
 
 Explicitly out of scope for v1: reordering, disk fault injection, full syscall simulation, UDP support, protocol-level fault injection above the connection layer, and per-peer-pair scoping of latency/loss. Reordering and per-pair scoping are genuinely open for post-v1 consideration; the rest are excluded on a design principle, not sequencing — see [docs/06 — Scope & Roadmap](docs/06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1) for which is which.
 
+## `v0.2.0` additions
+
+Everything above shipped as `v0.1.0`. `v0.2.0` adds, on top of it:
+
+- **Bandwidth throttling, packet duplication, and data corruption** — three further fault kinds, composed into the same fixed evaluation order as latency and packet loss.
+- **Mid-stream connection reset** (`Network.Reset`) — an abrupt `ECONNRESET` on an already-established connection, closing the one gap `Partition`'s silent-black-hole model deliberately leaves.
+- **Live mutation of latency and packet loss** (`Network.SetLatency`/`Network.SetPacketLoss`) — the same "already-established connections, not just future dials" semantics `Partition`/`Heal` have.
+- **`Network.DialerFor`** — a partition-targetable `net.Dial`-shaped dial function, for client constructors that only accept a plain dial func.
+- **Host:port address structure** — `net.SplitHostPort` now succeeds against a netchaos address, the way it does against a real one.
+- **`Network.Trace`** — exports the full per-connection fault decision log, so a test can assert an exact count ("exactly 3 writes dropped") instead of only the downstream symptom.
+- **`WithPipeBound`/`WithListenerBacklog`** — the connection buffer size and accept-queue depth, previously fixed constants, are now configurable.
+
+Full detail on each: [`CHANGELOG.md`](CHANGELOG.md) for what shipped and why, [docs/04 — API Design](docs/04-api-design.md) for the exact signatures and semantics, [docs/05 — Fault Injection](docs/05-fault-injection.md) for the fault mechanics. The Claude Code skill at [`.claude/skills/netchaos/`](.claude/skills/netchaos/) is a self-contained reference covering the whole `v0.2.0` surface, usable from any project that adds netchaos as a dependency.
+
 ## Installation
 
 Requires **Go 1.25 or later** — `testing/synctest`, which netchaos's virtual-time integration depends on, was introduced in Go 1.25 and cannot be used on an older toolchain.
 
 ```
-go get github.com/jpgomesr/netchaos@v0.1.0
+go get github.com/jpgomesr/netchaos@v0.2.0
 ```
 
 ## Contributing
