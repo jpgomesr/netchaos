@@ -230,4 +230,3 @@ func TestSideString(t *testing.T) {
 		t.Fatalf("SideAcceptor.String() = %q, want %q", got, "acceptor")
 	}
 }
-
