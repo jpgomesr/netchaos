@@ -1,0 +1,23 @@
+# netchaos-trace v1
+# scenario=throttled seed=99
+# fields: ord side seq part drop thr_ns drawn_ns eff_ns
+ord=0 side=dialer   seq=0 part=0 drop=0 thr=500000 drawn=1238565 eff=1238565
+ord=0 side=dialer   seq=1 part=0 drop=0 thr=1000000 drawn=2986933 eff=2986933
+ord=0 side=dialer   seq=2 part=0 drop=0 thr=1500000 drawn=4440383 eff=4440383
+ord=0 side=dialer   seq=3 part=0 drop=0 thr=2000000 drawn=1221863 eff=3940383
+ord=0 side=dialer   seq=4 part=0 drop=0 thr=2500000 drawn=4988387 eff=4988387
+ord=0 side=dialer   seq=5 part=0 drop=0 thr=3000000 drawn=4955870 eff=4955870
+ord=0 side=dialer   seq=6 part=0 drop=0 thr=3500000 drawn=3742565 eff=4455870
+ord=0 side=dialer   seq=7 part=0 drop=0 thr=4000000 drawn=2322577 eff=3955870
+ord=0 side=dialer   seq=8 part=0 drop=0 thr=4500000 drawn=3251957 eff=3455870
+ord=0 side=dialer   seq=9 part=0 drop=0 thr=5000000 drawn=2345569 eff=2955870
+ord=0 side=dialer   seq=10 part=0 drop=0 thr=5500000 drawn=4084286 eff=4084286
+ord=0 side=dialer   seq=11 part=0 drop=0 thr=6000000 drawn=1945727 eff=3584286
+ord=0 side=dialer   seq=12 part=0 drop=0 thr=6500000 drawn=3826794 eff=3826794
+ord=0 side=dialer   seq=13 part=0 drop=0 thr=7000000 drawn=4260578 eff=4260578
+ord=0 side=dialer   seq=14 part=0 drop=0 thr=7500000 drawn=4900163 eff=4900163
+ord=0 side=dialer   seq=15 part=0 drop=0 thr=8000000 drawn=1306764 eff=4400163
+ord=0 side=dialer   seq=16 part=0 drop=0 thr=8500000 drawn=4645616 eff=4645616
+ord=0 side=dialer   seq=17 part=0 drop=0 thr=9000000 drawn=2133294 eff=4145616
+ord=0 side=dialer   seq=18 part=0 drop=0 thr=9500000 drawn=3760719 eff=3760719
+ord=0 side=dialer   seq=19 part=0 drop=0 thr=10000000 drawn=3313800 eff=3313800

@@ -12,7 +12,8 @@ type faultEvent struct {
 	partitioned bool
 	dropped     bool
 	drawn       time.Duration // duration drawn from the latency stream; zero if latency isn't configured
-	effective   time.Duration // duration actually applied after any clamping (M2-2)
+	serialized  time.Duration // this unit's contribution to link-busy time under a throttle (M7-5); zero if bandwidth isn't configured
+	effective   time.Duration // duration actually applied, relative to when serialization finished, after any clamping (M2-2)
 }
 
 // traceRecorder accumulates faultEvents for one connection direction, in

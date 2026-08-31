@@ -80,11 +80,13 @@ func NewNetwork(opts ...Option) *Network {
 	n := &Network{
 		seed: cfg.seed,
 		faults: faultConfig{
-			lossEnabled:    cfg.lossEnabled,
-			lossRate:       cfg.lossRate,
-			latencyEnabled: cfg.latencyEnabled,
-			latencyMin:     cfg.latencyMin,
-			latencyMax:     cfg.latencyMax,
+			lossEnabled:      cfg.lossEnabled,
+			lossRate:         cfg.lossRate,
+			latencyEnabled:   cfg.latencyEnabled,
+			latencyMin:       cfg.latencyMin,
+			latencyMax:       cfg.latencyMax,
+			bandwidthEnabled: cfg.bandwidthEnabled,
+			bandwidthBPS:     cfg.bandwidthBPS,
 		},
 		partitions:     make(map[pairKey]struct{}, len(cfg.staticPartitions)),
 		partNotify:     make(chan struct{}),
@@ -300,7 +302,7 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 
 	// A single composed evaluator per direction (M2-5) — the only place
 	// fault policy is evaluated per unit, in the fixed order documented on
-	// installFaultPolicy: partition, then loss, then latency.
+	// installFaultPolicy: partition, then loss, then bandwidth, then latency.
 	// No configuration is copied in here. The evaluator reads it from n on
 	// every unit, which is what lets SetLatency/SetPacketLoss reach this
 	// connection after it is established (M7-4).

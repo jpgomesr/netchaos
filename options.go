@@ -23,6 +23,14 @@ type networkConfig struct {
 	lossEnabled bool
 	lossRate    float64
 
+	// bandwidthEnabled distinguishes "WithBandwidth was never given" (no
+	// serialization delay, byte-identical to pass-through delivery) from a
+	// configured throttle. There is no degenerate-but-explicit case to
+	// distinguish here (unlike loss's 0.0 or latency's 0,0): bytesPerSecond
+	// must be positive, so every configured value delays delivery.
+	bandwidthEnabled bool
+	bandwidthBPS     int
+
 	// staticPartitions accumulates the raw peer-name pairs named by
 	// WithPartition, kept unresolved (not yet a pairKey) until validate()
 	// has checked them and NewNetwork applies them to Network.partitions.
@@ -52,6 +60,9 @@ func (c *networkConfig) validate() {
 	}
 	if c.latencyEnabled {
 		validateLatencyRange(c.latencyMin, c.latencyMax)
+	}
+	if c.bandwidthEnabled {
+		validateBandwidthRate(c.bandwidthBPS)
 	}
 	for _, p := range c.staticPartitions {
 		validatePartitionPair(p)
