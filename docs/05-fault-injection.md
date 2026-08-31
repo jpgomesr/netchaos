@@ -104,11 +104,17 @@ netchaos's v1 scope (per the root README's checklist) covers three fault categor
 
 **What it's for:** Testing circuit breakers and failover logic — does your code detect a fully-unreachable peer and open its circuit breaker, does it correctly fail over to another peer, does it recover once the partition heals (`Heal`) without requiring a process restart.
 
-## Accepted for v0.2.0, not yet implemented
+## Fault kinds added in v0.2.0
 
 [M6-11](tasks/m6-review-findings.md#m6-11--decide-which-new-fault-kinds-if-any-enter-v02) accepted four further fault kinds into `v0.2.0` scope, and **all four have shipped**: bandwidth throttling in [M7-5](tasks/m7-v0.2.0-implementation.md#m7-5--fault-kind-bandwidth-throttling), packet duplication in [M7-8](tasks/m7-v0.2.0-implementation.md#m7-8--fault-kind-packet-duplication), data corruption in [M7-9](tasks/m7-v0.2.0-implementation.md#m7-9--fault-kind-data-corruption), and mid-stream connection reset in [M7-7](tasks/m7-v0.2.0-implementation.md#m7-7--fault-kind-mid-stream-connection-reset) — see the sections above. Recorded here so this document stays the place a reader looks for what netchaos can fault, and [06 — Scope & Roadmap § Accepted for v0.2.0](06-scope-and-roadmap.md#accepted-for-v02) carries the reasoning.
 
 A new kind that draws gets its own `faultKind` byte and therefore its own derived stream, so **adding one cannot perturb any existing test's latency, loss, duplication, or corruption sequence** — new kinds are additive rather than a golden-trace break. Bandwidth and mid-stream reset are both counterexamples worth naming, for different reasons: bandwidth draws nothing at all, so it needed neither a byte nor a stream; reset is not a per-unit fault at all, so the question of a draw does not apply to it either. Every kind that does draw respects the M2-5 draw discipline above: it draws unconditionally on every unit past the partition gate, like loss, latency, duplication, and corruption.
+
+## Full fault trace export
+
+Every fault decision described above is recorded, always, on every direction of every connection — not opt-in, and this does not change with what's configured. `Network.Trace() []FaultEvent` ([M7-10](tasks/m7-v0.2.0-implementation.md#m7-10--export-the-full-fault-trace), issue [#51](https://github.com/jpgomesr/netchaos/issues/51), decided by [M6-14](tasks/m6-review-findings.md#m6-14--decide-whether-to-export-fault-observability)) makes that recording reachable from outside the package, closing the deferral `M2-1` recorded when the recording mechanism was first built. See [04 — API Design § Full fault trace export](04-api-design.md#full-fault-trace-export) for the type shapes, field-by-field godoc, and what a caller should not read into a zero-valued duration.
+
+What this buys concretely: a test exercising `WithPacketLoss` can assert `len(events) == 3` for the drops it expects, rather than only observing the downstream effect (a short read) and inferring the cause. It does not cover `Network.Reset` (an imperative action, not a per-unit decision) or a dial that never established (no pipes were ever created to trace).
 
 ## Reordering (deferred, not in v1)
 

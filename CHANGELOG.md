@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`Network.Trace() []FaultEvent`** (`M7-10`, closes #51) — exports the
+  fault trace that was always recorded internally, for every direction of
+  every connection, but was never reachable from outside the package.
+  Closes the deferral `M2-1` recorded when the recording mechanism was
+  first built. Returns the **full trace**, not counters — the more
+  expensive commitment (`M6-14`'s decision), since retracting an exported
+  event type later is not additive the way widening a counter would be.
+
+  `FaultEvent` carries `Ordinal`/`Side`/`Seq` (which connection direction,
+  and this event's position within it), four independent booleans
+  (`Partitioned`, `Dropped`, `Duplicated`, `Corrupted` — not mutually
+  exclusive, since the draw discipline records `Duplicated`/`Corrupted`
+  even on a unit `Dropped` already discarded), and three durations
+  (`Delay`, `Serialization`, `Effective`). Read the godoc before asserting
+  on the durations: `Delay == 0` does not mean latency wasn't configured
+  (`WithLatency(0, 0)`/`SetLatency(0, 0)` still draws), and `Effective` is
+  relative to when serialization finished, not the total delay from
+  `Write` — that total is `Serialization + Effective`.
+
+  **Retention differs from `Network.Reset`'s registry on purpose.** A
+  connection's trace stays reachable from `Network.Trace` for the
+  `Network`'s own lifetime, even after the connection itself has been
+  closed — the common `defer c.Close()` case — rather than being pruned on
+  `Close` the way `Reset`'s target registry (`M7-7`) is.
+
+  Does not cover `Network.Reset` (an imperative action, not a per-unit
+  decision — no event is recorded) or a dial that never established (no
+  pipes were ever created to trace).
+
 - **`Network.Reset(peerA, peerB string)`** (`M7-7`, closes #53) — abruptly
   terminates every currently-established connection between two named
   peers: both ends' subsequent `Read`/`Write` calls, and any already

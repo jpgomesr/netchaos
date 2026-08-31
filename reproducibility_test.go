@@ -6,13 +6,26 @@ package netchaos
 // fault traces across runs, across real concurrency, and (via checked-in
 // golden files) across machines and Go versions.
 //
-// No new exported API. traceRecorder and faultEvent (trace.go) are
-// deliberately unexported -- M2-1 explicitly deferred exporting an
-// accessor, and docs/04's banner says M3 adds no API surface. captureTrace
-// below reaches them the same way every existing in-package test does: a
-// net.Conn from Dial/Accept is always a *conn in this package, and
-// *conn.writePipe.trace is always non-nil (newConnPairWithSeed allocates
-// one for both pipes of every pair, conn.go).
+// No new exported API from M3 itself: traceRecorder and faultEvent
+// (trace.go) were unexported when this harness was built, and docs/04's
+// banner at the time said M3 added no API surface. M2-1's deferral of an
+// accessor was resolved later, by M7-10 (Network.Trace, issue #51) --
+// captureTrace below still reaches traceRecorder/faultEvent directly
+// rather than through that accessor, and deliberately keeps doing so; see
+// the note below. A net.Conn from Dial/Accept is always a *conn in this
+// package, and *conn.writePipe.trace is always non-nil (newConnPairWithSeed
+// allocates one for both pipes of every pair, conn.go).
+//
+// captureTrace is NOT rebuilt on top of Network.Trace, even though both
+// now produce the same (ordinal, side, seq) canonical order. This harness's
+// direction-coverage rule -- a scenario must return every conn end it
+// created, or captureTrace silently captures half the directions in play --
+// is what enforces the coverage property golden traces depend on;
+// Network.Trace has no such rule; it returns everything a Network has ever
+// dialed, closed connections included, with no way for a caller to assert
+// "and nothing else". Golden traces must also stay byte-identical, so
+// switching the harness's own read path is not a change to make in the same
+// PR that adds the read path.
 //
 // canonicalTrace is a concatenation ordered by (ordinal, side, seq), never
 // a wall-clock merge and never a global sort across directions. Per-

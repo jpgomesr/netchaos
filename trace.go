@@ -46,3 +46,163 @@ func (r *traceRecorder) snapshot() []faultEvent {
 	copy(out, r.events)
 	return out
 }
+
+// Side identifies which end of a connection a FaultEvent belongs to. It
+// mirrors connSide (conn.go) as an exported value.
+//
+// The two enums must agree value-for-value: the assertion below fails the
+// build if either const block is ever reordered, rather than silently
+// mislabeling every exported event's side — the same "exactly one place"
+// caution addr.go's type comment carries for peer identity, applied here.
+type Side int
+
+const (
+	SideDialer Side = iota
+	SideAcceptor
+)
+
+// String reports "dialer" or "acceptor", used in test failure output.
+func (s Side) String() string {
+	switch s {
+	case SideDialer:
+		return "dialer"
+	case SideAcceptor:
+		return "acceptor"
+	default:
+		return "unknown"
+	}
+}
+
+// Compile-time assertion that Side and connSide agree value-for-value: an
+// array bound that is a nonzero constant, in either direction, fails to
+// compile.
+var (
+	_ [SideDialer - Side(sideDialer)]byte
+	_ [Side(sideDialer) - SideDialer]byte
+	_ [SideAcceptor - Side(sideAcceptor)]byte
+	_ [Side(sideAcceptor) - SideAcceptor]byte
+)
+
+// FaultEvent is one fault-injection decision recorded for a single Write
+// unit (M0-3's fault unit) on one direction of one connection, exported by
+// Network.Trace (M7-10, issue #51). It is faultEvent plus the (Ordinal,
+// Side) identity needed to attribute an event to a connection direction
+// once it has left traceRecorder's per-direction scope.
+//
+// Ordinal and Side identify the connection direction this event belongs
+// to: Ordinal is the connection's dial-order ordinal (the determinism
+// contract, docs/04, already fixes this order), and Side is which end
+// produced the event. Seq is this event's position within that direction's
+// own trace, starting at 0.
+//
+// Partitioned, Dropped, Duplicated and Corrupted are independent, not
+// mutually exclusive — the draw discipline records Duplicated and
+// Corrupted even for a unit Dropped already discarded, so more than one
+// can be true on the same event. Partitioned is never true alongside any
+// other field: a partitioned unit draws nothing (the determinism
+// contract's zero-draw exception), so every other field on that event is
+// its zero value.
+//
+// Delay, Serialization and Effective are durations, and reading them
+// correctly depends on which fault produced the event:
+//
+//   - Delay is the duration drawn from WithLatency's/SetLatency's stream.
+//     Zero is ambiguous by itself: an explicit fixed-zero delay
+//     (WithLatency(0, 0) or SetLatency(0, 0)) still draws, so Delay == 0
+//     does not distinguish "latency not configured" from "configured,
+//     drew zero" — the property this field exists to make observable in
+//     the first place.
+//   - Serialization is this unit's contribution to link-busy time under
+//     WithBandwidth; zero whenever bandwidth isn't configured.
+//   - Effective is the delay actually applied, measured from when
+//     serialization finished (not from when the unit was written), after
+//     any clamping against an already-pending unit ahead of it (M2-2). A
+//     unit's total delay from Write to delivery is Serialization +
+//     Effective.
+//
+// On a Dropped event, Delay/Serialization/Effective describe what was
+// drawn or computed before loss discarded the unit, not a delivery that
+// happened: Delay may be non-zero for a unit that was never sent, and
+// Serialization and Effective are always zero, since loss short-circuits
+// installFaultPolicy's evaluator before either is computed (faults.go).
+type FaultEvent struct {
+	Ordinal uint64
+	Side    Side
+	Seq     uint64
+
+	Partitioned bool
+	Dropped     bool
+	Duplicated  bool
+	Corrupted   bool
+
+	Delay         time.Duration
+	Serialization time.Duration
+	Effective     time.Duration
+}
+
+// traceHandle is what Network.Trace (M7-10) keeps for one connection
+// direction: enough to reconstruct FaultEvent.Ordinal and FaultEvent.Side
+// without retaining the *conn that produced the direction, or that conn's
+// pipes' buffered data and deadline timers.
+type traceHandle struct {
+	ordinal uint64
+	side    connSide
+	rec     *traceRecorder
+}
+
+// registerTrace records rec as one connection direction's trace. Called
+// once per direction from DialContext, in dial order — which is also
+// ordinal order, since the determinism contract already fixes that — so
+// Network.Trace's (ordinal, side, seq) canonical order falls out of append
+// order and needs no sort.
+//
+// Unlike registerReset (reset.go), an entry here is never removed: it is
+// deliberately not pruned when its conn closes, since Network.Trace exists
+// to be read after the connection that produced it typically already has
+// been (the common defer c.Close() case) — pruning on Close would defeat
+// the accessor's own purpose. See the Network type comment for what this
+// means for a Network's own lifetime.
+func (n *Network) registerTrace(ordinal uint64, side connSide, rec *traceRecorder) {
+	n.traceMu.Lock()
+	defer n.traceMu.Unlock()
+	n.traces = append(n.traces, traceHandle{ordinal: ordinal, side: side, rec: rec})
+}
+
+// Trace returns every fault-injection decision recorded across every
+// connection n has ever dialed, in (Ordinal, Side, Seq) order — the same
+// canonical order the reproducibility harness (M3-3, reproducibility_test.go)
+// compares golden traces in. This closes the deferral M2-1 recorded when
+// the trace was first built: always recorded, never exported, until M6-14
+// decided the full trace (not counters) belonged in v0.2.0's scope.
+//
+// The returned slice is a copy: mutating it, or a later call to Trace,
+// never affects the other. Reused from traceRecorder.snapshot, which
+// already establishes this per direction (TestTraceSnapshotIsACopy);
+// Trace does no second copy of its own beyond concatenating those.
+//
+// See FaultEvent's own godoc for what is and is not recorded — notably,
+// Network.Reset produces no event, and a dial that never establishes
+// allocates no pipes to trace at all.
+func (n *Network) Trace() []FaultEvent {
+	n.traceMu.Lock()
+	defer n.traceMu.Unlock()
+
+	var out []FaultEvent
+	for _, h := range n.traces {
+		for _, e := range h.rec.snapshot() {
+			out = append(out, FaultEvent{
+				Ordinal:       h.ordinal,
+				Side:          Side(h.side),
+				Seq:           e.seq,
+				Partitioned:   e.partitioned,
+				Dropped:       e.dropped,
+				Duplicated:    e.duplicated,
+				Corrupted:     e.corrupted,
+				Delay:         e.drawn,
+				Serialization: e.serialized,
+				Effective:     e.effective,
+			})
+		}
+	}
+	return out
+}

@@ -58,6 +58,24 @@ func (n *Network) SetPacketLoss(rate float64)
 // it acts only on connections established at the moment it is called.
 func (n *Network) Reset(peerA, peerB string)
 
+// Added by M7-10 (issue #51), post-v0.1.0. Closes the deferral M2-1
+// recorded: the fault trace was always recorded, never exported. Returns
+// every connection's trace, across the Network's whole lifetime -- see
+// Full fault trace export.
+func (n *Network) Trace() []FaultEvent
+
+type FaultEvent struct{ /* Ordinal, Side, Seq, Partitioned, Dropped,
+	Duplicated, Corrupted, Delay, Serialization, Effective -- see
+	Full fault trace export */
+}
+
+type Side int
+
+const (
+	SideDialer Side = iota
+	SideAcceptor
+)
+
 func WithPeerName(ctx context.Context, name string) context.Context
 
 // Added by M7-6 (issue #52), post-v0.1.0. Both leave a package-default
@@ -73,10 +91,12 @@ var ErrBacklogFull = errors.New("netchaos: accept backlog full")
 
 The four error sentinels are matched with `errors.Is`; see [Error and no-op behaviour](#error-and-no-op-behaviour) below and each sentinel's own godoc for which call returns it and why.
 
-**The surface above is what `v0.1.0` shipped. Three additions are still accepted for `v0.2.0` and are not in it yet** — see [06 — Scope & Roadmap § Accepted for v0.2.0](06-scope-and-roadmap.md#accepted-for-v02) for the reasoning behind each, and note that all three are input to [M5-2](tasks/m5-hardening-and-ergonomics.md#m5-2--api-ergonomics-review-before-v100)'s review of this surface rather than exempt from it. `WithPipeBound` and `WithListenerBacklog` ([M6-17](tasks/m6-review-findings.md#m6-17--decide-whether-the-pipe-bound-and-listener-backlog-become-configurable)) **shipped** in [M7-6](tasks/m7-v0.2.0-implementation.md#m7-6--withpipebound-and-withlistenerbacklog) — see [Functional options](#functional-options).
-- `SetLatency` and `SetPacketLoss` ([M6-13](tasks/m6-review-findings.md#m6-13--decide-on-runtime-mutation-of-latency-and-loss)) — **shipped** in [M7-4](tasks/m7-v0.2.0-implementation.md#m7-4--setlatency-and-setpacketloss), after [M7-3](tasks/m7-v0.2.0-implementation.md#m7-3--widen-the-determinism-contract-for-runtime-fault-mutation) widened the contract ahead of the code, as that decision required. See [Runtime fault mutation](#runtime-fault-mutation).
-- A fault-trace accessor ([M6-14](tasks/m6-review-findings.md#m6-14--decide-whether-to-export-fault-observability)), closing the deferral `M2-1` recorded. The full trace was chosen over counters, so the `faultEvent` shape becomes public API — a compatibility surface at `v1.0.0`, on a format [M3-3](tasks/m3-synctest-and-reproducibility.md) deliberately made high-friction to change.
-- Options for the new fault kinds accepted by [M6-11](tasks/m6-review-findings.md#m6-11--decide-which-new-fault-kinds-if-any-enter-v02) (mid-stream reset, duplication, corruption). All four **shipped**: bandwidth throttling in [M7-5](tasks/m7-v0.2.0-implementation.md#m7-5--fault-kind-bandwidth-throttling) as `WithBandwidth`, packet duplication in [M7-8](tasks/m7-v0.2.0-implementation.md#m7-8--fault-kind-packet-duplication) as `WithDuplication`, data corruption in [M7-9](tasks/m7-v0.2.0-implementation.md#m7-9--fault-kind-data-corruption) as `WithCorruption`, and mid-stream reset in [M7-7](tasks/m7-v0.2.0-implementation.md#m7-7--fault-kind-mid-stream-connection-reset) as `Network.Reset` — an imperative method, decided by the maintainer, rather than a drawn `Option`.
+**The surface above is what `v0.1.0` shipped, plus everything [06 — Scope & Roadmap § Accepted for v0.2.0](06-scope-and-roadmap.md#accepted-for-v02) accepted — all of it now shipped too, as [M7](tasks/m7-v0.2.0-implementation.md) landed each task.** Every addition was input to [M5-2](tasks/m5-hardening-and-ergonomics.md#m5-2--api-ergonomics-review-before-v100)'s review of this surface rather than exempt from it, but `M5-2` itself closed before these ten tasks existed — the `v0.2.0` surface has not yet had its own ergonomics pass; see the release notes for `v0.2.0`.
+
+- `WithPipeBound` and `WithListenerBacklog` ([M6-17](tasks/m6-review-findings.md#m6-17--decide-whether-the-pipe-bound-and-listener-backlog-become-configurable)) — shipped in [M7-6](tasks/m7-v0.2.0-implementation.md#m7-6--withpipebound-and-withlistenerbacklog) — see [Functional options](#functional-options).
+- `SetLatency` and `SetPacketLoss` ([M6-13](tasks/m6-review-findings.md#m6-13--decide-on-runtime-mutation-of-latency-and-loss)) — shipped in [M7-4](tasks/m7-v0.2.0-implementation.md#m7-4--setlatency-and-setpacketloss), after [M7-3](tasks/m7-v0.2.0-implementation.md#m7-3--widen-the-determinism-contract-for-runtime-fault-mutation) widened the contract ahead of the code, as that decision required. See [Runtime fault mutation](#runtime-fault-mutation).
+- `Network.Trace() []FaultEvent` ([M6-14](tasks/m6-review-findings.md#m6-14--decide-whether-to-export-fault-observability)), closing the deferral `M2-1` recorded — shipped in [M7-10](tasks/m7-v0.2.0-implementation.md#m7-10--export-the-full-fault-trace). The full trace was chosen over counters, so `FaultEvent` is now public API — a compatibility surface at `v1.0.0`, on a format [M3-3](tasks/m3-synctest-and-reproducibility.md) deliberately made high-friction to change. See [Full fault trace export](#full-fault-trace-export).
+- Options for the new fault kinds accepted by [M6-11](tasks/m6-review-findings.md#m6-11--decide-which-new-fault-kinds-if-any-enter-v02) (mid-stream reset, duplication, corruption). All four shipped: bandwidth throttling in [M7-5](tasks/m7-v0.2.0-implementation.md#m7-5--fault-kind-bandwidth-throttling) as `WithBandwidth`, packet duplication in [M7-8](tasks/m7-v0.2.0-implementation.md#m7-8--fault-kind-packet-duplication) as `WithDuplication`, data corruption in [M7-9](tasks/m7-v0.2.0-implementation.md#m7-9--fault-kind-data-corruption) as `WithCorruption`, and mid-stream reset in [M7-7](tasks/m7-v0.2.0-implementation.md#m7-7--fault-kind-mid-stream-connection-reset) as `Network.Reset` — an imperative method, decided by the maintainer, rather than a drawn `Option`.
 
 Address strings also change shape: [M6-10](tasks/m6-review-findings.md#m6-10--decide-whether-addresses-should-have-a-hostport-shape) accepted a synthesized port, so `net.SplitHostPort` succeeds against a netchaos address. That must land before `v1.0.0` — adding port structure afterwards breaks every address string a test prints.
 
@@ -275,6 +295,48 @@ Closes the gap `Partition` deliberately does not: `Partition` is a silent black 
 3. **A no-op if nothing is currently established** between the named peers, the same convention `Partition`/`Heal` use for an unrecognized or not-yet-connected pair — not an error, safe to call speculatively.
 
 Peer names are resolved exactly as `Partition`/`Heal` resolve them (`peerName` strips a port, per `M7-1`), so the same naming caveat applies: an unnamed dialer's synthesized `ephemeral-N` identity is not one a caller can predict in advance, so it is not practically targetable here either.
+
+## Full fault trace export
+
+```go
+func (n *Network) Trace() []FaultEvent
+
+type Side int
+
+const (
+    SideDialer Side = iota
+    SideAcceptor
+)
+
+type FaultEvent struct {
+    Ordinal uint64
+    Side    Side
+    Seq     uint64
+
+    Partitioned bool
+    Dropped     bool
+    Duplicated  bool
+    Corrupted   bool
+
+    Delay         time.Duration
+    Serialization time.Duration
+    Effective     time.Duration
+}
+```
+
+`Trace` ([M7-10](tasks/m7-v0.2.0-implementation.md#m7-10--export-the-full-fault-trace), issue [#51](https://github.com/jpgomesr/netchaos/issues/51), decided by [M6-14](tasks/m6-review-findings.md#m6-14--decide-whether-to-export-fault-observability)) closes the deferral `M2-1` recorded: the fault trace was always recorded, on every direction of every connection, and was never reachable from outside the package. A test exercising packet loss could observe the downstream consequence (a short read) but never assert the thing that actually happened — "exactly three writes were dropped." `Trace` returns that trace directly.
+
+**The full trace, not counters — the more expensive commitment, chosen deliberately.** Counters would have been additive to widen later; retracting an exported event type is not. `FaultEvent` is therefore a compatibility surface at `v1.0.0`, on a trace format [M3-3](tasks/m3-synctest-and-reproducibility.md) already made high-friction to change internally.
+
+**`Ordinal` and `Side` identify the connection direction an event belongs to**, not a peer name — a caller with several connections maps `Ordinal` to "which `Dial` call" via the order dials completed in, which the [determinism contract](#determinism-contract) already fixes. No peer name is on the event; adding one later is additive, and dropping it is the retraction the full-trace decision above was made knowing this surface can't afford.
+
+**`Partitioned`, `Dropped`, `Duplicated` and `Corrupted` are independent, not one-of-many.** The draw discipline records `Duplicated` and `Corrupted` even on a unit `Dropped` already discarded, so more than one can be `true` on the same event — there is no single `Kind` enum for this reason. `Partitioned` is the one exception: a partitioned unit draws nothing (partition's zero-draw case in the [determinism contract](#determinism-contract)), so every other field on that event is its zero value.
+
+**The three durations need reading carefully, not just naming.** `Delay` is what was drawn from the latency stream — but `WithLatency(0, 0)`/`SetLatency(0, 0)` is an explicit fixed-zero delay that still draws (per [Runtime fault mutation](#runtime-fault-mutation)), so `Delay == 0` does not mean "latency wasn't configured." `Serialization` is a unit's contribution to link-busy time under `WithBandwidth`, zero without one. `Effective` is the delay applied **after** serialization finishes, not the total delay from `Write` — a unit's full delay is `Serialization + Effective`. On a `Dropped` event, `Serialization` and `Effective` are always zero: loss short-circuits the evaluator before either is computed, so these fields describe what was drawn, never a delivery that happened.
+
+**What `Trace` does not cover:** `Network.Reset` ([M7-7](tasks/m7-v0.2.0-implementation.md#m7-7--fault-kind-mid-stream-connection-reset)) is an imperative action, not a per-unit decision, and records no event. A dial that never establishes — refused, blocked on a partition and then cancelled, or rejected for a full backlog — allocates no pipes and appears nowhere in the trace.
+
+**Retention.** A connection's trace is kept for `n`'s own lifetime, independent of whether the connection itself has since been closed — the accessor exists to be read after a test's `defer c.Close()` has already run, which would be the common case it fails to serve if closing pruned the trace the way `Network.Reset`'s registry (`M7-7`) deliberately does.
 
 ## Error and no-op behaviour
 
