@@ -2,19 +2,46 @@ package netchaos
 
 import "time"
 
-// faultPolicy is the resolved, connection-direction-scoped fault
-// configuration a pipe's deliver function evaluates against. network may
-// be nil, meaning "no partition tracking" — used by tests that construct a
-// pipe directly, without a Network.
-type faultPolicy struct {
-	network *Network
-	pair    pairKey
-
+// faultConfig is the set of fault settings that can change during a run:
+// what SetLatency and SetPacketLoss write, and what the per-unit evaluator
+// reads. Kept as one value so it can be copied out from under a lock in a
+// single read rather than field by field, which would let a unit see half of
+// one configuration and half of the next.
+type faultConfig struct {
 	lossEnabled bool
 	lossRate    float64
 
 	latencyEnabled         bool
 	latencyMin, latencyMax time.Duration
+}
+
+// faultPolicy is the connection-direction-scoped fault configuration a
+// pipe's deliver function evaluates against.
+//
+// It deliberately does not hold the configuration itself. Before M7-4 it
+// did: the values were copied out of the Network at dial time, which made
+// them un-changeable for the life of the connection. Now the values are read
+// from network on every unit, which is what lets SetLatency/SetPacketLoss
+// reach connections that already exist — the semantics M7-3 fixed in the
+// determinism contract before this code was written.
+//
+// network may be nil, meaning "no Network": no partition tracking, and no
+// live configuration to read. That case belongs to tests that construct a
+// pipe directly, and static is the configuration they get. It is ignored
+// whenever network is non-nil.
+type faultPolicy struct {
+	network *Network
+	pair    pairKey
+
+	static faultConfig
+}
+
+// current returns the fault configuration to evaluate this unit against.
+func (fp faultPolicy) current() faultConfig {
+	if fp.network == nil {
+		return fp.static
+	}
+	return fp.network.faultConfig()
 }
 
 // installFaultPolicy replaces p's deliver function with the single composed
@@ -52,14 +79,19 @@ func installFaultPolicy(p *pipe, fp faultPolicy) {
 			return
 		}
 
+		// Read once per unit, not once per field: a unit is evaluated against
+		// one configuration, never a mix of the one before a setter call and
+		// the one after it.
+		cfg := fp.current()
+
 		var dropped bool
-		if fp.lossEnabled {
-			dropped = p.loss.bernoulli(fp.lossRate)
+		if cfg.lossEnabled {
+			dropped = p.loss.bernoulli(cfg.lossRate)
 		}
 
 		var drawn time.Duration
-		if fp.latencyEnabled {
-			drawn = p.latency.uniformDuration(fp.latencyMin, fp.latencyMax)
+		if cfg.latencyEnabled {
+			drawn = p.latency.uniformDuration(cfg.latencyMin, cfg.latencyMax)
 		}
 
 		if dropped {
@@ -71,7 +103,7 @@ func installFaultPolicy(p *pipe, fp faultPolicy) {
 			return
 		}
 
-		if !fp.latencyEnabled {
+		if !cfg.latencyEnabled {
 			if p.trace != nil {
 				p.trace.record(faultEvent{})
 			}

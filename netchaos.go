@@ -32,11 +32,12 @@ import (
 type Network struct {
 	seed int64
 
-	latencyEnabled         bool
-	latencyMin, latencyMax time.Duration
-
-	lossEnabled bool
-	lossRate    float64
+	// faultMu guards faults, which SetLatency and SetPacketLoss write and
+	// the per-unit evaluator reads (M7-4). This read was lock-free until the
+	// configuration became mutable; #50 accepted that cost explicitly rather
+	// than as a side effect, since it is on the delivery hot path.
+	faultMu sync.RWMutex
+	faults  faultConfig
 
 	partMu     sync.RWMutex
 	partitions map[pairKey]struct{}
@@ -77,12 +78,14 @@ func NewNetwork(opts ...Option) *Network {
 	cfg.validate()
 
 	n := &Network{
-		seed:           cfg.seed,
-		latencyEnabled: cfg.latencyEnabled,
-		latencyMin:     cfg.latencyMin,
-		latencyMax:     cfg.latencyMax,
-		lossEnabled:    cfg.lossEnabled,
-		lossRate:       cfg.lossRate,
+		seed: cfg.seed,
+		faults: faultConfig{
+			lossEnabled:    cfg.lossEnabled,
+			lossRate:       cfg.lossRate,
+			latencyEnabled: cfg.latencyEnabled,
+			latencyMin:     cfg.latencyMin,
+			latencyMax:     cfg.latencyMax,
+		},
 		partitions:     make(map[pairKey]struct{}, len(cfg.staticPartitions)),
 		partNotify:     make(chan struct{}),
 		listeners:      make(map[string]*listener),
@@ -298,20 +301,81 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 	// A single composed evaluator per direction (M2-5) — the only place
 	// fault policy is evaluated per unit, in the fixed order documented on
 	// installFaultPolicy: partition, then loss, then latency.
+	// No configuration is copied in here. The evaluator reads it from n on
+	// every unit, which is what lets SetLatency/SetPacketLoss reach this
+	// connection after it is established (M7-4).
 	fp := faultPolicy{
-		network:        n,
-		pair:           newPairKey(localName, peer),
-		lossEnabled:    n.lossEnabled,
-		lossRate:       n.lossRate,
-		latencyEnabled: n.latencyEnabled,
-		latencyMin:     n.latencyMin,
-		latencyMax:     n.latencyMax,
+		network: n,
+		pair:    newPairKey(localName, peer),
 	}
 	installFaultPolicy(client.writePipe, fp)
 	installFaultPolicy(server.writePipe, fp)
 
 	l.fill(server)
 	return client, nil
+}
+
+// faultConfig returns the Network's current mutable fault settings. Called
+// once per delivered unit by the evaluator in faults.go, so it copies the
+// whole value out under one read lock rather than exposing the fields.
+func (n *Network) faultConfig() faultConfig {
+	n.faultMu.RLock()
+	defer n.faultMu.RUnlock()
+	return n.faults
+}
+
+// SetLatency changes the latency applied to every connection in n, including
+// connections already established — the same live semantics Partition and
+// Heal have. It is what makes "healthy, then degraded, then healthy"
+// expressible without building a second Network, which would mean new
+// connections and a reset of every ordinal.
+//
+// The arguments mean exactly what WithLatency's do, and are validated the
+// same way: min and max must be non-negative and min must not exceed max, or
+// the call panics naming the offending value. SetLatency(0, 0) is an
+// explicit fixed-zero delay rather than "off" — it still draws, per the draw
+// discipline below.
+//
+// Determinism: a setter is an ordered Network call, joining Dial, Listen,
+// Partition and Heal in the guarantee on WithSeed. What the contract does
+// not fix is a setter's order against in-flight I/O on another goroutine —
+// if one goroutine writes in a loop while another calls SetLatency, which
+// unit first sees the new value is the scheduler's choice, not the seed's.
+// Sequence the calls a test depends on: write, then set, then write.
+//
+// Draw discipline is unchanged. Latency still draws on every unit past the
+// partition gate, so changing the range changes the value a draw produces,
+// never whether the draw happens — a stream advances one value per unit
+// regardless of what any setter did.
+func (n *Network) SetLatency(min, max time.Duration) {
+	validateLatencyRange(min, max)
+
+	n.faultMu.Lock()
+	defer n.faultMu.Unlock()
+	n.faults.latencyEnabled = true
+	n.faults.latencyMin = min
+	n.faults.latencyMax = max
+}
+
+// SetPacketLoss changes the packet-loss rate applied to every connection in
+// n, including connections already established — the same live semantics
+// Partition and Heal have.
+//
+// rate means exactly what WithPacketLoss's does and is validated the same
+// way: outside [0.0, 1.0], including NaN and ±Inf, panics naming the
+// offending value. SetPacketLoss(0.0) is an explicit always-deliver policy
+// rather than "off"; it still draws.
+//
+// The same determinism note as SetLatency applies: the setter is an ordered
+// Network call, its order against concurrent in-flight I/O is not fixed by
+// the contract, and the draw discipline does not change.
+func (n *Network) SetPacketLoss(rate float64) {
+	validateLossRate(rate)
+
+	n.faultMu.Lock()
+	defer n.faultMu.Unlock()
+	n.faults.lossEnabled = true
+	n.faults.lossRate = rate
 }
 
 // waitUnpartitioned blocks until k is not partitioned or ctx is done,

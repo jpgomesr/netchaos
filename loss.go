@@ -19,6 +19,9 @@ import (
 // socket does when a packet is lost downstream: the sender's kernel doesn't
 // know either.
 //
+// This sets the value a Network starts with. Network.SetPacketLoss changes
+// it mid-test, on connections that already exist as well as future ones.
+//
 // Rate 0.0 drops nothing; rate 1.0 drops everything, which is
 // behaviourally similar to (but distinct in intent, and in draw
 // consumption, from) partitioning the same peer pair -- see

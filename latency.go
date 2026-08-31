@@ -22,6 +22,9 @@ type pendingUnit struct {
 // direction are released in write order even when a later unit draws a
 // shorter delay.
 //
+// This sets the value a Network starts with. Network.SetLatency changes it
+// mid-test, on connections that already exist as well as future ones.
+//
 // When packet loss or partition is also configured on the same connection
 // direction, latency is evaluated last, after both — see the package doc's
 // section on fault composition.
