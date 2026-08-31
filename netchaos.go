@@ -87,6 +87,8 @@ func NewNetwork(opts ...Option) *Network {
 			latencyMax:       cfg.latencyMax,
 			bandwidthEnabled: cfg.bandwidthEnabled,
 			bandwidthBPS:     cfg.bandwidthBPS,
+			duplicateEnabled: cfg.duplicateEnabled,
+			duplicateRate:    cfg.duplicateRate,
 		},
 		partitions:     make(map[pairKey]struct{}, len(cfg.staticPartitions)),
 		partNotify:     make(chan struct{}),
