@@ -46,13 +46,27 @@ const (
 // the property that lets addresses gain structure without invalidating every
 // Partition call already written.
 //
-// splitAddr is the single function that takes an address string apart, and
-// peerName is the identity projection over it. Dial resolution
-// (Network.DialContext), listener registration (Network.Listen) and
-// partition lookup (Network.Partition) all go through them, so there is
-// still exactly one place the address-to-peer relationship is defined — the
-// property this comment guaranteed before addresses had a port, and which
-// M6-10 required be re-established deliberately rather than assumed.
+// An address with no host at all (":0", ":8080", "") names no peer —
+// issue #73. Before this was decided, the empty host split out by splitAddr
+// was treated as an ordinary peer name, "", so two hostless Listen calls
+// collided as if they had asked for the same peer, and a Dial to one reached
+// whatever had registered there. Listen and DialContext now diverge
+// deliberately on this case, and each says why at its own call site: Listen
+// treats it as a wildcard bind and synthesizes a fresh identity
+// (wildcardPeerName), because that is what a real net.Listen(":0") means;
+// DialContext rejects it, because netchaos has no address a hostless dial
+// could mean.
+//
+// splitAddr is still the single function that takes an address string
+// apart — it reports an empty host rather than deciding anything about it —
+// and peerName is still the identity projection over it for the callers that
+// want one (Network.Partition, Network.Heal, Network.Reset). What no longer
+// holds, since the paragraph above, is that every caller of splitAddr agrees
+// on what an empty host means: Listen and DialContext each apply their own
+// policy on top of the same parse. That is a deliberate divergence, not a
+// second definition of the address-to-peer relationship — there is still
+// exactly one place the string is taken apart, which is what M6-10 required
+// be re-established rather than assumed when addresses first gained a port.
 type addr struct {
 	network string // "tcp", "tcp4", or "tcp6", stored verbatim
 	peer    string // the host half: the peer's identity
@@ -74,6 +88,11 @@ func (a *addr) String() string { return net.JoinHostPort(a.peer, strconv.Itoa(a.
 // an error: netchaos synthesizes one. An explicit ":0" is the same request
 // spelled the way the real stack spells it — "give me a port, I don't care
 // which" — so it reports explicit=false too, and the caller assigns.
+//
+// An address with no host at all (":0", ":8080", "") is reported as an empty
+// host, not as an error — that is a decision for the caller, not for
+// splitAddr, and Listen and DialContext deliberately make different ones
+// (see the addr type comment, issue #73).
 //
 // A malformed address is reported as a *net.AddrError, which is what
 // net.Listen and net.Dial produce for the same input. No netchaos sentinel
@@ -139,6 +158,26 @@ func ephemeralPort(ordinal uint64) int {
 // it would hit all of them at once. A dash keeps each one distinct.
 func ephemeralPeerName(ordinal uint64) string {
 	return fmt.Sprintf("ephemeral-%d", ordinal)
+}
+
+// wildcardPeerName is the identity given to a listener whose address named
+// no host (":0", ":8080", or the bare ""), the analogue of a real wildcard
+// bind — a real net.Listen("tcp", ":0") on two different machines never
+// collides, so neither should two calls against one Network (issue #73).
+// Before this, a hostless address split to the empty string and every such
+// Listen registered the same peer, "", so a second one failed with
+// ErrAddressInUse and a Dial to "" silently reached whatever had registered
+// there.
+//
+// Named like ephemeralPeerName, for the same reason: a dash rather than a
+// colon, so "wildcard-1" cannot itself be re-split into a host and a port.
+//
+// This can collide with a listener explicitly named e.g. "wildcard-0" —
+// the same latent hazard ephemeralPeerName already carries, and not worked
+// around here with retry-on-collision: if that happens, the next hostless
+// Listen fails with ErrAddressInUse the same way any other name clash would.
+func wildcardPeerName(ordinal uint64) string {
+	return fmt.Sprintf("wildcard-%d", ordinal)
 }
 
 // errAddr builds the addr that goes on a *net.OpError leaving Listen or
