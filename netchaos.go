@@ -311,6 +311,12 @@ func (n *Network) DialerFor(name string) func(network, addr string) (net.Conn, e
 // step between validating the request and handing the new connection to the
 // target listener. A full listener backlog fails immediately with
 // ErrBacklogFull rather than waiting for room.
+//
+// dialAddr with no host at all (":0", ":8080", "") is rejected with a
+// *net.AddrError: unlike Listen, which treats a hostless address as a
+// wildcard bind, there is no localhost in a netchaos topology for a
+// hostless dial to mean, so resolving one to some peer would always be a
+// guess (issue #73).
 func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (net.Conn, error) {
 	// Checked once, up front, rather than folded into the enqueue select
 	// below: with a ready default case present, Go picks pseudo-randomly
@@ -328,6 +334,9 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 	peer, _, _, err := splitAddr(dialAddr)
 	if err != nil {
 		return nil, n.dialOpError(network, dialAddr, err)
+	}
+	if peer == "" {
+		return nil, n.dialOpError(network, dialAddr, &net.AddrError{Err: "missing host", Addr: dialAddr})
 	}
 
 	localName, named := peerNameFromContext(ctx)

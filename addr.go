@@ -180,11 +180,28 @@ func wildcardPeerName(ordinal uint64) string {
 	return fmt.Sprintf("wildcard-%d", ordinal)
 }
 
-// errAddr builds the addr that goes on a *net.OpError leaving Listen or
+// errAddr builds the address that goes on a *net.OpError leaving Listen or
 // DialContext. The address may be the malformed one that caused the error,
 // so it falls back to naming the whole string as the peer rather than
 // discarding what the caller actually wrote.
-func errAddr(network, s string) *addr {
+//
+// The empty string is a second such case, and it needs its own rule: s==""
+// carries no host and no port to echo, so there is nothing truthful to
+// build a host:port string from. Reporting net.Addr(nil) here
+// mirrors what real net.Dial("tcp", "") does (an OpError with no Addr at
+// all, "dial tcp: missing address") rather than inventing ":0", which is an
+// address the caller never wrote (issue #73). ":0" and ":8080" need no such
+// case: splitAddr round-trips each back to the exact string the caller
+// wrote, so the *addr below already echoes it.
+//
+// The return type is net.Addr, not *addr, specifically so this nil can be
+// returned as a true nil interface: returning a nil *addr here would leave
+// net.OpError.Addr holding a non-nil interface wrapping a nil pointer, and
+// OpError.Error() would panic calling String() on it.
+func errAddr(network, s string) net.Addr {
+	if s == "" {
+		return nil
+	}
 	host, port, _, err := splitAddr(s)
 	if err != nil {
 		return &addr{network: network, peer: s}

@@ -406,3 +406,52 @@ func TestWildcardListenerAddrIsDialableAndPartitionable(t *testing.T) {
 		}
 	})
 }
+
+// TestDialRejectsHostlessAddress covers the other half of issue #73: unlike
+// Listen, Dial has no wildcard-bind meaning to fall back on, so a hostless
+// address is simply rejected -- netchaos has no address a hostless dial
+// could mean to reach. Before this, ":0" and "" resolved to the peer named
+// "" and ":8080" returned ErrConnectionRefused, since nothing had ever
+// registered there.
+func TestDialRejectsHostlessAddress(t *testing.T) {
+	n := NewNetwork()
+
+	for _, addr := range []string{"", ":0", ":8080"} {
+		_, err := n.Dial("tcp", addr)
+		if err == nil {
+			t.Errorf("Dial(\"tcp\", %q) = nil, want an error", addr)
+			continue
+		}
+		var opErr *net.OpError
+		if !errors.As(err, &opErr) {
+			t.Errorf("Dial(\"tcp\", %q) = %v (%T), want a *net.OpError", addr, err, err)
+			continue
+		}
+		var addrErr *net.AddrError
+		if !errors.As(err, &addrErr) {
+			t.Errorf("Dial(\"tcp\", %q) = %v, want errors.As(*net.AddrError)", addr, err)
+		}
+	}
+}
+
+// TestDialEmptyAddressOmitsAddrFromOpError pins what the *net.OpError says
+// when Dial("tcp", "") is rejected: it must not claim an address the caller
+// never wrote. errAddr used to re-join the empty host and zero port back
+// into ":0", so the error read "dial tcp :0: ..." -- a specific address
+// Dial("tcp", "") never named. Real net.Dial("tcp", "") reports no address
+// at all ("dial tcp: missing address"), which is the shape this matches.
+func TestDialEmptyAddressOmitsAddrFromOpError(t *testing.T) {
+	n := NewNetwork()
+
+	_, err := n.Dial("tcp", "")
+	var opErr *net.OpError
+	if !errors.As(err, &opErr) {
+		t.Fatalf(`Dial("tcp", "") = %v (%T), want a *net.OpError`, err, err)
+	}
+	if opErr.Addr != nil {
+		t.Errorf("OpError.Addr = %v, want nil (no address was written)", opErr.Addr)
+	}
+	if got, want := err.Error(), "dial tcp: missing host"; got != want {
+		t.Errorf("Dial(\"tcp\", \"\") error = %q, want %q", got, want)
+	}
+}
