@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **An address with no host (`":0"`, `":8080"`, `""`) no longer names the peer `""`** (closes #73). Three behavioural changes on upgrade:
+  - `Listen` now treats a hostless address as a wildcard bind and synthesizes a fresh identity, `wildcard-N`; a **second** hostless `Listen` now **succeeds** where it previously returned `ErrAddressInUse`, so a hostless listener's address string changes from `:8000` to e.g. `wildcard-0:8000` — any test asserting it literally needs updating.
+  - The peer's name for a wildcard bind — what `Partition`/`Heal`/`Reset` target — is the host half of the listener's `Addr()`, not the string originally passed to `Listen`; `Partition(":8080", ...)` no longer reaches a listener created with `Listen("tcp", ":8080")`.
+  - `Dial`/`DialContext` to a hostless address now **fails** with a `*net.AddrError` (wrapped in the usual `*net.OpError`) where it previously silently resolved to whatever had registered under `""`.
+
 ## [v0.2.0] — 2026-08-31
 
 Implements every item [`docs/06` § Accepted for v0.2.0](docs/06-scope-and-roadmap.md#accepted-for-v02) accepted, plus `Network.DialerFor` — the one thing [M7](docs/tasks/m7-v0.2.0-implementation.md) decided itself rather than inherited from a prior milestone's decision. Ten tasks, ten PRs, each tracked against an open issue (`#36`, `#49` through `#53`); see `docs/tasks/m7-v0.2.0-implementation.md` for the full sequencing and how each was resolved.

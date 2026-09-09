@@ -55,8 +55,12 @@ type Network struct {
 	partitions map[pairKey]struct{}
 	partNotify chan struct{} // closed and replaced on every Partition/Heal
 
-	mu          sync.Mutex
-	listeners   map[string]*listener // key: peerName(addr)
+	mu sync.Mutex
+	// listeners is keyed by peerName(addr) for a normally-named listener, or
+	// by the synthesized wildcardPeerName for one whose address named no
+	// host (issue #73) — either way, the key is the peer's identity, not
+	// necessarily the string originally passed to Listen.
+	listeners   map[string]*listener
 	nextOrdinal uint64
 
 	// nextListenPort is the port the next listener that named none will be
@@ -67,6 +71,16 @@ type Network struct {
 	// Unlike an ordinal, a port is visible in RemoteAddr().String(), so that
 	// pre-existing nondeterminism is newly visible in test output.
 	nextListenPort int
+
+	// nextWildcard is the ordinal the next hostless Listen (":0", ":8080",
+	// "") will be given, synthesizing its identity as wildcardPeerName(n)
+	// (issue #73). Same shape and same caveat as nextListenPort: it advances
+	// in Listen order, which the determinism contract already fixes, and
+	// inherits that contract's stated limit unchanged — two goroutines
+	// racing to Listen get their synthesized names in whichever order the
+	// scheduler picks, and unlike an ordinal, a synthesized name is visible
+	// in Addr().String() and therefore in test failure output.
+	nextWildcard uint64
 
 	// pipeBound and listenerBacklog are set once, from networkConfig, in
 	// NewNetwork, and read (never written again) by DialContext and Listen
@@ -168,6 +182,21 @@ func NewNetwork(opts ...Option) *Network {
 // Listen on "server:9090" while "server:8080" is open returns
 // ErrAddressInUse. One peer, one listener — see the addr type for why
 // identity deliberately stops at the host half.
+//
+// laddr with no host at all (":0", ":8080", "") is a wildcard bind: Listen
+// synthesizes a fresh identity for it, the way a real net.Listen(":0") on a
+// separate machine would never collide with another (issue #73). Two such
+// calls therefore never return ErrAddressInUse against each other, even with
+// the same explicit port — the one place this diverges from a real
+// single-process net.Listen, which would fail the second call with
+// EADDRINUSE; netchaos models each hostless bind as its own machine's
+// wildcard bind rather than as a shared one.
+//
+// The consequence worth knowing: for a wildcard bind, the peer's name —
+// what Partition, Heal and Reset target — is the host half of the returned
+// Listener's Addr(), never the string originally passed to Listen (which
+// named no host, and so names no peer at all). Read it back with
+// net.SplitHostPort(l.Addr().String()) before calling Partition.
 func (n *Network) Listen(network, laddr string) (net.Listener, error) {
 	if err := validateNetwork(network); err != nil {
 		return nil, n.listenOpError(network, laddr, err)
@@ -180,6 +209,10 @@ func (n *Network) Listen(network, laddr string) (net.Listener, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
+	if peer == "" {
+		peer = wildcardPeerName(n.nextWildcard)
+		n.nextWildcard++
+	}
 	if _, ok := n.listeners[peer]; ok {
 		return nil, n.listenOpError(network, laddr, ErrAddressInUse)
 	}
@@ -278,6 +311,12 @@ func (n *Network) DialerFor(name string) func(network, addr string) (net.Conn, e
 // step between validating the request and handing the new connection to the
 // target listener. A full listener backlog fails immediately with
 // ErrBacklogFull rather than waiting for room.
+//
+// dialAddr with no host at all (":0", ":8080", "") is rejected with a
+// *net.AddrError: unlike Listen, which treats a hostless address as a
+// wildcard bind, there is no localhost in a netchaos topology for a
+// hostless dial to mean, so resolving one to some peer would always be a
+// guess (issue #73).
 func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (net.Conn, error) {
 	// Checked once, up front, rather than folded into the enqueue select
 	// below: with a ready default case present, Go picks pseudo-randomly
@@ -295,6 +334,9 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 	peer, _, _, err := splitAddr(dialAddr)
 	if err != nil {
 		return nil, n.dialOpError(network, dialAddr, err)
+	}
+	if peer == "" {
+		return nil, n.dialOpError(network, dialAddr, &net.AddrError{Err: "missing host", Addr: dialAddr})
 	}
 
 	localName, named := peerNameFromContext(ctx)
