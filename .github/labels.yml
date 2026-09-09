@@ -14,6 +14,23 @@
   color: "fbca04"
   description: Open question that needs resolution before it can move forward
 
+# Priority — how urgent, independent of type (bug/enhancement/design).
+- name: critical
+  color: "b60205"
+  description: Blocks a release or breaks normal use; needs attention now
+
+- name: high
+  color: "d93f0b"
+  description: Important; should land in the next release cycle
+
+- name: medium
+  color: "fbca04"
+  description: Worth doing; no firm deadline
+
+- name: low
+  color: "0e8a16"
+  description: Nice to have; safe to defer indefinitely
+
 - name: bug
   color: "d73a4a"
   description: Something isn't working
