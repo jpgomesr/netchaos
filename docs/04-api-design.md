@@ -237,11 +237,22 @@ What the split buys, concretely, is that addresses could gain structure without 
 | `Listen("tcp", "server")` | `server` | `server:8000` (synthesized) |
 | `Listen("tcp", "server:0")` | `server` | `server:8001` (synthesized — the `:0` form) |
 | `Listen("tcp", "server:8080")` | `server` | `server:8080` (honoured) |
+| `Listen("tcp", ":0")` | `wildcard-0` (synthesized) | `wildcard-0:8002` |
+| `Listen("tcp", ":8080")` | `wildcard-1` (synthesized) | `wildcard-1:8080` (port honoured) |
 | `Dial("tcp", "server:8080")` | dials peer `server` | local `ephemeral-0:32768` |
+| `Dial("tcp", "")` | rejected: `*net.AddrError` | — |
 
 So `Partition("server")` reaches a connection dialed to `"server:8080"`, and every `Partition` call written before addresses had ports keeps working. Two listeners whose addresses name the same host collide regardless of port — one peer, one listener — and a malformed address is rejected with a `*net.AddrError`, which is what `net.Listen` and `net.Dial` produce for the same input.
 
-**Ports are synthesized in `Listen`/`Dial` order**, which the [determinism contract](#determinism-contract) already fixes, so nothing about the contract widens here. It does inherit the contract's stated limit unchanged, and that is worth naming because it is newly *visible*: two goroutines racing to `Listen` get their ports in whichever order the scheduler picks, and unlike a connection ordinal, a port shows up in `RemoteAddr().String()` and therefore in test failure output. The fix is the same one the contract already prescribes — establish connections in a fixed order before starting concurrent I/O.
+**An address with no host at all (`":0"`, `":8080"`, `""`) names no peer** ([issue #73](https://github.com/jpgomesr/netchaos/issues/73)). `Listen` and `Dial` diverge on it deliberately, and each says why at its own call site:
+
+- **`Listen` treats it as a wildcard bind** — the way a real `net.Listen("tcp", ":0")` on a separate machine works — and synthesizes a fresh identity, `wildcard-N`, the same shape as the existing `ephemeral-N` given to an unnamed dialer. Repeated hostless listens never collide with each other, even sharing an explicit port: `Listen("tcp", ":8080")` twice both succeed, with two different synthesized hosts. That is the one place this diverges from a real single-process `net.Listen`, which would fail the second call with `EADDRINUSE` — netchaos models each hostless bind as its own machine's wildcard bind, not a shared one.
+
+  The consequence worth knowing: for a wildcard bind, **the peer's name — what `Partition`, `Heal` and `Reset` target — is the host half of the returned `Listener`'s `Addr()`, never the string originally passed to `Listen`.** `Partition(":8080", "client")` does *not* reach a listener created with `Listen("tcp", ":8080")`; read the name back with `net.SplitHostPort(l.Addr().String())` first.
+
+- **`Dial` rejects it** with a `*net.AddrError`, wrapped in the usual `*net.OpError`: there is no localhost in a netchaos topology for a hostless dial to mean, so resolving one would always be a guess. `Dial("tcp", "")` reports no address at all on the `OpError` (matching real `net.Dial("tcp", "")`'s addressless `"dial tcp: missing address"`), since `""` has no host or port to echo; `Dial("tcp", ":8080")` reports the address exactly as written.
+
+**Ports are synthesized in `Listen`/`Dial` order**, which the [determinism contract](#determinism-contract) already fixes, so nothing about the contract widens here. It does inherit the contract's stated limit unchanged, and that is worth naming because it is newly *visible*: two goroutines racing to `Listen` get their ports in whichever order the scheduler picks, and unlike a connection ordinal, a port shows up in `RemoteAddr().String()` and therefore in test failure output. The fix is the same one the contract already prescribes — establish connections in a fixed order before starting concurrent I/O. The same holds for the synthesized `wildcard-N` host: it advances in `Listen` order too, and unlike a connection ordinal it is visible in `Addr().String()`.
 
 ## Dynamic partition control
 
