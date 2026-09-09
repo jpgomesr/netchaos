@@ -53,6 +53,8 @@ golangci-lint run # config: .golangci.yml
 
 Four issue forms exist in `.github/ISSUE_TEMPLATE/` — `bug.yml` (label `bug`), `enhancement.yml` (`enhancement`), `design-feedback.yml` (`design`) and `use-case-scenario.yml` (`use-case`) — plus `needs-discussion` for anything blocking a decision. `bug` and `enhancement` were added under [M5-3](docs/tasks/m5-hardening-and-ergonomics.md#m5-3--decide-on-bugenhancement-issue-template-forms), closing the gap this section used to describe as open.
 
+Priority is a separate axis from type: `critical` / `high` / `medium` / `low` say how urgent an issue is, independent of whether it's a `bug`, `enhancement`, or `design` item. Apply at most one.
+
 Two things to keep straight. Behaviour the docs describe as deliberate is `design`, not `bug` — the fault model in [docs/05](docs/05-fault-injection.md) and the no-op/panic semantics in [docs/04](docs/04-api-design.md#error-and-no-op-behaviour) are design decisions, not defects. And blank issues are disabled (`.github/ISSUE_TEMPLATE/config.yml`), so every issue goes through a form or through Discussions. Don't create issues, or labels outside `.github/labels.yml`, without the user asking.
 
 ## What not to do
