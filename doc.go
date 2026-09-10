@@ -8,8 +8,10 @@
 // timeout handling, or circuit breaker reacts correctly to a bad network.
 //
 // See the package-level Example for a minimal dial/listen round trip, and
-// the other Example functions for latency, packet loss, partition, and
-// seeding.
+// the other Example functions for latency, packet loss, bandwidth
+// throttling, packet duplication, data corruption, partition, mid-stream
+// reset, live fault mutation, the exported fault trace, buffer/backlog
+// tuning, and seeding.
 //
 // # Determinism
 //

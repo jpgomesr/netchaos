@@ -397,7 +397,7 @@ func TestRetryOnPacketLoss(t *testing.T) {
 }
 ```
 
-`myservice.NewClient`/`FetchWithRetry` stand in for your own client and its retry policy; the only netchaos-specific line is handing your client `network.Dial`, a `func(network, addr string) (net.Conn, error)`. A fully self-contained, compiled version of this scenario lives as `TestReadmeUsageSnippet` in `example_test.go`, alongside a runnable `Example` per headline feature (`ExampleWithLatency`, `ExampleWithPacketLoss`, `ExampleNetwork_Partition`, `ExampleWithSeed`).
+`myservice.NewClient`/`FetchWithRetry` stand in for your own client and its retry policy; the only netchaos-specific line is handing your client `network.Dial`, a `func(network, addr string) (net.Conn, error)`. A fully self-contained, compiled version of this scenario lives as `TestReadmeUsageSnippet` in `example_test.go`, alongside a runnable `Example` per headline feature (`ExampleWithLatency`, `ExampleWithPacketLoss`, `ExampleWithBandwidth`, `ExampleWithDuplication`, `ExampleWithCorruption`, `ExampleNetwork_Partition`, `ExampleNetwork_Reset`, `ExampleNetwork_SetPacketLoss`, `ExampleNetwork_Trace`, `ExampleWithPipeBound`, `ExampleWithListenerBacklog`, `ExampleWithSeed`).
 
 ## Determinism contract
 
