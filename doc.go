@@ -1,20 +1,24 @@
 // Package netchaos provides deterministic, in-process simulated net.Conn
 // and net.Listener implementations for Go tests. A Network, created with
 // NewNetwork, lets peers Dial and Listen against each other subject to a
-// configurable fault policy: latency, packet loss, bandwidth throttling, and
-// network partition. It is meant to be imported directly into a test — no
+// configurable fault policy: latency, packet loss, bandwidth throttling,
+// packet duplication, data corruption, network partition, and mid-stream
+// connection reset. It is meant to be imported directly into a test — no
 // external process, proxy, or daemon — so a test can prove its retry logic,
 // timeout handling, or circuit breaker reacts correctly to a bad network.
 //
 // See the package-level Example for a minimal dial/listen round trip, and
-// the other Example functions for latency, packet loss, partition, and
-// seeding.
+// the other Example functions for latency, packet loss, bandwidth
+// throttling, packet duplication, data corruption, partition, mid-stream
+// reset, live fault mutation, the exported fault trace, buffer/backlog
+// tuning, and seeding.
 //
 // # Determinism
 //
 // A Network's fault sequence is reproducible from a seed (WithSeed): the
-// same seed, with the same order of Dial/Listen/Partition/Heal calls,
-// always produces the same sequence of injected faults on every connection.
+// same seed, with the same order of Dial/Listen/Partition/Heal/SetLatency/
+// SetPacketLoss calls, always produces the same sequence of injected faults
+// on every connection.
 // Each connection derives its own RNG stream from the seed, its
 // establishment order, and its direction, so one connection's fault
 // sequence never depends on how the Go scheduler interleaved it with
@@ -53,18 +57,23 @@
 //
 // When more than one fault is configured on the same connection direction,
 // they are evaluated in one fixed order: partition, then packet loss, then
-// bandwidth, then latency. A partitioned unit is discarded before any random
-// draw happens, so partition never perturbs the loss or latency sequence. A
-// unit dropped by packet loss never reaches the bandwidth stage either, so a
-// dropped unit costs no simulated link time. Every other configured fault
-// that draws from a random stream does so unconditionally, even if an
-// earlier fault in the order already dropped the unit — a unit dropped by
-// packet loss still draws (and discards) a latency duration. Bandwidth is
-// not part of that: it computes a deterministic delay from a unit's size and
-// the configured rate, drawing nothing, so enabling it can never perturb the
-// loss or latency sequence. This keeps each drawing fault's draw index
-// locked to the unit index, which is what makes a fault trace diffable
-// across runs.
+// bandwidth, then latency, then corruption, then duplication. Corruption
+// runs before duplication deliberately, so a duplicated unit's second copy
+// carries whatever corruption already did to the first, rather than an
+// independently corrupted copy. A partitioned unit is discarded before any
+// random draw happens, so partition never perturbs the loss, latency,
+// corruption, or duplication sequence. A unit dropped by packet loss never
+// reaches the bandwidth, corruption, or duplication stage either, so a
+// dropped unit costs no simulated link time, is never corrupted, and is
+// never duplicated. Every other configured fault that draws from a random
+// stream does so unconditionally, even if an earlier fault in the order
+// already dropped the unit — a unit dropped by packet loss still draws (and
+// discards) a latency duration, a corruption decision, and a duplication
+// decision. Bandwidth is not part of that: it computes a deterministic delay
+// from a unit's size and the configured rate, drawing nothing, so enabling
+// it can never perturb any other fault's sequence. This keeps each drawing
+// fault's draw index locked to the unit index, which is what makes a fault
+// trace diffable across runs.
 //
 // # Reproducing a failure
 //

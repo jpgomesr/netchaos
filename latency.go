@@ -25,9 +25,10 @@ type pendingUnit struct {
 // This sets the value a Network starts with. Network.SetLatency changes it
 // mid-test, on connections that already exist as well as future ones.
 //
-// When packet loss or partition is also configured on the same connection
-// direction, latency is evaluated last, after both — see the package doc's
-// section on fault composition.
+// When other faults are also configured on the same connection direction,
+// latency is evaluated after partition, packet loss, and bandwidth, and
+// before corruption and duplication — see the package doc's section on
+// fault composition.
 func WithLatency(min, max time.Duration) Option {
 	return func(c *networkConfig) {
 		c.latencyEnabled = true

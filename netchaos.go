@@ -9,7 +9,8 @@ import (
 
 // Network is a simulated network topology: a set of named peers that can
 // Dial one another and Listen for connections, subject to a configurable
-// fault policy (latency, packet loss, and partition).
+// fault policy (latency, packet loss, bandwidth throttling, packet
+// duplication, data corruption, partition, and mid-stream reset).
 //
 // Network intentionally has no Close method: netchaos spawns no goroutines
 // of its own. The only asynchronous work is two time.AfterFunc callbacks —

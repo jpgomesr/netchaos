@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"syscall"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -298,6 +299,342 @@ func ExampleWithSeed() {
 		return
 	}
 	fmt.Println(first == second)
+	// Output: true
+}
+
+// ExampleWithBandwidth shows a write delayed in proportion to its size and
+// the configured rate, rather than dropped or reordered: the bytes arrive
+// unchanged, just later than they would with no throttle configured. The
+// rate here is fast enough that the delay costs the example no meaningful
+// real time; netchaos does not require any particular magnitude.
+func ExampleWithBandwidth() {
+	n := netchaos.NewNetwork(netchaos.WithBandwidth(1_000_000)) // 1 MB/s
+
+	l, err := n.Listen("tcp", "server")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer func() { _ = l.Close() }()
+	accepted := acceptOne(l)
+
+	client, err := n.Dial("tcp", "server")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer func() { _ = client.Close() }()
+	server := <-accepted
+	defer func() { _ = server.Close() }()
+
+	if _, err := client.Write([]byte("hello")); err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	buf := make([]byte, 5)
+	if _, err := io.ReadFull(server, buf); err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(string(buf))
+	// Output: hello
+}
+
+// ExampleWithDuplication shows a single Write's bytes delivered twice, in
+// order, rather than merged into one longer delivery: at rate 1.0 every
+// unit is duplicated, so the reader sees the payload back to back.
+func ExampleWithDuplication() {
+	n := netchaos.NewNetwork(netchaos.WithDuplication(1.0))
+
+	l, err := n.Listen("tcp", "server")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer func() { _ = l.Close() }()
+	accepted := acceptOne(l)
+
+	client, err := n.Dial("tcp", "server")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	server := <-accepted
+	defer func() { _ = server.Close() }()
+
+	if _, err := client.Write([]byte("ping")); err != nil {
+		fmt.Println(err)
+		return
+	}
+	_ = client.Close()
+
+	got, err := io.ReadAll(server)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(string(got))
+	// Output: pingping
+}
+
+// ExampleWithCorruption shows a delivered write's content altered without
+// its length changing: at rate 1.0 every unit has exactly one bit flipped,
+// so the received bytes are the same length as, but never equal to, what
+// was sent.
+func ExampleWithCorruption() {
+	n := netchaos.NewNetwork(netchaos.WithCorruption(1.0))
+
+	l, err := n.Listen("tcp", "server")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer func() { _ = l.Close() }()
+	accepted := acceptOne(l)
+
+	client, err := n.Dial("tcp", "server")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer func() { _ = client.Close() }()
+	server := <-accepted
+	defer func() { _ = server.Close() }()
+
+	sent := []byte{0x00, 0x00, 0x00, 0x00}
+	if _, err := client.Write(sent); err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	got := make([]byte, len(sent))
+	if _, err := io.ReadFull(server, got); err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(len(got) == len(sent), string(got) != string(sent))
+	// Output: true true
+}
+
+// ExampleNetwork_Reset shows a reset abruptly terminating an established
+// connection: both ends' subsequent calls fail with an error satisfying
+// errors.Is(err, syscall.ECONNRESET). DialerFor is required here, not Dial
+// -- Dial's unnamed dialer gets an unpredictable ephemeral-N identity that
+// Reset cannot target.
+func ExampleNetwork_Reset() {
+	n := netchaos.NewNetwork()
+
+	l, err := n.Listen("tcp", "server")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer func() { _ = l.Close() }()
+	accepted := acceptOne(l)
+
+	client, err := n.DialerFor("client")("tcp", "server")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer func() { _ = client.Close() }()
+	server := <-accepted
+	defer func() { _ = server.Close() }()
+
+	n.Reset("client", "server")
+
+	buf := make([]byte, 1)
+	_, err = client.Read(buf)
+	fmt.Println(errors.Is(err, syscall.ECONNRESET))
+	// Output: true
+}
+
+// ExampleNetwork_SetPacketLoss shows SetLatency and SetPacketLoss changing
+// an already-established connection's fault policy mid-test, rather than
+// only affecting connections dialed afterward: the same client and server
+// pair deliver, then drop, then deliver again as the policy changes around
+// them.
+func ExampleNetwork_SetPacketLoss() {
+	n := netchaos.NewNetwork()
+
+	l, err := n.Listen("tcp", "server")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer func() { _ = l.Close() }()
+	accepted := acceptOne(l)
+
+	client, err := n.Dial("tcp", "server")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer func() { _ = client.Close() }()
+	server := <-accepted
+	defer func() { _ = server.Close() }()
+
+	if _, err := client.Write([]byte("first")); err != nil {
+		fmt.Println(err)
+		return
+	}
+	buf := make([]byte, 5)
+	if _, err := io.ReadFull(server, buf); err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(string(buf))
+
+	n.SetPacketLoss(1.0)
+	if _, err := client.Write([]byte("dropped")); err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	n.SetPacketLoss(0.0)
+	n.SetLatency(time.Millisecond, time.Millisecond)
+	if _, err := client.Write([]byte("third")); err != nil {
+		fmt.Println(err)
+		return
+	}
+	buf2 := make([]byte, 5)
+	if _, err := io.ReadFull(server, buf2); err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(string(buf2))
+	// Output:
+	// first
+	// third
+}
+
+// ExampleNetwork_Trace shows the exported fault trace attributing exactly
+// one event per Write unit: at rate 1.0 every write is dropped, and Trace
+// reports as many dropped events as writes were made.
+func ExampleNetwork_Trace() {
+	n := netchaos.NewNetwork(netchaos.WithSeed(3), netchaos.WithPacketLoss(1.0))
+
+	l, err := n.Listen("tcp", "server")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer func() { _ = l.Close() }()
+	accepted := acceptOne(l)
+
+	client, err := n.Dial("tcp", "server")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer func() { _ = client.Close() }()
+	server := <-accepted
+	defer func() { _ = server.Close() }()
+
+	const writes = 4
+	for i := 0; i < writes; i++ {
+		if _, err := client.Write([]byte{'A' + byte(i)}); err != nil {
+			fmt.Println(err)
+			return
+		}
+	}
+
+	dropped := 0
+	events := n.Trace()
+	for _, ev := range events {
+		if ev.Dropped {
+			dropped++
+		}
+	}
+	fmt.Printf("%d events, %d dropped\n", len(events), dropped)
+	// Output: 4 events, 4 dropped
+}
+
+// ExampleWithPipeBound shows a Write blocking on back-pressure once a
+// connection direction's buffered-but-unread bytes reach the configured
+// bound, and unblocking once a Read frees enough room -- a hard bound, not
+// a race, so the blocked/unblocked sequence below is deterministic.
+func ExampleWithPipeBound() {
+	const bound = 4
+	n := netchaos.NewNetwork(netchaos.WithPipeBound(bound))
+
+	l, err := n.Listen("tcp", "server")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer func() { _ = l.Close() }()
+	accepted := acceptOne(l)
+
+	client, err := n.Dial("tcp", "server")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer func() { _ = client.Close() }()
+	server := <-accepted
+	defer func() { _ = server.Close() }()
+
+	// Fills the bound exactly; must not block.
+	if _, err := client.Write([]byte("ping")); err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	// The direction is already at its bound, so this write blocks until a
+	// Read frees room.
+	blocked := make(chan struct{})
+	go func() {
+		_, _ = client.Write([]byte{'!'})
+		close(blocked)
+	}()
+
+	select {
+	case <-blocked:
+		fmt.Println("wrote without blocking")
+	case <-time.After(20 * time.Millisecond):
+		fmt.Println("blocked until read")
+	}
+
+	buf := make([]byte, bound)
+	if _, err := io.ReadFull(server, buf); err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	select {
+	case <-blocked:
+		fmt.Println("unblocked after read")
+	case <-time.After(time.Second):
+		fmt.Println("still blocked")
+	}
+	// Output:
+	// blocked until read
+	// unblocked after read
+}
+
+// ExampleWithListenerBacklog shows a Dial failing with ErrBacklogFull once
+// a listener's accept queue reaches the configured bound, rather than the
+// package default of 128.
+func ExampleWithListenerBacklog() {
+	n := netchaos.NewNetwork(netchaos.WithListenerBacklog(1))
+
+	l, err := n.Listen("tcp", "server")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer func() { _ = l.Close() }()
+
+	// Fills the one-slot backlog; nothing calls Accept to drain it.
+	if _, err := n.Dial("tcp", "server"); err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	_, err = n.Dial("tcp", "server")
+	fmt.Println(errors.Is(err, netchaos.ErrBacklogFull))
 	// Output: true
 }
 
