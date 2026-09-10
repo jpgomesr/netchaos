@@ -26,7 +26,7 @@ At the core, netchaos needs an in-memory, full-duplex, byte-stream connection �
       │  Write/Read (net.Conn interface)                    │
       ▼                                                     ▼
  ┌─────────┐        fault injection layer            ┌─────────┐
- │ conn A  │ ───▶  latency / loss / partition  ───▶  │ conn B  │
+ │ conn A  │ ───▶  latency / loss / etc.       ───▶  │ conn B  │
  │         │ ◀───  (seeded, deterministic)     ◀───  │         │
  └─────────┘                                          └─────────┘
 ```
@@ -39,18 +39,22 @@ To support server-side code (`net.Listener.Accept()`), the `Network` also needs 
 
 ### Fault-injection layer
 
-This is where the fault categories from [05 — Fault Injection](05-fault-injection.md) are applied — latency, packet loss, bandwidth throttling, and partition; reordering was considered and [deferred out of v1](05-fault-injection.md#reordering-deferred-not-in-v1):
+This is where the fault categories from [05 — Fault Injection](05-fault-injection.md) are applied — latency, packet loss, bandwidth throttling, data corruption, packet duplication, and partition; reordering was considered and [deferred out of v1](05-fault-injection.md#reordering-deferred-not-in-v1):
 
 - **Latency** — delays delivery of a write to the other end by some duration (fixed or ranged), drawn per `Write` call from the connection's derived RNG stream.
 - **Packet loss** — probabilistically drops a `Write` call in its entirety instead of delivering it, using the connection's derived RNG stream to decide per write.
-- **Bandwidth throttling** ([M7-5](tasks/m7-v0.2.0-implementation.md#m7-5--fault-kind-bandwidth-throttling), v0.2.0) — delays delivery in proportion to a write's size and the configured rate, computed deterministically rather than drawn from a stream: unlike the other three, it has nothing random to draw, so enabling it cannot perturb any other fault's sequence.
+- **Bandwidth throttling** ([M7-5](tasks/m7-v0.2.0-implementation.md#m7-5--fault-kind-bandwidth-throttling), v0.2.0) — delays delivery in proportion to a write's size and the configured rate, computed deterministically rather than drawn from a stream: unlike the other five, it has nothing random to draw, so enabling it cannot perturb any other fault's sequence.
+- **Data corruption** ([M7-9](tasks/m7-v0.2.0-implementation.md#m7-9--fault-kind-data-corruption), v0.2.0) — flips a single bit, chosen uniformly at random, in a delivered write's content, with the given probability, drawn from the connection's derived RNG stream.
+- **Packet duplication** ([M7-8](tasks/m7-v0.2.0-implementation.md#m7-8--fault-kind-packet-duplication), v0.2.0) — admits a delivered write a second time, with the given probability, drawn from the connection's derived RNG stream; the duplicate reuses the original's delivery timing rather than drawing its own.
 - **Partition** — when two simulated peers are partitioned, all traffic between them is dropped (typically indefinitely, until the partition is healed), rather than probabilistically, and consumes no random draws.
 
-Latency, packet loss, and bandwidth apply globally to every connection the `Network` simulates; partition is scoped to the specific peer pair named in `WithPartition`/`Partition`/`Heal` — a deliberate asymmetry, see [04 — API Design](04-api-design.md#fault-scoping-global-vs-per-peer-pair).
+Latency, packet loss, bandwidth, corruption, and duplication apply globally to every connection the `Network` simulates; partition is scoped to the specific peer pair named in `WithPartition`/`Partition`/`Heal` — a deliberate asymmetry, see [04 — API Design](04-api-design.md#fault-scoping-global-vs-per-peer-pair).
 
 Each connection's random draws come from its own stream, derived from `(masterSeed, connectionOrdinal, direction, faultKind)` rather than from one `rand.Rand` shared across the `Network`. This is what keeps a full test run reproducible end to end without making one connection's fault sequence depend on how the Go scheduler happened to interleave it with unrelated connections — see the [determinism contract](04-api-design.md#determinism-contract) for the full model. Bandwidth has no `faultKind` byte and no derived stream of its own, precisely because it draws nothing.
 
-When more than one fault is configured on the same connection direction, there is exactly **one** evaluation point per unit, not four hooks chained or overwriting one another — a unit is checked against partition, then loss, then bandwidth, then latency, in that fixed order, with the draw discipline (which faults draw unconditionally vs. not at all) spelled out in the [determinism contract](04-api-design.md#determinism-contract).
+When more than one fault is configured on the same connection direction, there is exactly **one** evaluation point per unit, not six hooks chained or overwriting one another — a unit is checked against partition, then loss, then bandwidth, then latency, then corruption, then duplication, in that fixed order, with the draw discipline (which faults draw unconditionally vs. not at all) spelled out in the [determinism contract](04-api-design.md#determinism-contract).
+
+Mid-stream connection reset ([M7-7](tasks/m7-v0.2.0-implementation.md#m7-7--fault-kind-mid-stream-connection-reset), v0.2.0, `Network.Reset`) is not part of this per-unit evaluator at all: unlike the six faults above, it is not a drawn, per-`Write` decision but a one-shot imperative action against whichever connections currently exist for a named peer pair, mirroring `Partition`/`Heal`'s shape rather than an `Option`. It takes no random draws and cannot perturb any connection's fault sequence.
 
 ### Composing with `testing/synctest`
 
