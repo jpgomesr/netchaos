@@ -36,8 +36,8 @@ const (
 type conn struct {
 	local, remote *addr
 	network       string
-	ordinal       uint64   // M2-1 dependency, unused in M1
-	side          connSide // M2-1 dependency, unused in M1
+	ordinal       uint64   // this connection's ordinal in the determinism contract (docs/04)
+	side          connSide // selects this direction's derived RNG stream and attributes trace events (trace.go)
 
 	readPipe, writePipe *pipe
 
