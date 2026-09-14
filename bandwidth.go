@@ -2,6 +2,8 @@ package netchaos
 
 import (
 	"fmt"
+	"math"
+	"math/bits"
 	"time"
 )
 
@@ -46,12 +48,34 @@ func validateBandwidthRate(bytesPerSecond int) {
 }
 
 // serializationDelay is how long it takes to put size bytes on a link
-// throttled to bytesPerSecond, computed as whole seconds plus a remainder
-// rather than size*time.Second/bytesPerSecond -- the naive form overflows
-// int64 nanoseconds for a write past roughly 8.5 GiB, which a caller of
-// conn.Write is free to attempt.
+// throttled to bytesPerSecond, computed as size*time.Second/bytesPerSecond
+// with a 128-bit intermediate product (bits.Mul64/bits.Div64) rather than
+// plain int64 arithmetic or a sec/rem split -- both overflow int64
+// nanoseconds under conditions a caller of conn.Write can reach:
+// size*time.Second alone overflows past roughly 8.5 GiB, and a sec/rem split
+// still overflows on its remainder term once bytesPerSecond itself exceeds
+// roughly 9.22 GB/s and size (or size mod bytesPerSecond) is comparably
+// large (issue #80). The 128-bit product is exact for any size and
+// bytesPerSecond this function accepts (bytesPerSecond > 0, validated by
+// validateBandwidthRate), so there is no precision lost the way a float64
+// intermediate would lose.
+//
+// If the true result would exceed the largest representable time.Duration
+// (~292 years), it clamps to that maximum instead of wrapping to a negative
+// value -- a delay that large is never meaningfully "the right number of
+// nanoseconds" for a test to assert on either way.
 func serializationDelay(size, bytesPerSecond int) time.Duration {
-	sec := size / bytesPerSecond
-	rem := size % bytesPerSecond
-	return time.Duration(sec)*time.Second + time.Duration(rem)*time.Second/time.Duration(bytesPerSecond)
+	hi, lo := bits.Mul64(uint64(size), uint64(time.Second))
+	divisor := uint64(bytesPerSecond)
+	if hi >= divisor {
+		// The quotient would not fit in 64 bits, which is already far past
+		// any representable Duration -- clamp without calling bits.Div64,
+		// which panics when the quotient overflows (hi >= y).
+		return time.Duration(math.MaxInt64)
+	}
+	q, _ := bits.Div64(hi, lo, divisor)
+	if q > math.MaxInt64 {
+		return time.Duration(math.MaxInt64)
+	}
+	return time.Duration(q)
 }
