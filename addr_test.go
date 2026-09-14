@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -187,6 +188,46 @@ func TestListenEphemeralPortIsAssigned(t *testing.T) {
 	}
 	if first.Addr().String() == second.Addr().String() {
 		t.Errorf("two ephemeral listeners share an address: %q", first.Addr())
+	}
+}
+
+// TestListenSynthesizedPortWrapsAtMaxPort pins issue #81: nextListenPort
+// advanced unboundedly, unlike ephemeralPort (addr.go), which already wraps
+// via modulo. After 65535-8000+1 listeners with no explicit port, the next
+// synthesized port would exceed the 16-bit range a real TCP port fits in.
+// Tested by seeding the counter at the boundary directly rather than by
+// actually creating that many listeners.
+func TestListenSynthesizedPortWrapsAtMaxPort(t *testing.T) {
+	n := NewNetwork()
+	n.nextListenPort = maxPort // next unnamed Listen takes maxPort, then wraps
+
+	atMax, err := n.Listen("tcp", "peer-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = atMax.Close() }()
+	if _, port, err := net.SplitHostPort(atMax.Addr().String()); err != nil || port != strconv.Itoa(maxPort) {
+		t.Fatalf("Addr() = %q, want port %d", atMax.Addr(), maxPort)
+	}
+
+	wrapped, err := n.Listen("tcp", "peer-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = wrapped.Close() }()
+	_, port, err := net.SplitHostPort(wrapped.Addr().String())
+	if err != nil {
+		t.Fatalf("net.SplitHostPort(%q): %v", wrapped.Addr(), err)
+	}
+	portNum, err := strconv.Atoi(port)
+	if err != nil {
+		t.Fatalf("port %q is not numeric", port)
+	}
+	if portNum < 0 || portNum > maxPort {
+		t.Fatalf("Addr() = %q, port %d is outside the valid 16-bit TCP range [0, %d]", wrapped.Addr(), portNum, maxPort)
+	}
+	if portNum != listenPortBase {
+		t.Fatalf("Addr() = %q, want the counter to wrap to listenPortBase (%d), got %d", wrapped.Addr(), listenPortBase, portNum)
 	}
 }
 
