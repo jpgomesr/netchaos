@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **CI now surfaces coverage and runs a short fuzz pass** (closes #79), on the `1.27` leg only to avoid tripling CI time. `go tool cover -func` prints the total in the step output (no hard gate yet); `go test -fuzz=FuzzPipeAccounting -fuzztime=20s` explores new inputs instead of only replaying the committed seed corpus, which is how `testdata/fuzz/FuzzPipeAccounting/39c4be89a18cc8de` was originally found.
+
 ### Fixed
 
 - **An address with no host (`":0"`, `":8080"`, `""`) no longer names the peer `""`** (closes #73). Three behavioural changes on upgrade:
