@@ -220,6 +220,15 @@ func (n *Network) Listen(network, laddr string) (net.Listener, error) {
 	if !explicit {
 		port = n.nextListenPort
 		n.nextListenPort++
+		if n.nextListenPort > maxPort {
+			// Wrap back into the synthesized range rather than climbing
+			// past it, mirroring ephemeralPort's modulo (addr.go) -- ports
+			// are presentation only (n.listeners is keyed by peer name, not
+			// host:port), so a wrapped port colliding with an
+			// already-assigned one costs nothing beyond looking odd in test
+			// output (issue #81).
+			n.nextListenPort = listenPortBase
+		}
 	}
 
 	l := &listener{
