@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **CI now surfaces coverage and runs a short fuzz pass** (closes #79), on the `1.27` leg only to avoid tripling CI time. `go tool cover -func` prints the total in the step output (no hard gate yet); `go test -fuzz=FuzzPipeAccounting -fuzztime=20s` explores new inputs instead of only replaying the committed seed corpus, which is how `testdata/fuzz/FuzzPipeAccounting/39c4be89a18cc8de` was originally found.
+
 ### Fixed
 
 - **Synthesized listener ports now wrap back into range instead of climbing past 65535** (closes #81). `Listen`'s port counter advanced unboundedly for any listener whose address named no port; after 57,536 such listeners within one `Network`, `Addr().String()` printed a port number no real TCP stack could ever assign. It now wraps back to the synthesized range's base, mirroring the wrap `ephemeralPort` (the dialer side) already had. Ports are presentation only — `Network.Listen` keys uniqueness on peer name, not `host:port` — so a wrapped port never collides with `ErrAddressInUse`.
