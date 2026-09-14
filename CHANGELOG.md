@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **`SetLatency`/`SetPacketLoss` panic messages now name the setter, not the `Option` constructor** they share validation logic with (closes #76). `n.SetPacketLoss(1.5)` previously panicked with `netchaos: WithPacketLoss: ...`; it now says `netchaos: SetPacketLoss: ...`, matching whichever identifier the caller actually invoked.
+- **`SetDeadline`/`SetReadDeadline`/`SetWriteDeadline` on a closed conn now return a non-nil error** satisfying `errors.Is(err, net.ErrClosed)` (wrapped in a `*net.OpError`, `Op: "set"`), matching a real `net.Conn` (closes #82). Previously these three returned `nil` unconditionally, even after `Close`.
 - **An address with no host (`":0"`, `":8080"`, `""`) no longer names the peer `""`** (closes #73). Three behavioural changes on upgrade:
   - `Listen` now treats a hostless address as a wildcard bind and synthesizes a fresh identity, `wildcard-N`; a **second** hostless `Listen` now **succeeds** where it previously returned `ErrAddressInUse`, so a hostless listener's address string changes from `:8000` to e.g. `wildcard-0:8000` — any test asserting it literally needs updating.
   - The peer's name for a wildcard bind — what `Partition`/`Heal`/`Reset` target — is the host half of the listener's `Addr()`, not the string originally passed to `Listen`; `Partition(":8080", ...)` no longer reaches a listener created with `Listen("tcp", ":8080")`.

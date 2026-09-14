@@ -262,18 +262,37 @@ func (c *conn) RemoteAddr() net.Addr { return c.remote }
 // os.ErrDeadlineExceeded rather than succeeding. This matches net.Pipe,
 // which checks its deadline before touching the buffer, and a real net.Conn,
 // whose poller rejects the operation before the syscall.
+//
+// Once Close has run, all three setters return a non-nil error satisfying
+// errors.Is(err, net.ErrClosed) instead of silently applying the deadline —
+// matching a real net.Conn's *net.OpError (Op: "set") for the same case.
 func (c *conn) SetDeadline(t time.Time) error {
+	select {
+	case <-c.closed:
+		return c.opError("set", net.ErrClosed)
+	default:
+	}
 	c.rd.set(t)
 	c.wd.set(t)
 	return nil
 }
 
 func (c *conn) SetReadDeadline(t time.Time) error {
+	select {
+	case <-c.closed:
+		return c.opError("set", net.ErrClosed)
+	default:
+	}
 	c.rd.set(t)
 	return nil
 }
 
 func (c *conn) SetWriteDeadline(t time.Time) error {
+	select {
+	case <-c.closed:
+		return c.opError("set", net.ErrClosed)
+	default:
+	}
 	c.wd.set(t)
 	return nil
 }

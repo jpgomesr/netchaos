@@ -1,6 +1,6 @@
 # 04 — API Design
 
-> **API implemented and shipped.** [M0-5](tasks/m0-decisions-and-foundations.md#m0-5--freeze-the-v1-api-surface) froze the v1 API surface below; every exported identifier it lists is built, tested, and documented via godoc, plus one addition made during implementation (`WithPeerName`, noted where it appears below). The surface may still change before a `v1.0.0` (see [07 — Contributing](07-contributing.md)), but is not expected to for `v0.1.0`.
+> **API implemented and shipped.** [M0-5](tasks/m0-decisions-and-foundations.md#m0-5--freeze-the-v1-api-surface) froze the v1 API surface below; every exported identifier it lists is built, tested, and documented via godoc, plus one addition made during implementation (`WithPeerName`, noted where it appears below). This `v0.1.0` surface had its own ergonomics review ([M5-2](tasks/m5-hardening-and-ergonomics.md#m5-2--api-ergonomics-review-before-v100)) and is not expected to change further. The `v0.2.0` additions documented separately below did not go through that review when they shipped; [M8-7](tasks/m8-v1-readiness.md#m8-7--api-ergonomics-review-of-the-v020-surface-the-v100-gate) (issue [#75](https://github.com/jpgomesr/netchaos/issues/75)) is that pass, and its outcome is what may still change before `v1.0.0` (see [07 — Contributing](07-contributing.md)).
 
 This is a concrete elaboration of the code sample from the root [`README.md`](../README.md), scoped to the v1 fault types in [06 — Scope & Roadmap](06-scope-and-roadmap.md).
 
