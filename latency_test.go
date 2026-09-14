@@ -119,8 +119,8 @@ func TestLatencyDeterministic(t *testing.T) {
 	}
 
 	var a, b []faultEvent
-	synctest.Test(t, func(t *testing.T) { a = trace() })
-	synctest.Test(t, func(t *testing.T) { b = trace() })
+	synctest.Test(t, func(_ *testing.T) { a = trace() })
+	synctest.Test(t, func(_ *testing.T) { b = trace() })
 
 	if len(a) != len(b) {
 		t.Fatalf("trace lengths differ: %d vs %d", len(a), len(b))

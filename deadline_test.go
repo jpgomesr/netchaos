@@ -293,7 +293,7 @@ func TestDeadlineUsesVirtualTime(t *testing.T) {
 	})
 }
 
-func TestDeadlineRace(t *testing.T) {
+func TestDeadlineRace(_ *testing.T) {
 	client, server := newTestConnPair()
 	defer func() { _ = client.Close() }()
 	defer func() { _ = server.Close() }()

@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func TestAddrSatisfiesNetAddr(t *testing.T) {
+func TestAddrSatisfiesNetAddr(_ *testing.T) {
 	var _ net.Addr = (*addr)(nil)
 }
 

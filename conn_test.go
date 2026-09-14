@@ -148,7 +148,7 @@ func TestConnSetDeadlineAfterClose(t *testing.T) {
 	}
 }
 
-func TestConnConcurrentUse(t *testing.T) {
+func TestConnConcurrentUse(_ *testing.T) {
 	client, server := newTestConnPair()
 
 	var wg sync.WaitGroup

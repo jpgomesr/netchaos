@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **CI now surfaces coverage and runs a short fuzz pass** (closes #79), on the `1.27` leg only to avoid tripling CI time. `go tool cover -func` prints the total in the step output (no hard gate yet); `go test -fuzz=FuzzPipeAccounting -fuzztime=20s` explores new inputs instead of only replaying the committed seed corpus, which is how `testdata/fuzz/FuzzPipeAccounting/39c4be89a18cc8de` was originally found.
+- **`.golangci.yml` enables `errorlint`, `revive`, `misspell`, and `godot`** (closes #87). `errorlint` enforces `errors.go`'s own documented `errors.Is`-only convention for sentinel comparisons. `redefines-builtin-id` (part of `revive`'s default set) is excluded project-wide: it flags `min`/`max` as parameter names, which is frozen public API (`WithLatency`, `SetLatency`) and established internal convention, not a defect. Fixed the handful of findings the other three surfaced (an `err != io.EOF` comparison, a few unused `t` test parameters, a missing doc comment on an exported const block, a comment not ending in a period).
 
 ### Fixed
 

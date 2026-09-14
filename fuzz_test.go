@@ -2,6 +2,7 @@ package netchaos
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"testing"
 )
@@ -93,7 +94,7 @@ func FuzzPipeAccounting(f *testing.F) {
 		drainPipe(t, p, &read)
 		checkPipeAccounting(t, p)
 
-		if n, _, err := p.tryRead(make([]byte, 8)); n != 0 || err != io.EOF {
+		if n, _, err := p.tryRead(make([]byte, 8)); n != 0 || !errors.Is(err, io.EOF) {
 			t.Fatalf("tryRead on a closed, drained pipe = (%d, %v), want (0, io.EOF)", n, err)
 		}
 

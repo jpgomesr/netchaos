@@ -44,5 +44,5 @@ var ErrAddressInUse = errors.New("netchaos: address already in use")
 
 // ErrBacklogFull is returned by Network.Dial when the target listener's
 // accept queue is full. It is distinct from ErrConnectionRefused so a test
-// can tell "nobody is listening" apart from "the listener is overwhelmed."
+// can tell "nobody is listening" apart from "the listener is overwhelmed".
 var ErrBacklogFull = errors.New("netchaos: accept backlog full")
