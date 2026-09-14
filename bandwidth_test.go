@@ -8,6 +8,7 @@ package netchaos
 // it draws nothing at all.
 
 import (
+	"math"
 	"net"
 	"testing"
 	"testing/synctest"
@@ -184,6 +185,44 @@ func TestBandwidthOnALargeWriteDoesNotOverflow(t *testing.T) {
 	}
 	if got < 0 {
 		t.Fatalf("serializationDelay overflowed to a negative duration: %v", got)
+	}
+}
+
+// TestBandwidthAboveGBPerSecondDoesNotOverflow pins issue #80: the previous
+// sec/rem split still overflowed int64 nanoseconds when bytesPerSecond
+// itself exceeded roughly 9.22 GB/s and a single Write's size (or its
+// remainder modulo bytesPerSecond) was similarly large -- rem*time.Second
+// wrapped to a negative Duration even though the split was meant to avoid
+// exactly this.
+func TestBandwidthAboveGBPerSecondDoesNotOverflow(t *testing.T) {
+	const (
+		bps  = 10_000_000_000 // 10 GB/s
+		size = 9_300_000_000  // a single 9.3 GB Write
+	)
+	got := serializationDelay(size, bps)
+	want := 930 * time.Millisecond
+	if got != want {
+		t.Fatalf("serializationDelay(%d, %d) = %v, want %v", size, bps, got, want)
+	}
+}
+
+// TestBandwidthExtremeLowRateClampsInsteadOfOverflowing covers the other
+// direction of the same overflow class: a very low bytesPerSecond combined
+// with a large Write makes the true delay exceed what a time.Duration (a
+// signed int64 count of nanoseconds, capped at about 292 years) can
+// represent at all. serializationDelay must clamp to the maximum
+// representable Duration rather than wrap to a negative value.
+func TestBandwidthExtremeLowRateClampsInsteadOfOverflowing(t *testing.T) {
+	const (
+		bps  = 1
+		size = 1 << 40 // 1 TiB at 1 byte/sec is far beyond any representable Duration
+	)
+	got := serializationDelay(size, bps)
+	if got < 0 {
+		t.Fatalf("serializationDelay(%d, %d) = %v, want a non-negative clamp", size, bps, got)
+	}
+	if got != time.Duration(math.MaxInt64) {
+		t.Fatalf("serializationDelay(%d, %d) = %v, want the clamped max Duration", size, bps, got)
 	}
 }
 

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`WithBandwidth`'s serialization delay no longer overflows for a high throttle rate combined with a large `Write`** (closes #80). The previous sec/rem split still overflowed `int64` nanoseconds once `bytesPerSecond` exceeded roughly 9.22 GB/s and a single `Write`'s size (or its remainder modulo `bytesPerSecond`) was similarly large, silently producing a negative delay. `serializationDelay` now computes the exact result via a 128-bit intermediate product (`math/bits`) and clamps to the maximum representable `time.Duration` instead of wrapping, covering the symmetric case (a very low rate combined with a large write) as well.
 - **`SetLatency`/`SetPacketLoss` panic messages now name the setter, not the `Option` constructor** they share validation logic with (closes #76). `n.SetPacketLoss(1.5)` previously panicked with `netchaos: WithPacketLoss: ...`; it now says `netchaos: SetPacketLoss: ...`, matching whichever identifier the caller actually invoked.
 - **`SetDeadline`/`SetReadDeadline`/`SetWriteDeadline` on a closed conn now return a non-nil error** satisfying `errors.Is(err, net.ErrClosed)` (wrapped in a `*net.OpError`, `Op: "set"`), matching a real `net.Conn` (closes #82). Previously these three returned `nil` unconditionally, even after `Close`.
 - **An address with no host (`":0"`, `":8080"`, `""`) no longer names the peer `""`** (closes #73). Three behavioural changes on upgrade:
