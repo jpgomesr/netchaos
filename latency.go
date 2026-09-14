@@ -37,17 +37,20 @@ func WithLatency(min, max time.Duration) Option {
 	}
 }
 
-// validateLatencyRange panics, naming WithLatency and the offending value,
-// if min or max is negative, or if min exceeds max.
-func validateLatencyRange(min, max time.Duration) {
+// validateLatencyRange panics, naming caller and the offending value, if min
+// or max is negative, or if min exceeds max. caller is the identifier the
+// panic message names -- WithLatency's own validation and SetLatency (M7-4)
+// share this function but must each be named for their own call, not each
+// other's (issue #76).
+func validateLatencyRange(caller string, min, max time.Duration) {
 	if min < 0 {
-		panic(fmt.Sprintf("netchaos: WithLatency: min must be >= 0, got %v", min))
+		panic(fmt.Sprintf("netchaos: %s: min must be >= 0, got %v", caller, min))
 	}
 	if max < 0 {
-		panic(fmt.Sprintf("netchaos: WithLatency: max must be >= 0, got %v", max))
+		panic(fmt.Sprintf("netchaos: %s: max must be >= 0, got %v", caller, max))
 	}
 	if min > max {
-		panic(fmt.Sprintf("netchaos: WithLatency: min (%v) must be <= max (%v)", min, max))
+		panic(fmt.Sprintf("netchaos: %s: min (%v) must be <= max (%v)", caller, min, max))
 	}
 }
 
