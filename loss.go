@@ -37,11 +37,14 @@ func WithPacketLoss(rate float64) Option {
 	}
 }
 
-// validateLossRate panics, naming WithPacketLoss and the offending value,
-// if rate is outside [0.0, 1.0] -- including NaN, which always compares
-// false and so would otherwise pass any range check silently.
-func validateLossRate(rate float64) {
+// validateLossRate panics, naming caller and the offending value, if rate is
+// outside [0.0, 1.0] -- including NaN, which always compares false and so
+// would otherwise pass any range check silently. caller is the identifier
+// the panic message names -- WithPacketLoss's own validation and
+// SetPacketLoss (M7-4) share this function but must each be named for their
+// own call, not each other's (issue #76).
+func validateLossRate(caller string, rate float64) {
 	if math.IsNaN(rate) || rate < 0 || rate > 1 {
-		panic(fmt.Sprintf("netchaos: WithPacketLoss: rate must be in [0.0, 1.0], got %v", rate))
+		panic(fmt.Sprintf("netchaos: %s: rate must be in [0.0, 1.0], got %v", caller, rate))
 	}
 }
