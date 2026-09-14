@@ -6,6 +6,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"time"
 )
 
 func newTestConnPair() (client, server *conn) {
@@ -115,6 +116,35 @@ func TestConnWriteAfterClose(t *testing.T) {
 	}
 	if _, err := client.Read(make([]byte, 1)); !errors.Is(err, net.ErrClosed) {
 		t.Fatalf("Read after Close = %v, want errors.Is(net.ErrClosed)", err)
+	}
+}
+
+// TestConnSetDeadlineAfterClose pins issue #82: a real net.Conn's
+// SetDeadline/SetReadDeadline/SetWriteDeadline return a non-nil error
+// satisfying errors.Is(err, net.ErrClosed) once Close has run, matching the
+// error every other post-Close operation on a conn already returns.
+func TestConnSetDeadlineAfterClose(t *testing.T) {
+	client, server := newTestConnPair()
+	defer func() { _ = server.Close() }()
+
+	if err := client.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(time.Second)
+	if err := client.SetDeadline(deadline); !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("SetDeadline after Close = %v, want errors.Is(net.ErrClosed)", err)
+	}
+	if err := client.SetReadDeadline(deadline); !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("SetReadDeadline after Close = %v, want errors.Is(net.ErrClosed)", err)
+	}
+	if err := client.SetWriteDeadline(deadline); !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("SetWriteDeadline after Close = %v, want errors.Is(net.ErrClosed)", err)
+	}
+
+	var opErr *net.OpError
+	if err := client.SetDeadline(deadline); !errors.As(err, &opErr) || opErr.Op != "set" {
+		t.Fatalf("SetDeadline after Close = %v, want a *net.OpError with Op %q", err, "set")
 	}
 }
 

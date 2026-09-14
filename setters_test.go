@@ -98,17 +98,18 @@ func TestSetPacketLossAppliesToLiveConn(t *testing.T) {
 // TestSettersPanicOnInvalidValues holds the setters to the same
 // panic-on-invalid convention as the options they mirror: invalid values are
 // programmer errors in test code, not runtime conditions, and the message
-// names the offending call and value.
+// names the offending call and value -- the setter's own name (issue #76),
+// not the Option constructor it shares validation logic with.
 func TestSettersPanicOnInvalidValues(t *testing.T) {
 	tests := []struct {
 		name    string
 		call    func(*Network)
 		wantMsg string
 	}{
-		{"loss above 1", func(n *Network) { n.SetPacketLoss(1.5) }, "WithPacketLoss"},
-		{"loss below 0", func(n *Network) { n.SetPacketLoss(-0.1) }, "WithPacketLoss"},
-		{"latency min above max", func(n *Network) { n.SetLatency(2*time.Second, time.Second) }, "WithLatency"},
-		{"negative latency", func(n *Network) { n.SetLatency(-time.Second, time.Second) }, "WithLatency"},
+		{"loss above 1", func(n *Network) { n.SetPacketLoss(1.5) }, "SetPacketLoss"},
+		{"loss below 0", func(n *Network) { n.SetPacketLoss(-0.1) }, "SetPacketLoss"},
+		{"latency min above max", func(n *Network) { n.SetLatency(2*time.Second, time.Second) }, "SetLatency"},
+		{"negative latency", func(n *Network) { n.SetLatency(-time.Second, time.Second) }, "SetLatency"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

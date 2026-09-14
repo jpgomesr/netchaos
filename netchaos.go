@@ -468,7 +468,7 @@ func (n *Network) faultConfig() faultConfig {
 // never whether the draw happens — a stream advances one value per unit
 // regardless of what any setter did.
 func (n *Network) SetLatency(min, max time.Duration) {
-	validateLatencyRange(min, max)
+	validateLatencyRange("SetLatency", min, max)
 
 	n.faultMu.Lock()
 	defer n.faultMu.Unlock()
@@ -490,7 +490,7 @@ func (n *Network) SetLatency(min, max time.Duration) {
 // Network call, its order against concurrent in-flight I/O is not fixed by
 // the contract, and the draw discipline does not change.
 func (n *Network) SetPacketLoss(rate float64) {
-	validateLossRate(rate)
+	validateLossRate("SetPacketLoss", rate)
 
 	n.faultMu.Lock()
 	defer n.faultMu.Unlock()
