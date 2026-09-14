@@ -118,7 +118,7 @@ func TestResetConnectionStaysReset(t *testing.T) {
 // convention (partition_test.go: TestPartitionUnknownPeerIsNoop,
 // TestHealUnpartitionedPairIsNoop): Reset on a pair with nothing currently
 // established must not panic or block.
-func TestResetIsNoOpForUnestablishedPair(t *testing.T) {
+func TestResetIsNoOpForUnestablishedPair(_ *testing.T) {
 	n := NewNetwork()
 	n.Reset("nobody", "here") // must not panic
 }

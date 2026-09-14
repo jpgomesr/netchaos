@@ -56,6 +56,8 @@ func (r *traceRecorder) snapshot() []faultEvent {
 // caution addr.go's type comment carries for peer identity, applied here.
 type Side int
 
+// The two Side values, dialer and acceptor -- see the Side doc comment
+// above for what each means and the ordering guarantee they must keep.
 const (
 	SideDialer Side = iota
 	SideAcceptor

@@ -170,6 +170,6 @@ func dummyConn() *conn {
 	return c
 }
 
-func TestListenerSatisfiesNetListener(t *testing.T) {
+func TestListenerSatisfiesNetListener(_ *testing.T) {
 	var _ net.Listener = (*listener)(nil)
 }

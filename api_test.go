@@ -13,7 +13,7 @@ var _ net.Conn = (*conn)(nil)
 // net.Dial: func(network, addr string) (net.Conn, error). This is the whole
 // point of Dial's signature — a caller can pass it anywhere a dial function
 // is accepted (an HTTP transport, a gRPC dialer, ...) without adapting it.
-func TestDialAssignableAsDialFunc(t *testing.T) {
+func TestDialAssignableAsDialFunc(_ *testing.T) {
 	n := NewNetwork()
 	_ = (func(network, addr string) (net.Conn, error))(n.Dial)
 }
