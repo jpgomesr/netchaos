@@ -80,10 +80,10 @@ type Option func(*networkConfig)
 // WithPacketLoss(0.5) does not panic; only the final value is checked).
 func (c *networkConfig) validate() {
 	if c.lossEnabled {
-		validateLossRate(c.lossRate)
+		validateLossRate("WithPacketLoss", c.lossRate)
 	}
 	if c.latencyEnabled {
-		validateLatencyRange(c.latencyMin, c.latencyMax)
+		validateLatencyRange("WithLatency", c.latencyMin, c.latencyMax)
 	}
 	if c.bandwidthEnabled {
 		validateBandwidthRate(c.bandwidthBPS)
