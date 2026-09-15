@@ -159,10 +159,18 @@ var (
 //     even when it was discarded.
 //   - CorruptedByte and CorruptedBit are the byte index and bit index
 //     (within that byte) corruptionSite drew, meaningful only when
-//     Corrupted && Size > 0. A zero-length write still draws the
-//     corruption decision (per the draw discipline), but there is no byte
-//     to flip, so corruptionSite is never called for it and both fields
-//     stay zero even though Corrupted is true.
+//     Corrupted && Size > 0 && !Dropped. corruptionSite is never called
+//     unless a unit survives both drops: dropped fires before mutation is
+//     even attempted (installFaultPolicy, faults.go), so a unit that is
+//     both Dropped and Corrupted still has a zero corruption site -- the
+//     Bernoulli trial was drawn, but the byte/bit draw it would have
+//     conditioned never ran. A zero-length write is the other case with no
+//     site: the corruption decision is still drawn (per the draw
+//     discipline), but there is no byte to flip, so corruptionSite is
+//     never called for it either. Both cases leave CorruptedByte/
+//     CorruptedBit at zero even though Corrupted is true -- reading either
+//     field as "byte 0, bit 0 was flipped" without first checking Size > 0
+//     and !Dropped is exactly the mistake this note exists to prevent.
 type FaultEvent struct {
 	Ordinal uint64
 	Side    Side

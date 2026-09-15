@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`FaultEvent` gains `Size`, `CorruptedByte`, and `CorruptedBit`** (closes #78 — payload size and corruption site only; `Reset` attribution is deferred, see [`docs/06` § Explicitly out of scope for v1](docs/06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1)). `Size` is a unit's payload length in bytes, recorded on every event past the partition gate (including a `Dropped` one) and always zero on a `Partitioned` event. `CorruptedByte`/`CorruptedBit` are the exact byte/bit index `WithCorruption`'s `corruptionSite` drew — previously computed and discarded — meaningful only when `Corrupted && Size > 0`. Lets a corruption failure be diagnosed, or an exact byte reproduced, directly from `Network.Trace()` instead of by re-deriving the stream by hand.
+- **`FaultEvent` gains `Size`, `CorruptedByte`, and `CorruptedBit`** (closes #78 — payload size and corruption site only; `Reset` attribution is deferred, see [`docs/06` § Explicitly out of scope for v1](docs/06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1)). `Size` is a unit's payload length in bytes, recorded on every event past the partition gate (including a `Dropped` one) and always zero on a `Partitioned` event. `CorruptedByte`/`CorruptedBit` are the exact byte/bit index `WithCorruption`'s `corruptionSite` drew — previously computed and discarded — meaningful only when `Corrupted && Size > 0 && !Dropped` (a zero-length or dropped unit never reaches the byte/bit draw, so both stay zero even though `Corrupted` is `true`). Lets a corruption failure be diagnosed, or an exact byte reproduced, directly from `Network.Trace()` instead of by re-deriving the stream by hand.
 
 ### Changed
 

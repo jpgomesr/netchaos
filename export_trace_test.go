@@ -309,3 +309,41 @@ func TestTraceReportsSizeOnDroppedUnit(t *testing.T) {
 		t.Fatal("Trace() has no Dropped event for a write under WithPacketLoss(1.0)")
 	}
 }
+
+// TestTraceCorruptedByteZeroOnDroppedUnit is the case FaultEvent's godoc
+// warns about explicitly: a unit can be both Dropped and Corrupted (the
+// draw discipline draws corruption's Bernoulli trial unconditionally, even
+// for a unit loss already dropped), but Dropped short-circuits the
+// evaluator (installFaultPolicy, faults.go) before the byte/bit draw
+// corruptionSite would otherwise have performed. CorruptedByte/CorruptedBit
+// must therefore stay zero here -- not "byte 0, bit 0 was flipped", since
+// nothing was flipped and no site was drawn at all.
+func TestTraceCorruptedByteZeroOnDroppedUnit(t *testing.T) {
+	n := NewNetwork(WithSeed(7), WithPacketLoss(1.0), WithCorruption(1.0))
+	client, _ := dialPair(t, n)
+
+	if _, err := client.Write([]byte("hello")); err != nil {
+		t.Fatal(err)
+	}
+
+	got := n.Trace()
+	found := false
+	for _, ev := range got {
+		if ev.Dropped {
+			found = true
+			if !ev.Corrupted {
+				t.Fatalf("event not marked Corrupted at rate 1.0: %+v", ev)
+			}
+			if ev.Size != 5 {
+				t.Fatalf("Size = %d on a dropped 5-byte write, want 5", ev.Size)
+			}
+			if ev.CorruptedByte != 0 || ev.CorruptedBit != 0 {
+				t.Fatalf("corruption site = (byte %d, bit %d) on a dropped-and-corrupted unit, want (0, 0): "+
+					"corruptionSite must never be called once Dropped short-circuits the evaluator", ev.CorruptedByte, ev.CorruptedBit)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("Trace() has no Dropped event for a write under WithPacketLoss(1.0)")
+	}
+}
