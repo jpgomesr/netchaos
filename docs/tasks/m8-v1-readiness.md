@@ -24,7 +24,7 @@
 
 ## M8-7 — API ergonomics review of the `v0.2.0` surface (the `v1.0.0` gate)
 
-**Status:** in progress — review complete, decisions pending
+**Status:** done — decisions recorded, see "Review outcome" below
 **Issue:** [#75](https://github.com/jpgomesr/netchaos/issues/75)
 **Depends on:** —
 **Blocks:** `v1.0.0` (per `docs/04`'s and `AGENTS.md`'s existing gate note); does not block a `v0.3.0`-style release of `M8-1`..`M8-6`
@@ -96,44 +96,74 @@ Each decision lands as a comment or label change on its own issue, and a "Review
 
 ---
 
+## Review outcome
+
+Decided by the maintainer, 2026-09-15. In the same order as the findings above.
+
+### F2 (`#83`) — decided: panic
+
+Accepted as recommended: `Partition`, `Heal`, and `Reset` are to validate the same way `WithPartition` already does, panicking on an empty peer name or a self-pair. Not yet implemented — tracked as [`M9-1`](m9-v1-surface-additions.md#m9-1--83-validate-partitionhealreset-the-way-withpartition-already-does).
+
+### F3 (`#84`) — decided: defer
+
+Accepted as recommended. Half-close moves to [`docs/06`](../06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1)'s "genuinely open for post-v1 consideration" list. `#84` is closed by the PR that adds that line — the issue asked only for a decision on record, not an implementation.
+
+### F4 (`#78`) — decided: split, as recommended
+
+Payload size and the corruption byte/bit index are accepted — both are already computed in `faults.go` and simply discarded today, so exposing them is a pure additive change to `FaultEvent`. `Reset` attribution is deferred to [`docs/06`](../06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1): it needs new plumbing outside the per-unit evaluator (`reset.go`), not a field add, so it does not belong in the same PR as the two cheap fields. Tracked for implementation as [`M9-3`](m9-v1-surface-additions.md#m9-3--78-faultevent-gains-payload-size-and-corruption-site).
+
+### F5 (`#86`) — decided: add `DialerOption`/`WithDialTimeout`
+
+Accepted as recommended, and the specific shape too: `DialerFor(name string, opts ...DialerOption)` plus `WithDialTimeout(d time.Duration) DialerOption`, matching the functional-options pattern the rest of the exported surface already uses (`WithLatency`, `WithPartition`, etc.). Without `WithDialTimeout`, `DialerFor` keeps today's behaviour — an unbounded wait against a partitioned peer — so this is purely additive; no existing `DialerFor(name)` call needs to change. Tracked for implementation as [`M9-2`](m9-v1-surface-additions.md#m9-2--86-dialerfor-gains-a-bounded-wait).
+
+### F6 (`#85`) — decided: split, diverging from the recommendation
+
+F6 recommended deferring all three setters together. The maintainer instead split it: **`SetDuplication` and `SetCorruption` are accepted now; `SetBandwidth` is deferred.** The reason the split holds is the same one `#85`'s own author flagged and F6 restated — duplication and corruption are both Bernoulli draws that mirror `SetPacketLoss`'s existing shape exactly (same validation, same live semantics, same draw discipline), while bandwidth draws nothing and its interaction with the pipe's serialization clock (`pipe.busyUntil`) needs its own look before a setter can safely reach it. `SetBandwidth` moves to [`docs/06`](../06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1)'s deferred list; the other two are tracked for implementation as [`M9-4`](m9-v1-surface-additions.md#m9-4--85-partial-setduplication-and-setcorruption).
+
+### F7 (`#77`) — decided: defer
+
+Accepted as recommended. `Network.Trace`'s disable/clear moves to [`docs/06`](../06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1). `#77` is closed by the PR that adds that line.
+
+---
+
 ### M8-1 — `#82`: `SetDeadline`/`SetReadDeadline`/`SetWriteDeadline` on a closed conn return `nil`
 
-**Status:** todo
+**Status:** done — [#92](https://github.com/jpgomesr/netchaos/pull/92)
 **Issue:** [#82](https://github.com/jpgomesr/netchaos/issues/82)
 
 Real `net.Conn` returns a `*net.OpError` (`Op: "set"`) satisfying `errors.Is(err, net.ErrClosed)` once `Close` has run; netchaos's `conn` forwards straight to `deadline.set` with no closed-check. Fix: check `c.closed` (non-blocking select, matching the existing pattern in `Read`/`Write`) before calling `c.rd.set`/`c.wd.set`, returning `c.opError("set", net.ErrClosed)` — reusing the existing `opError` helper rather than hand-rolling the `*net.OpError`. Test-first in `conn_test.go`.
 
 ### M8-2 — `#76`: `SetLatency`/`SetPacketLoss` panic naming the wrong identifier
 
-**Status:** todo
+**Status:** done — [#93](https://github.com/jpgomesr/netchaos/pull/93)
 **Issue:** [#76](https://github.com/jpgomesr/netchaos/issues/76)
 
 `validateLatencyRange`/`validateLossRate` are shared by the `Option` constructors (via `networkConfig.validate()`) and the setters, and hardcode `WithLatency`/`WithPacketLoss` in their panic text regardless of caller. Fix: thread the caller's own name through (a `caller string` parameter, since `validate()`'s batched pass has no other way to know which identifier invoked it), and update `setters_test.go:108-111` to expect `"SetLatency"`/`"SetPacketLoss"` — flip that test first and watch it fail before changing the message.
 
 ### M8-3 — `#80`: `serializationDelay` overflows above ~9.22 GB/s combined with a similarly large single `Write`
 
-**Status:** todo
+**Status:** done — [#94](https://github.com/jpgomesr/netchaos/pull/94)
 **Issue:** [#80](https://github.com/jpgomesr/netchaos/issues/80)
 
 `time.Duration(rem)*time.Second` wraps once `rem` (always `< bytesPerSecond`) exceeds `math.MaxInt64/1e9`. Fix with exact integer arithmetic, not a `float64` intermediate — determinism is the whole pitch, and a float would trade an overflow bug for a precision one. `rem < bytesPerSecond` always, so `rem*1e9` fits in 128 bits: `bits.Mul64` then `bits.Div64` (or an equivalent big-multiply-then-divide) computes the nanosecond remainder term exactly. Before landing, check whether `time.Duration(sec)*time.Second` (the whole-seconds term) can *also* overflow for a low `bytesPerSecond` and a multi-GB write — `size/bytesPerSecond` is unbounded above, so if it can, the fix needs to cover both terms or the issue only half-closes.
 
 ### M8-4 — `#81`: synthesized listener ports exceed the 16-bit range after ~57,536 listeners
 
-**Status:** todo
+**Status:** done — [#95](https://github.com/jpgomesr/netchaos/pull/95)
 **Issue:** [#81](https://github.com/jpgomesr/netchaos/issues/81)
 
 `nextListenPort` increments unbounded; `ephemeralPort` (`addr.go:139-147`) already wraps via modulo into its range. Confirmed safe to mirror that here: `n.listeners` is keyed by peer name alone (`netchaos.go`), not by `host:port`, so two listeners sharing a wrapped port cannot collide on `ErrAddressInUse` the way they would if uniqueness were port-based. Fix: apply the same modulo-into-range pattern `ephemeralPort` uses to `nextListenPort`'s advance. Test directly against the port-synthesis logic (seed the counter near the boundary), not via 57,536 real `Listen` calls.
 
 ### M8-5 — `#79`: CI has no coverage reporting and never runs the fuzz targets
 
-**Status:** todo
+**Status:** done — [#96](https://github.com/jpgomesr/netchaos/pull/96)
 **Issue:** [#79](https://github.com/jpgomesr/netchaos/issues/79)
 
 Add a coverage step (`go test -coverprofile=...`, surfaced via `go tool cover -func`, no hard gate yet) and a short fuzz run (`go test -run=^$ -fuzz=FuzzPipeAccounting -fuzztime=20s ./...`) to `.github/workflows/ci.yml`, on one Go version only to avoid tripling CI time.
 
 ### M8-6 — `#87`: enable `errorlint`, `revive`, `misspell`, `godot` in `.golangci.yml`
 
-**Status:** todo
+**Status:** done — [#97](https://github.com/jpgomesr/netchaos/pull/97)
 **Issue:** [#87](https://github.com/jpgomesr/netchaos/issues/87)
 
 One PR: add the four linters, run `golangci-lint run`, and fix whatever findings surface (expect most volume from `godot`/`revive` on existing comments). `errorlint` directly enforces `errors.go`'s own documented `errors.Is`-only convention.
@@ -142,4 +172,4 @@ One PR: add the four linters, run `golangci-lint run`, and fix whatever findings
 
 ## What comes after M8
 
-Once `M8-1` through `M8-6` are merged and the maintainer has ruled on `M8-7`'s five decisions, whatever was accepted gets its own task (following the `M6`→`M7` precedent: a decision task records *what*, a separate implementation task and PR builds it). At that point the tree is tag-ready — the only thing left before `v1.0.0` is the maintainer's own usage-based timing decision, which this milestone does not attempt to influence.
+`M8-1` through `M8-6` are merged and `M8-7`'s five decisions are recorded above. What was accepted now has its own task, following the `M6`→`M7` precedent: [M9 — v1.0.0 surface additions](m9-v1-surface-additions.md) implements `#83`, `#86`, `#78` (partial), and `#85` (partial). Once M9 lands, the tree is tag-ready — the only thing left before `v1.0.0` is the maintainer's own usage-based timing decision, which neither this milestone nor M9 attempts to influence.
