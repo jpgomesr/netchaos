@@ -52,6 +52,12 @@ func (n *Network) Heal(peerA, peerB string)
 func (n *Network) SetLatency(min, max time.Duration)
 func (n *Network) SetPacketLoss(rate float64)
 
+// Added by M9-4 (issue #85, partial), post-v0.2.0. Same live semantics as
+// SetLatency/SetPacketLoss — see Runtime fault mutation. SetBandwidth was
+// split out and deferred; see 06 — Scope & Roadmap.
+func (n *Network) SetDuplication(rate float64)
+func (n *Network) SetCorruption(rate float64)
+
 // Added by M7-7 (issue #53, candidate 2), post-v0.1.0. Imperative, like
 // Partition/Heal, not a drawn Option -- takes no random draws and has no
 // faultKind. Unlike Partition, has no effect on Dial and does not persist:
