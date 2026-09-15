@@ -52,6 +52,12 @@ func (n *Network) Heal(peerA, peerB string)
 func (n *Network) SetLatency(min, max time.Duration)
 func (n *Network) SetPacketLoss(rate float64)
 
+// Added by M9-4 (issue #85, partial), post-v0.2.0. Same live semantics as
+// SetLatency/SetPacketLoss — see Runtime fault mutation. SetBandwidth was
+// split out and deferred; see 06 — Scope & Roadmap.
+func (n *Network) SetDuplication(rate float64)
+func (n *Network) SetCorruption(rate float64)
+
 // Added by M7-7 (issue #53, candidate 2), post-v0.1.0. Imperative, like
 // Partition/Heal, not a drawn Option -- takes no random draws and has no
 // faultKind. Unlike Partition, has no effect on Dial and does not persist:
@@ -411,11 +417,13 @@ Decided by [M0-4](tasks/m0-decisions-and-foundations.md#m0-4--design-the-determi
 
 Because a connection's draw sequence depends only on its own ordinal, direction, and fault kind — never on what any other connection did, or on how the scheduler interleaved them — the fault sequence on that connection is reproducible independent of concurrent activity elsewhere in the `Network`. Partition consumes no random draws at all (see [05 — Fault Injection](05-fault-injection.md#partition)), so it doesn't perturb any stream.
 
-**The guarantee, precisely:** for a fixed seed and a fixed *order* in which `Dial`, `Listen`, `Partition`, `Heal`, `SetLatency`, and `SetPacketLoss` are called, each resulting connection produces an identical sequence of injected faults across runs and across machines. This is the property that lets a failing test be reproduced reliably from a seed value alone — analogous to how `go test -run` plus a fixed input reproduces a deterministic unit test failure.
+**The guarantee, precisely:** for a fixed seed and a fixed *order* in which `Dial`, `Listen`, `Partition`, `Heal`, `SetLatency`, `SetPacketLoss`, `SetDuplication`, and `SetCorruption` are called, each resulting connection produces an identical sequence of injected faults across runs and across machines. This is the property that lets a failing test be reproduced reliably from a seed value alone — analogous to how `go test -run` plus a fixed input reproduces a deterministic unit test failure.
 
 ### Runtime fault mutation
 
 Decided by [M6-13](tasks/m6-review-findings.md#m6-13--decide-on-runtime-mutation-of-latency-and-loss) and written here **before** `SetLatency`/`SetPacketLoss` exist, which was the substantive half of that decision: the contract is the library's core promise, and settling it after an implementation had already shipped would mean the code, not this document, had picked the answer. [M7-4](tasks/m7-v0.2.0-implementation.md#m7-4--setlatency-and-setpacketloss) implements against what follows.
+
+**`SetDuplication` and `SetCorruption` join this section under the same posture** ([M9-4](tasks/m9-v1-surface-additions.md#m9-4--85-partial-setduplication-and-setcorruption), issue [#85](https://github.com/jpgomesr/netchaos/issues/85) partial): this widening lands before their code, the same discipline `M7-3` used ahead of `M7-4`. Everything below about `SetLatency`/`SetPacketLoss` — ordered-call semantics, live effect on already-established connections, and unchanged draw discipline — applies to `SetDuplication`/`SetCorruption` identically; both are Bernoulli draws with no serialization-clock interaction, the same shape packet loss already has. Restated explicitly because it is easy to get backwards: enabling duplication or corruption mid-run, when it was off at construction, **does** begin drawing from that kind's own independent stream from that point on — it does not shift any other kind's sequence, since kinds are independent by derivation (see the two bullets below). `SetBandwidth` is deliberately not part of this widening — see [06 — Scope & Roadmap § Explicitly out of scope for v1](06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1) for why bandwidth's live-setter case needs its own design pass.
 
 **The setters are ordered calls, exactly like `Partition` and `Heal`.** They join the list in the guarantee above. A test that calls them in a fixed order relative to its other `Network` calls reproduces exactly; one that calls them from a goroutine racing other `Network` calls does not, for the same reason and with the same fix as a racing `Dial`.
 

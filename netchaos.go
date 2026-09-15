@@ -45,10 +45,11 @@ import (
 type Network struct {
 	seed int64
 
-	// faultMu guards faults, which SetLatency and SetPacketLoss write and
-	// the per-unit evaluator reads (M7-4). This read was lock-free until the
-	// configuration became mutable; #50 accepted that cost explicitly rather
-	// than as a side effect, since it is on the delivery hot path.
+	// faultMu guards faults, which SetLatency, SetPacketLoss (M7-4),
+	// SetDuplication, and SetCorruption (M9-4) write and the per-unit
+	// evaluator reads. This read was lock-free until the configuration
+	// became mutable; #50 accepted that cost explicitly rather than as a
+	// side effect, since it is on the delivery hot path.
 	faultMu sync.RWMutex
 	faults  faultConfig
 
@@ -496,6 +497,56 @@ func (n *Network) SetPacketLoss(rate float64) {
 	defer n.faultMu.Unlock()
 	n.faults.lossEnabled = true
 	n.faults.lossRate = rate
+}
+
+// SetDuplication changes the duplication rate applied to every connection in
+// n, including connections already established — the same live semantics
+// SetLatency and SetPacketLoss have (M9-4, issue #85 partial).
+//
+// rate means exactly what WithDuplication's does and is validated the same
+// way: outside [0.0, 1.0], including NaN and ±Inf, panics naming the
+// offending value. SetDuplication(0.0) is an explicit never-duplicate policy
+// rather than "off"; it still draws.
+//
+// The same determinism note as SetLatency/SetPacketLoss applies: the setter
+// is an ordered Network call (see the determinism contract's Runtime fault
+// mutation section), its order against concurrent in-flight I/O is not
+// fixed by the contract, and the draw discipline does not change. Enabling
+// duplication with this setter when it was never configured at
+// construction begins drawing from duplication's own independent stream
+// from that point on, without shifting any other fault kind's sequence.
+func (n *Network) SetDuplication(rate float64) {
+	validateDuplicationRate("SetDuplication", rate)
+
+	n.faultMu.Lock()
+	defer n.faultMu.Unlock()
+	n.faults.duplicateEnabled = true
+	n.faults.duplicateRate = rate
+}
+
+// SetCorruption changes the corruption rate applied to every connection in
+// n, including connections already established — the same live semantics
+// SetLatency and SetPacketLoss have (M9-4, issue #85 partial).
+//
+// rate means exactly what WithCorruption's does and is validated the same
+// way: outside [0.0, 1.0], including NaN and ±Inf, panics naming the
+// offending value. SetCorruption(0.0) is an explicit never-corrupt policy
+// rather than "off"; it still draws.
+//
+// The same determinism note as SetLatency/SetPacketLoss applies: the setter
+// is an ordered Network call (see the determinism contract's Runtime fault
+// mutation section), its order against concurrent in-flight I/O is not
+// fixed by the contract, and the draw discipline does not change. Enabling
+// corruption with this setter when it was never configured at construction
+// begins drawing from corruption's own independent stream from that point
+// on, without shifting any other fault kind's sequence.
+func (n *Network) SetCorruption(rate float64) {
+	validateCorruptionRate("SetCorruption", rate)
+
+	n.faultMu.Lock()
+	defer n.faultMu.Unlock()
+	n.faults.corruptEnabled = true
+	n.faults.corruptRate = rate
 }
 
 // waitUnpartitioned blocks until k is not partitioned or ctx is done,

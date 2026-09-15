@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`Network.SetDuplication` and `Network.SetCorruption`** (closes #85 — partial; `SetBandwidth` is deferred, see [`docs/06` § Explicitly out of scope for v1](docs/06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1)). Live mutation of the duplication and corruption rates, the same semantics `SetLatency`/`SetPacketLoss` (`M7-4`) already have: a change reaches connections that already exist, not only future dials, with the same panic-on-invalid-value convention and unchanged draw discipline — enabling a fault kind mid-run that was off at construction begins drawing from that kind's own stream without shifting any other kind's sequence.
+
 ### Changed
 
 - **CI now surfaces coverage and runs a short fuzz pass** (closes #79), on the `1.27` leg only to avoid tripling CI time. `go tool cover -func` prints the total in the step output (no hard gate yet); `go test -fuzz=FuzzPipeAccounting -fuzztime=20s` explores new inputs instead of only replaying the committed seed corpus, which is how `testdata/fuzz/FuzzPipeAccounting/39c4be89a18cc8de` was originally found.
