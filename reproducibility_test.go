@@ -119,22 +119,32 @@ type scenario struct {
 
 	// fields lists any optional per-unit golden columns this scenario's
 	// trace should carry, beyond the fixed base set every trace always has
-	// (ord side seq part drop drawn_ns eff_ns). Three values exist: "thr"
+	// (ord side seq part drop drawn_ns eff_ns). Four values exist: "thr"
 	// (faultEvent.serialized, M7-5's bandwidth throttle), "dup"
-	// (faultEvent.duplicated, M7-8's duplication), and "corrupt"
-	// (faultEvent.corrupted, M7-9's data corruption). Rendered in that fixed
-	// order -- thr, then corrupt, then dup -- regardless of the order
-	// they're listed here (corrupt before dup mirrors the evaluator's own
-	// order in faults.go, so a duplicated unit's second copy reflects
-	// whatever corruption already did to the first). This is declared here
-	// rather than inferred from which faults the scenario configures --
-	// inferring from "was WithBandwidth/WithDuplication/WithCorruption
-	// given" would have to stay in sync with whatever a future runtime
-	// setter could turn on mid-scenario (M7-4 already made loss/latency's
-	// enabled bits dynamic this way), while a declared field set cannot
-	// drift. nil for the fixed base set, which is what keeps every scenario
-	// that predates M7-5 byte-identical: none of them names "thr", "dup",
-	// or "corrupt".
+	// (faultEvent.duplicated, M7-8's duplication), "corrupt"
+	// (faultEvent.corrupted, M7-9's data corruption), and "site"
+	// (faultEvent.size/corruptByte/corruptBit, M9-3's payload size and
+	// corruption site, #78). Rendered in that fixed order -- thr, then
+	// corrupt, then site, then dup -- regardless of the order they're
+	// listed here (corrupt before dup mirrors the evaluator's own order in
+	// faults.go, so a duplicated unit's second copy reflects whatever
+	// corruption already did to the first; site sits next to corrupt since
+	// it only carries meaning alongside it). This is declared here rather
+	// than inferred from which faults the scenario configures -- inferring
+	// from "was WithBandwidth/WithDuplication/WithCorruption given" would
+	// have to stay in sync with whatever a future runtime setter could turn
+	// on mid-scenario (M7-4 already made loss/latency's enabled bits
+	// dynamic this way), while a declared field set cannot drift. nil for
+	// the fixed base set, which is what keeps every scenario that predates
+	// M7-5 byte-identical: none of them names "thr", "dup", "corrupt", or
+	// "site".
+	//
+	// "site" is unlike the other three: size is nonzero on every unit
+	// regardless of which faults are configured (M9-3), not only on units
+	// the declared fault actually touched -- so a scenario that doesn't
+	// declare "site" needs its live-captured trace's size/corruptByte/
+	// corruptBit normalized to zero before comparing against a golden file
+	// that never recorded them; see canonicalTrace.stripUndeclaredSiteFields.
 	fields []string
 
 	fn func(t *testing.T, seed int64) []net.Conn
@@ -233,6 +243,7 @@ func boolInt(b bool) int {
 func (ct canonicalTrace) render(fields []string) string {
 	includeThrottle := slices.Contains(fields, "thr")
 	includeCorrupt := slices.Contains(fields, "corrupt")
+	includeSite := slices.Contains(fields, "site")
 	includeDuplicate := slices.Contains(fields, "dup")
 	var b strings.Builder
 	for _, l := range ct {
@@ -244,12 +255,41 @@ func (ct canonicalTrace) render(fields []string) string {
 		if includeCorrupt {
 			fmt.Fprintf(&b, " corrupt=%d", boolInt(l.corrupted))
 		}
+		if includeSite {
+			fmt.Fprintf(&b, " size=%d cbyte=%d cbit=%d", l.size, l.corruptByte, l.corruptBit)
+		}
 		if includeDuplicate {
 			fmt.Fprintf(&b, " dup=%d", boolInt(l.duplicated))
 		}
 		fmt.Fprintf(&b, " drawn=%d eff=%d\n", int64(l.drawn), int64(l.effective))
 	}
 	return b.String()
+}
+
+// stripUndeclaredSiteFields zeroes size/corruptByte/corruptBit on every
+// line, for a scenario that doesn't declare "site" in its fields. Unlike
+// thr/dup/corrupt -- which are genuinely zero in a live trace for any
+// scenario that doesn't configure the corresponding fault -- size is
+// nonzero on every unit regardless of which faults are configured (M9-3,
+// #78), so a live-captured trace needs this normalization before comparing
+// against a golden file that (via render/writeGolden) never recorded these
+// columns for a scenario that didn't declare them. Not needed for the
+// -update path: render already scopes what it WRITES to declared fields
+// regardless of the struct's own values, so an un-normalized trace still
+// produces a golden file with no size/cbyte/cbit columns for a scenario
+// that doesn't declare "site".
+func (ct canonicalTrace) stripUndeclaredSiteFields(fields []string) canonicalTrace {
+	if slices.Contains(fields, "site") {
+		return ct
+	}
+	out := make(canonicalTrace, len(ct))
+	copy(out, ct)
+	for i := range out {
+		out[i].size = 0
+		out[i].corruptByte = 0
+		out[i].corruptBit = 0
+	}
+	return out
 }
 
 func (ct canonicalTrace) equal(other canonicalTrace) bool {
@@ -292,6 +332,9 @@ func writeGolden(path, scenarioName string, seed int64, fields []string, ct cano
 	}
 	if slices.Contains(fields, "corrupt") {
 		fieldsLine += " corrupt"
+	}
+	if slices.Contains(fields, "site") {
+		fieldsLine += " size cbyte cbit"
 	}
 	if slices.Contains(fields, "dup") {
 		fieldsLine += " dup"
@@ -339,15 +382,32 @@ func readGolden(path string) (canonicalTrace, error) {
 		if err != nil {
 			return nil, fmt.Errorf("parsing golden line %q: %w", line, err)
 		}
-		// thr, dup, and corrupt are all optional: absent entirely from every
-		// golden that predates their respective task (M7-5, M7-8, M7-9),
-		// since writeGolden only emits any of them for a scenario that
-		// declares it in fields. Absent parses as the zero value, matching
-		// an unthrottled faultEvent.serialized, a never-duplicated
-		// faultEvent.duplicated, or an uncorrupted faultEvent.corrupted.
+		// thr, dup, corrupt, and site (size/cbyte/cbit) are all optional:
+		// absent entirely from every golden that predates their respective
+		// task (M7-5, M7-8, M7-9, M9-3), since writeGolden only emits any of
+		// them for a scenario that declares it in fields. Absent parses as
+		// the zero value, matching an unthrottled faultEvent.serialized, a
+		// never-duplicated faultEvent.duplicated, an uncorrupted
+		// faultEvent.corrupted, or a faultEvent with no recorded size/site.
 		var serialized int64
 		if v, ok := m["thr"]; ok {
 			serialized, err = strconv.ParseInt(v, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("parsing golden line %q: %w", line, err)
+			}
+		}
+		var size, corruptByte int
+		var corruptBit uint64
+		if v, ok := m["size"]; ok {
+			size, err = strconv.Atoi(v)
+			if err != nil {
+				return nil, fmt.Errorf("parsing golden line %q: %w", line, err)
+			}
+			corruptByte, err = strconv.Atoi(m["cbyte"])
+			if err != nil {
+				return nil, fmt.Errorf("parsing golden line %q: %w", line, err)
+			}
+			corruptBit, err = strconv.ParseUint(m["cbit"], 10, 8)
 			if err != nil {
 				return nil, fmt.Errorf("parsing golden line %q: %w", line, err)
 			}
@@ -364,6 +424,9 @@ func readGolden(path string) (canonicalTrace, error) {
 				drawn:       time.Duration(drawn),
 				serialized:  time.Duration(serialized),
 				effective:   time.Duration(eff),
+				size:        size,
+				corruptByte: corruptByte,
+				corruptBit:  uint8(corruptBit),
 			},
 		})
 	}
@@ -592,7 +655,7 @@ func scenarioDuplicated(unitCount int) scenario {
 func scenarioCorrupted(unitCount int) scenario {
 	return scenario{
 		name:   "corrupted",
-		fields: []string{"corrupt"},
+		fields: []string{"corrupt", "site"},
 		fn: func(t *testing.T, seed int64) []net.Conn {
 			n := NewNetwork(WithSeed(seed), WithCorruption(0.5))
 			client, server := dialNamedPair(t, n)
@@ -813,8 +876,15 @@ func TestGoldenTraces(t *testing.T) {
 			if err != nil {
 				t.Fatalf("reading golden file %s: %v (run with -update to generate it)", path, err)
 			}
-			if !trace.equal(want) {
-				t.Fatalf("trace does not match golden file %s:\n%s", path, trace.diff(want))
+			// size/corruptByte/corruptBit (M9-3) are nonzero in the live
+			// trace on every unit regardless of configured faults, unlike
+			// thr/dup/corrupt -- so they're normalized to zero here for any
+			// scenario that doesn't declare "site", matching what the
+			// golden file (scoped to declared fields by render/writeGolden)
+			// actually recorded.
+			got := trace.stripUndeclaredSiteFields(c.sc.fields)
+			if !got.equal(want) {
+				t.Fatalf("trace does not match golden file %s:\n%s", path, got.diff(want))
 			}
 		})
 	}

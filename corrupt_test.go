@@ -108,7 +108,7 @@ func TestCorruptionNeverAtZeroRate(t *testing.T) {
 // decision unconditionally, but there is no byte to flip. corruptionSite
 // must not be reached, or must not be asked to index into an empty slice.
 func TestCorruptionOnZeroLengthWriteDoesNotPanic(t *testing.T) {
-	_, client, server := newCorruptTestNetwork(t, 1.0)
+	n, client, server := newCorruptTestNetwork(t, 1.0)
 
 	if _, err := client.Write(nil); err != nil {
 		t.Fatal(err)
@@ -123,6 +123,23 @@ func TestCorruptionOnZeroLengthWriteDoesNotPanic(t *testing.T) {
 	}
 	// Only asserting no panic occurred and the connection is still usable;
 	// the sentinel write's own corruption (if any) is not the point here.
+
+	// M9-3 (#78): the zero-length write's own event must report Size == 0
+	// and a zero corruption site, with no panic reaching corruptionSite.
+	trace := n.Trace()
+	if len(trace) == 0 {
+		t.Fatal("Trace() returned no events")
+	}
+	first := trace[0]
+	if !first.Corrupted {
+		t.Fatal("zero-length write's event not marked Corrupted at rate 1.0")
+	}
+	if first.Size != 0 {
+		t.Fatalf("Size = %d on a zero-length write, want 0", first.Size)
+	}
+	if first.CorruptedByte != 0 || first.CorruptedBit != 0 {
+		t.Fatalf("corruption site = (byte %d, bit %d) on a zero-length write, want (0, 0)", first.CorruptedByte, first.CorruptedBit)
+	}
 }
 
 // TestCorruptionDoesNotMutateCallerBuffer confirms the decided safety

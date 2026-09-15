@@ -16,6 +16,21 @@ type faultEvent struct {
 	drawn       time.Duration // duration drawn from the latency stream; zero if latency isn't configured
 	serialized  time.Duration // this unit's contribution to link-busy time under a throttle (M7-5); zero if bandwidth isn't configured
 	effective   time.Duration // duration actually applied, relative to when serialization finished, after any clamping (M2-2)
+
+	// size, corruptByte, and corruptBit are M9-3's addition (#78, payload
+	// size and corruption site): the byte/bit index corruptionSite (rand.go)
+	// already computed and installFaultPolicy (faults.go) previously
+	// discarded after flipping the bit. size is len(data) at the point a
+	// non-partitioned unit is first evaluated -- zero on a partitioned
+	// event, matching every other field there (see FaultEvent's godoc for
+	// the invariant this preserves). corruptByte/corruptBit are only
+	// meaningful when corrupted is true and size > 0: a zero-length write
+	// still draws the corruption decision (per the draw discipline) but has
+	// no byte to flip, so corruptionSite is never called for it and both
+	// stay zero.
+	size        int
+	corruptByte int
+	corruptBit  uint8
 }
 
 // traceRecorder accumulates faultEvents for one connection direction, in
@@ -127,6 +142,27 @@ var (
 // happened: Delay may be non-zero for a unit that was never sent, and
 // Serialization and Effective are always zero, since loss short-circuits
 // installFaultPolicy's evaluator before either is computed (faults.go).
+//
+// Size, CorruptedByte and CorruptedBit (M9-3, issue #78 -- payload size and
+// corruption site; Reset attribution stays deferred, see docs/06) let a
+// corruption or duplication failure be diagnosed, or an exact byte
+// reproduced, without re-deriving the corruption stream by hand:
+//
+//   - Size is the unit's payload length, in bytes, at the point it was
+//     evaluated. Always zero on a Partitioned event, since a partitioned
+//     unit is discarded before its size is ever recorded (the same
+//     zero-draw exception every other field there follows) -- but the
+//     converse does not hold: a zero-length Write also reports Size == 0
+//     on a non-Partitioned event, so Size == 0 alone never implies
+//     Partitioned. Recorded on every event past the partition gate,
+//     including a Dropped one, since a unit's size is known and meaningful
+//     even when it was discarded.
+//   - CorruptedByte and CorruptedBit are the byte index and bit index
+//     (within that byte) corruptionSite drew, meaningful only when
+//     Corrupted && Size > 0. A zero-length write still draws the
+//     corruption decision (per the draw discipline), but there is no byte
+//     to flip, so corruptionSite is never called for it and both fields
+//     stay zero even though Corrupted is true.
 type FaultEvent struct {
 	Ordinal uint64
 	Side    Side
@@ -140,6 +176,10 @@ type FaultEvent struct {
 	Delay         time.Duration
 	Serialization time.Duration
 	Effective     time.Duration
+
+	Size          int
+	CorruptedByte int
+	CorruptedBit  uint8
 }
 
 // traceHandle is what Network.Trace (M7-10) keeps for one connection
@@ -203,6 +243,9 @@ func (n *Network) Trace() []FaultEvent {
 				Delay:         e.drawn,
 				Serialization: e.serialized,
 				Effective:     e.effective,
+				Size:          e.size,
+				CorruptedByte: e.corruptByte,
+				CorruptedBit:  e.corruptBit,
 			})
 		}
 	}
