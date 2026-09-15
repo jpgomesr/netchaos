@@ -86,7 +86,7 @@
 
 ## M9-4 — `#85` (partial): `SetDuplication` and `SetCorruption`
 
-**Status:** todo
+**Status:** done — [#101](https://github.com/jpgomesr/netchaos/pull/101)
 **Issue:** [#85](https://github.com/jpgomesr/netchaos/issues/85) — `SetDuplication`/`SetCorruption` only; `SetBandwidth` stays deferred ([docs/06](../06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1))
 
 **Read path already handles this — verified, not assumed:** `netchaos.go:48`'s `faultMu` guards the whole `n.faults faultConfig` struct, and the per-unit evaluator already reads that entire struct in one `RLock` via `faultConfig()` (`netchaos.go:441-444`), which `faultPolicy.current()` (`faults.go:65-70`) calls on every unit regardless of which fault kinds are enabled. `duplicateEnabled`/`duplicateRate`/`corruptEnabled`/`corruptRate` are fields on that same struct, so they are **already** read under `faultMu` on the hot path — this is unlike the situation `M6-13`/`M7-3` faced for latency/loss, where the read path had to be *changed* from lock-free to locked. No read-path change is needed here; the gap is purely the missing setter methods.
