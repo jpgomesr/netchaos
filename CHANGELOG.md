@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`DialerOption` and `WithDialTimeout`** (closes #86). `Network.DialerFor` now accepts optional `DialerOption`s: `DialerFor(name, WithDialTimeout(d))` bounds every dial made through the returned closure to `d`, failing with an error satisfying `errors.Is(err, context.DeadlineExceeded)` instead of hanging until `Heal` against a partitioned peer. Purely additive — `DialerFor(name)` without options keeps its existing unbounded-wait behaviour, so no call site needs to change.
+
 ### Changed
 
 - **CI now surfaces coverage and runs a short fuzz pass** (closes #79), on the `1.27` leg only to avoid tripling CI time. `go tool cover -func` prints the total in the step output (no hard gate yet); `go test -fuzz=FuzzPipeAccounting -fuzztime=20s` explores new inputs instead of only replaying the committed seed corpus, which is how `testdata/fuzz/FuzzPipeAccounting/39c4be89a18cc8de` was originally found.
