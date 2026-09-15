@@ -46,7 +46,7 @@
 
 ## M9-2 — `#86`: `DialerFor` gains a bounded wait
 
-**Status:** todo
+**Status:** done — [#100](https://github.com/jpgomesr/netchaos/pull/100)
 **Issue:** [#86](https://github.com/jpgomesr/netchaos/issues/86)
 **Depends on:** —
 **Blocks:** —
