@@ -332,6 +332,10 @@ type FaultEvent struct {
     Delay         time.Duration
     Serialization time.Duration
     Effective     time.Duration
+
+    Size          int
+    CorruptedByte int
+    CorruptedBit  uint8
 }
 ```
 
@@ -345,7 +349,9 @@ type FaultEvent struct {
 
 **The three durations need reading carefully, not just naming.** `Delay` is what was drawn from the latency stream — but `WithLatency(0, 0)`/`SetLatency(0, 0)` is an explicit fixed-zero delay that still draws (per [Runtime fault mutation](#runtime-fault-mutation)), so `Delay == 0` does not mean "latency wasn't configured." `Serialization` is a unit's contribution to link-busy time under `WithBandwidth`, zero without one. `Effective` is the delay applied **after** serialization finishes, not the total delay from `Write` — a unit's full delay is `Serialization + Effective`. On a `Dropped` event, `Serialization` and `Effective` are always zero: loss short-circuits the evaluator before either is computed, so these fields describe what was drawn, never a delivery that happened.
 
-**What `Trace` does not cover:** `Network.Reset` ([M7-7](tasks/m7-v0.2.0-implementation.md#m7-7--fault-kind-mid-stream-connection-reset)) is an imperative action, not a per-unit decision, and records no event. A dial that never establishes — refused, blocked on a partition and then cancelled, or rejected for a full backlog — allocates no pipes and appears nowhere in the trace.
+**`Size`, `CorruptedByte`, and `CorruptedBit`** ([M9-3](tasks/m9-v1-surface-additions.md#m9-3--78-faultevent-gains-payload-size-and-corruption-site), issue [#78](https://github.com/jpgomesr/netchaos/issues/78) — payload size and corruption site only; `Reset` attribution stays deferred, see below) let a corruption or duplication failure be diagnosed, or an exact byte reproduced, without re-deriving the corruption stream by hand. `Size` is the unit's payload length in bytes at the point it was evaluated, recorded on every event past the partition gate — including a `Dropped` one, since a unit's size is known and meaningful even when it was discarded. `Size` is always zero on a `Partitioned` event, the same zero-draw exception every other field there follows, but the converse does not hold: a zero-length `Write` also reports `Size == 0` on a non-`Partitioned` event, so `Size == 0` alone never implies `Partitioned`. `CorruptedByte`/`CorruptedBit` are the byte index and bit index `corruptionSite` drew, meaningful only when `Corrupted && Size > 0 && !Dropped`. Two cases leave both fields at zero even though `Corrupted` is `true`: a zero-length write still draws the corruption decision (per the draw discipline) but has no byte to flip, so `corruptionSite` is never called for it; and a unit that is both `Dropped` and `Corrupted` also has a zero site, since `Dropped` short-circuits the evaluator before the byte/bit draw the Bernoulli trial would otherwise have conditioned ever runs. Reading either field as "byte 0, bit 0 was flipped" without checking `Size > 0` and `!Dropped` first is exactly the mistake this note exists to prevent.
+
+**What `Trace` does not cover:** `Network.Reset` ([M7-7](tasks/m7-v0.2.0-implementation.md#m7-7--fault-kind-mid-stream-connection-reset)) is an imperative action, not a per-unit decision, and records no event — attributing a `Reset` call in the trace is deferred, [docs/06 § Explicitly out of scope for v1](06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1). A dial that never establishes — refused, blocked on a partition and then cancelled, or rejected for a full backlog — allocates no pipes and appears nowhere in the trace.
 
 **Retention.** A connection's trace is kept for `n`'s own lifetime, independent of whether the connection itself has since been closed — the accessor exists to be read after a test's `defer c.Close()` has already run, which would be the common case it fails to serve if closing pruned the trace the way `Network.Reset`'s registry (`M7-7`) deliberately does.
 
