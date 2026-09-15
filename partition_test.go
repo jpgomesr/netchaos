@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -508,4 +509,54 @@ func TestDialerForBlocksOnStartPartitioned(t *testing.T) {
 			t.Fatalf("dial after Heal = %v, want nil", err)
 		}
 	})
+}
+
+// TestPartitionAndHealPanicOnInvalidPair is the entry-point-consistency half
+// of M9-1 (#83): Partition and Heal must reject the same raw arguments
+// WithPartition already rejects (validatePartitionPair, partition.go),
+// panicking on an empty peer name or a self-pair, and naming themselves
+// rather than WithPartition in the message.
+func TestPartitionAndHealPanicOnInvalidPair(t *testing.T) {
+	tests := []struct {
+		name    string
+		call    func(*Network)
+		wantMsg string
+	}{
+		{"Partition empty peerA", func(n *Network) { n.Partition("", "b") }, "Partition"},
+		{"Partition empty peerB", func(n *Network) { n.Partition("a", "") }, "Partition"},
+		{"Partition self-pair", func(n *Network) { n.Partition("a", "a") }, "Partition"},
+		{"Heal empty peerA", func(n *Network) { n.Heal("", "b") }, "Heal"},
+		{"Heal empty peerB", func(n *Network) { n.Heal("a", "") }, "Heal"},
+		{"Heal self-pair", func(n *Network) { n.Heal("a", "a") }, "Heal"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				r := recover()
+				if r == nil {
+					t.Fatal("no panic, want one naming the offending call and value")
+				}
+				msg, ok := r.(string)
+				if !ok || !strings.Contains(msg, tt.wantMsg) {
+					t.Fatalf("panic = %v, want a message mentioning %q", r, tt.wantMsg)
+				}
+			}()
+			tt.call(NewNetwork())
+		})
+	}
+}
+
+// TestPartitionPortSuffixedSelfPairDoesNotPanic documents a known,
+// pre-existing gap rather than asserting it as correct: validation runs on
+// the raw, unresolved peerA/peerB strings, before peerName strips a :port
+// suffix. "client:1" and "client:2" differ as raw strings, so this does not
+// panic -- exactly matching WithPartition's existing behaviour on the same
+// input (see partition.go's validatePartitionPair doc and M9-1's task
+// notes). NewNetwork then resolves both through peerName and silently
+// stores a self-pair. This is not fixed here: M9-1's stated goal is
+// entry-point consistency with WithPartition, not a new validation rule
+// WithPartition itself doesn't have.
+func TestPartitionPortSuffixedSelfPairDoesNotPanic(_ *testing.T) {
+	n := NewNetwork()
+	n.Partition("client:1", "client:2") // must not panic -- reproduces the gap, not verified safe
 }

@@ -42,7 +42,12 @@ package netchaos
 // Reset takes no random draws and cannot perturb any connection's
 // loss/latency/duplication/corruption sequence -- it is evaluated nowhere
 // near installFaultPolicy's per-unit evaluator.
+//
+// peerA and peerB must be non-empty and distinct, the same requirement
+// WithPartition/Partition/Heal already enforce; Reset panics otherwise,
+// naming Reset and the offending value (M9-1, issue #83).
 func (n *Network) Reset(peerA, peerB string) {
+	validatePartitionPair("Reset", partitionPair{peerA, peerB})
 	k := newPairKey(peerName(peerA), peerName(peerB))
 
 	n.resetMu.Lock()

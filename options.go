@@ -101,7 +101,7 @@ func (c *networkConfig) validate() {
 		validateListenerBacklog(c.listenerBacklog)
 	}
 	for _, p := range c.staticPartitions {
-		validatePartitionPair(p)
+		validatePartitionPair("WithPartition", p)
 	}
 }
 

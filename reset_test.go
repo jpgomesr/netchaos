@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strings"
 	"syscall"
 	"testing"
 	"testing/synctest"
@@ -223,5 +224,34 @@ func TestResetIsolatedToPair(t *testing.T) {
 	got := make([]byte, 1)
 	if _, err := readFull(unrelatedServer, got); err != nil {
 		t.Fatalf("Read on an unrelated connection after an unrelated Reset = %v, want nil", err)
+	}
+}
+
+// TestResetPanicsOnInvalidPair is Reset's half of M9-1 (#83): Reset must
+// validate the same raw arguments Partition/Heal/WithPartition already do,
+// panicking on an empty peer name or a self-pair and naming itself.
+func TestResetPanicsOnInvalidPair(t *testing.T) {
+	tests := []struct {
+		name string
+		call func(*Network)
+	}{
+		{"empty peerA", func(n *Network) { n.Reset("", "b") }},
+		{"empty peerB", func(n *Network) { n.Reset("a", "") }},
+		{"self-pair", func(n *Network) { n.Reset("a", "a") }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				r := recover()
+				if r == nil {
+					t.Fatal("no panic, want one naming Reset and the offending value")
+				}
+				msg, ok := r.(string)
+				if !ok || !strings.Contains(msg, "Reset") {
+					t.Fatalf("panic = %v, want a message mentioning %q", r, "Reset")
+				}
+			}()
+			tt.call(NewNetwork())
+		})
 	}
 }
