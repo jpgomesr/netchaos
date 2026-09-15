@@ -4,7 +4,7 @@ Instructions for AI coding agents working in this repository. Human-facing proce
 
 ## Project snapshot
 
-`netchaos` ([README](README.md)) is a Go library providing simulated `net.Conn`/`net.Listener` with deterministic fault injection. **Current stage: M1-M7 implemented and godoc'd; tagged and released as `v0.2.0`** (2026-08-31), on top of `v0.1.0`'s three-fault core. The module (`github.com/jpgomesr/netchaos`, `go 1.25`) has a working `Network` type (`NewNetwork`, `Dial`/`DialContext`/`DialerFor`, `Listen`, `WithSeed`) with the full shipped fault set implemented and composed in one fixed order: `WithLatency`, `WithPacketLoss`, `WithBandwidth`, `WithDuplication`, `WithCorruption`, and `WithPartition`/`Network.Partition`/`Network.Heal` (plus `WithPeerName`, added during v0.1.0 to make a dialer partition-targetable), alongside `Network.Reset` (imperative mid-stream reset), the live setters `Network.SetLatency`/`Network.SetPacketLoss`, the exported `Network.Trace`, and the tuning options `WithPipeBound`/`WithListenerBacklog`. Sentinel errors live in `errors.go` (`ErrUnsupportedNetwork`, `ErrConnectionRefused`, `ErrAddressInUse`, `ErrBacklogFull`). The API is stable but not frozen until `v1.0.0` — the M5-2 ergonomics review the v0.2.0 surface never got is still open (`docs/04-api-design.md`, issue #75) as one of the gates before that. See [docs/07-contributing.md](docs/07-contributing.md). Check `CHANGELOG.md` and the repo's tags for the current release state; do not assume unimplemented work exists.
+`netchaos` ([README](README.md)) is a Go library providing simulated `net.Conn`/`net.Listener` with deterministic fault injection. **Current stage: M1-M8 implemented and godoc'd; tagged and released as `v0.2.0`** (2026-08-31), on top of `v0.1.0`'s three-fault core, plus four bug fixes and two tooling additions landed on `main` since that tag (`M8-1`..`M8-6`). The module (`github.com/jpgomesr/netchaos`, `go 1.25`) has a working `Network` type (`NewNetwork`, `Dial`/`DialContext`/`DialerFor`, `Listen`, `WithSeed`) with the full shipped fault set implemented and composed in one fixed order: `WithLatency`, `WithPacketLoss`, `WithBandwidth`, `WithDuplication`, `WithCorruption`, and `WithPartition`/`Network.Partition`/`Network.Heal` (plus `WithPeerName`, added during v0.1.0 to make a dialer partition-targetable), alongside `Network.Reset` (imperative mid-stream reset), the live setters `Network.SetLatency`/`Network.SetPacketLoss`, the exported `Network.Trace`, and the tuning options `WithPipeBound`/`WithListenerBacklog`. Sentinel errors live in `errors.go` (`ErrUnsupportedNetwork`, `ErrConnectionRefused`, `ErrAddressInUse`, `ErrBacklogFull`). The API is stable but not frozen until `v1.0.0` — the M5-2 ergonomics review the v0.2.0 surface never got (`docs/04-api-design.md`, issue #75) ran as `M8-7` and is now decided (see `docs/tasks/m8-v1-readiness.md`'s "Review outcome"); [M9 — v1.0.0 surface additions](docs/tasks/m9-v1-surface-additions.md) implements what it accepted (`#83`, `#86`, `#78` in part, `#85` in part) and is the remaining gate before `v1.0.0`. See [docs/07-contributing.md](docs/07-contributing.md). Check `CHANGELOG.md` and the repo's tags for the current release state; do not assume unimplemented work exists.
 
 ## Source of truth for design
 
@@ -48,6 +48,7 @@ golangci-lint run # config: .golangci.yml
 | `.claude/commands/pr.md` | Full branch → commit → push → PR flow |
 | `.claude/commands/issue.md` | Create a GitHub issue matching one of the four forms in `.github/ISSUE_TEMPLATE/` |
 | `.claude/commands/architecture.md` | Check a change/question against `docs/03`, `04`, `05`, `06` |
+| `.claude/skills/netchaos/` (`SKILL.md` + `references/api.md`) | Self-contained usage reference for consumers of the published package — see "Keeping design docs and the skill in sync" below for when this gets updated |
 
 ## Issue & label conventions
 
@@ -56,6 +57,12 @@ Four issue forms exist in `.github/ISSUE_TEMPLATE/` — `bug.yml` (label `bug`),
 Priority is a separate axis from type: `critical` / `high` / `medium` / `low` say how urgent an issue is, independent of whether it's a `bug`, `enhancement`, or `design` item. Apply at most one.
 
 Two things to keep straight. Behaviour the docs describe as deliberate is `design`, not `bug` — the fault model in [docs/05](docs/05-fault-injection.md) and the no-op/panic semantics in [docs/04](docs/04-api-design.md#error-and-no-op-behaviour) are design decisions, not defects. And blank issues are disabled (`.github/ISSUE_TEMPLATE/config.yml`), so every issue goes through a form or through Discussions. Don't create issues, or labels outside `.github/labels.yml`, without the user asking.
+
+## Keeping design docs and the skill in sync
+
+A PR that changes the exported surface or a fault's semantics updates, in the **same PR**: the godoc on the changed identifier, `docs/04-api-design.md` (and `docs/05-fault-injection.md` if fault semantics moved), and `doc.go`'s determinism-contract comment if the change touches the ordered-calls list. This is existing practice, not a new rule — every `M7` task did it, and `#89`'s address-handling fix is a clear single-PR example.
+
+`README.md` and `.claude/skills/netchaos/` are the exception: both describe the **last tagged release** by design (the skill's own `go get …@v0.2.0` instruction, README's "Status: `v0.2.0` released" banner), and git history confirms neither has been touched by any post-`v0.2.0` fix — they are updated together, once, in a milestone-close PR (`#71`, `#90`), not per feature PR. Don't update them for a change that hasn't shipped in a tag yet; do flag in the relevant milestone's task file when a close-out pass is due, the way [M9-5](docs/tasks/m9-v1-surface-additions.md#m9-5--close-out-m9-sync-readmemd-and-the-skill) does.
 
 ## What not to do
 
