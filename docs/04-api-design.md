@@ -41,8 +41,15 @@ func (n *Network) Dial(network, addr string) (net.Conn, error)
 func (n *Network) DialContext(ctx context.Context, network, addr string) (net.Conn, error)
 func (n *Network) Listen(network, addr string) (net.Listener, error)
 
-// Added by M7-2 (issue #36), post-v0.1.0.
-func (n *Network) DialerFor(name string) func(network, addr string) (net.Conn, error)
+// Added by M7-2 (issue #36), post-v0.1.0. Gained opts in M9-2 (issue #86);
+// without any, behaviour is unchanged from before that task.
+func (n *Network) DialerFor(name string, opts ...DialerOption) func(network, addr string) (net.Conn, error)
+
+// Added by M9-2 (issue #86): bounds a DialerFor dialer's wait against a
+// partitioned peer, which previously had no context to bound it with.
+type DialerOption func(*dialerConfig)
+
+func WithDialTimeout(d time.Duration) DialerOption
 
 func (n *Network) Partition(peerA, peerB string)
 func (n *Network) Heal(peerA, peerB string)
@@ -51,6 +58,12 @@ func (n *Network) Heal(peerA, peerB string)
 // Partition/Heal — see the determinism contract's Runtime fault mutation.
 func (n *Network) SetLatency(min, max time.Duration)
 func (n *Network) SetPacketLoss(rate float64)
+
+// Added by M9-4 (issue #85, partial), post-v0.2.0. Same live semantics as
+// SetLatency/SetPacketLoss — see Runtime fault mutation. SetBandwidth was
+// split out and deferred; see 06 — Scope & Roadmap.
+func (n *Network) SetDuplication(rate float64)
+func (n *Network) SetCorruption(rate float64)
 
 // Added by M7-7 (issue #53, candidate 2), post-v0.1.0. Imperative, like
 // Partition/Heal, not a drawn Option -- takes no random draws and has no
@@ -217,6 +230,19 @@ func (n *Network) DialContext(ctx context.Context, network, addr string) (net.Co
 // Connections dialed to addr from elsewhere in the Network are delivered
 // to this listener's Accept, subject to the Network's fault policy.
 func (n *Network) Listen(network, addr string) (net.Listener, error)
+
+// DialerFor returns a dial function, exactly net.Dial's shape, that names
+// itself as name -- see Dynamic partition control for why this matters and
+// DialerFor(name) versus DialContext(WithPeerName(ctx, name), ...)'s
+// trade-off. opts is optional; WithDialTimeout is the only DialerOption.
+func (n *Network) DialerFor(name string, opts ...DialerOption) func(network, addr string) (net.Conn, error)
+
+// WithDialTimeout bounds every dial made through the returned DialerFor
+// closure to d, per call: a dial that would otherwise block on a
+// partitioned peer instead fails after d with an error satisfying
+// errors.Is(err, context.DeadlineExceeded) (M9-2, issue #86). d must be
+// positive; WithDialTimeout panics immediately otherwise, naming itself.
+func WithDialTimeout(d time.Duration) DialerOption
 ```
 
 The intent is for `Network.Dial` (and `Network.DialContext`) to be usable anywhere calling code accepts a `func(network, addr string) (net.Conn, error)` (or its context-aware equivalent) — e.g., as the dial function passed into an HTTP transport, a gRPC dialer, or a hand-rolled client constructor. This is the "swap a `net.Dial` call for a factory" adoption path described in [03 — Architecture](03-architecture.md#design-goals-driving-the-architecture).
@@ -269,6 +295,8 @@ func (n *Network) Heal(peerA, peerB string)
 
 Pairs are unordered: `Partition("a", "b")` and `Partition("b", "a")` name the same pair, and either heals the other.
 
+**`peerA` and `peerB` must be non-empty and distinct** — the same requirement `WithPartition` already enforces (see [Frozen v1 surface](#frozen-v1-surface)). `Partition` and `Heal` panic otherwise, naming themselves and the offending value ([M9-1](tasks/m9-v1-surface-additions.md#m9-1--83-validate-partitionhealreset-the-way-withpartition-already-does), issue [#83](https://github.com/jpgomesr/netchaos/issues/83)) — closing an asymmetry these two runtime methods used to have against `WithPartition`'s own construction-time check. The no-op behaviour below is otherwise unchanged: naming a peer that was never `Dial`ed or `Listen`ed stays a no-op, only an empty name or a self-pair newly panics.
+
 **Effect on connection establishment (decided in [M2-4](tasks/m2-determinism-and-faults.md#m2-4--network-partition-static-and-dynamic)):** only a dialer that named itself — via `WithPeerName` or `DialerFor` — is subject to this check at all. For such a dialer, `DialContext` **blocks** for the duration of the partition, returning `ctx.Err()` only once the context is done — a partition drops the SYN, so a real dial into a partitioned peer hangs the same way rather than failing fast. Give it a context with a deadline if that is not the intended behaviour.
 
 An unnamed dialer's synthesized `ephemeral-N` identity can never appear in a `Partition` call made before the dial completes, so it never blocks here regardless of any partition's state. **A bare `Dial` call is always in that second category:** `WithPeerName` records the identity on a `context.Context`, and `Dial`'s `net.Dial`-shaped signature has no context parameter, so a `Dial` call can never carry a peer name and therefore never blocks on a partition.
@@ -281,7 +309,7 @@ c, _ := n.DialContext(netchaos.WithPeerName(ctx, "client"), "tcp", "server") // 
 c, _ := n.Dial("tcp", "server")                        // NOT targetable — ephemeral identity
 ```
 
-The trade between the first two is the wait: a `DialerFor` dialer blocks for the duration of a partition with no context to bound it, while `DialContext` can be given a deadline. Reach for `DialContext` when the dial must fail rather than hang.
+The trade between the first two used to be the wait: a `DialerFor` dialer had no context to bound it, while `DialContext` could be given a deadline. [M9-2](tasks/m9-v1-surface-additions.md#m9-2--86-dialerfor-gains-a-bounded-wait) (issue [#86](https://github.com/jpgomesr/netchaos/issues/86)) closed that gap — `n.DialerFor("client", netchaos.WithDialTimeout(time.Second))` fails after the given duration instead of hanging until `Heal`, the same `errors.Is(err, context.DeadlineExceeded)` shape a `DialContext` deadline produces. Without `WithDialTimeout`, `DialerFor` keeps its original unbounded-wait behaviour — purely additive, no existing `DialerFor(name)` call needs to change. Reach for `DialContext` (or `DialerFor` with `WithDialTimeout`) when the dial must fail rather than hang.
 
 The wait happens **before** the connection's ordinal is assigned, so a dial that blocks and is then cancelled does not burn an ordinal; see the [determinism contract](#determinism-contract)'s note on this.
 
@@ -304,6 +332,8 @@ Closes the gap `Partition` deliberately does not: `Partition` is a silent black 
 1. **No effect on `Dial`.** `Reset` does not gate establishment the way a partition blocks a named dialer; it has nothing to do with connections that don't exist yet.
 2. **Does not persist.** A partition stays in effect until `Heal`; a reset acts once, on whatever is established *at the moment it is called*, and has no effect on a connection dialed afterward — the real-RST analogy: an RST invalidates existing TCP state, it does not prevent a fresh connection to the same peer.
 3. **A no-op if nothing is currently established** between the named peers, the same convention `Partition`/`Heal` use for an unrecognized or not-yet-connected pair — not an error, safe to call speculatively.
+
+**`peerA` and `peerB` must be non-empty and distinct**, the same requirement `Partition`/`Heal`/`WithPartition` enforce; `Reset` panics otherwise, naming itself and the offending value ([M9-1](tasks/m9-v1-surface-additions.md#m9-1--83-validate-partitionhealreset-the-way-withpartition-already-does), issue [#83](https://github.com/jpgomesr/netchaos/issues/83)).
 
 Peer names are resolved exactly as `Partition`/`Heal` resolve them (`peerName` strips a port, per `M7-1`), so the same naming caveat applies: an unnamed dialer's synthesized `ephemeral-N` identity is not one a caller can predict in advance, so it is not practically targetable here either.
 
@@ -361,6 +391,7 @@ Decided by [M0-5](tasks/m0-decisions-and-foundations.md#m0-5--freeze-the-v1-api-
 
 - **`Partition(peerA, peerB)` on peers that have never `Dial`ed or `Listen`ed** — no-op, no error. Peers are identified by address string; partitioning before either side has connected is legitimate test setup (e.g. "start partitioned"), and erroring here would force tests to order setup calls for no benefit.
 - **`Heal(peerA, peerB)` with no partition currently in effect for that pair** — silent no-op. Idempotent healing is what makes it safe to call from `defer` or test cleanup without tracking partition state separately.
+- **`Partition`/`Heal`/`Reset` with an empty `peerA`/`peerB` or a self-pair (`peerA == peerB`)** — **panics**, naming the offending call and value, matching `WithPartition`'s existing construction-time check ([M9-1](tasks/m9-v1-surface-additions.md#m9-1--83-validate-partitionhealreset-the-way-withpartition-already-does), issue [#83](https://github.com/jpgomesr/netchaos/issues/83)). This is a misuse case, not a legitimate no-op like the two bullets above it — an empty name or a self-pair can never validly refer to a partitionable pair.
 - **`Dial`/`DialContext` to an address nothing has `Listen`ed on** — returns an error, shaped like `*net.OpError` with a connection-refused-style underlying error, so code under test takes the same path it would against a real closed port. This is the point of being a `net.Conn`-compatible drop-in.
 - **Error shape, decided by [M6-2](tasks/m6-review-findings.md#m6-2--decide-a-single-error-wrapping-policy-across-listen-dial-and-dialcontext):** every error returned by `Listen`, `Dial` and `DialContext` is a `*net.OpError`, uniformly — including an unsupported network, an address already in use, and a context that was already done. Real `net.Listen`/`net.Dial` return `*net.OpError` for all of these, and code under test that type-asserts to it, or calls `Timeout()`/`Temporary()` on the result, must not take a different path against netchaos than against the standard library. Before `M6-2` the shape depended on which line produced the error, and that split was an artifact of which milestone wrote which line, not a rule.
 
@@ -417,11 +448,13 @@ Decided by [M0-4](tasks/m0-decisions-and-foundations.md#m0-4--design-the-determi
 
 Because a connection's draw sequence depends only on its own ordinal, direction, and fault kind — never on what any other connection did, or on how the scheduler interleaved them — the fault sequence on that connection is reproducible independent of concurrent activity elsewhere in the `Network`. Partition consumes no random draws at all (see [05 — Fault Injection](05-fault-injection.md#partition)), so it doesn't perturb any stream.
 
-**The guarantee, precisely:** for a fixed seed and a fixed *order* in which `Dial`, `Listen`, `Partition`, `Heal`, `SetLatency`, and `SetPacketLoss` are called, each resulting connection produces an identical sequence of injected faults across runs and across machines. This is the property that lets a failing test be reproduced reliably from a seed value alone — analogous to how `go test -run` plus a fixed input reproduces a deterministic unit test failure.
+**The guarantee, precisely:** for a fixed seed and a fixed *order* in which `Dial`, `Listen`, `Partition`, `Heal`, `SetLatency`, `SetPacketLoss`, `SetDuplication`, and `SetCorruption` are called, each resulting connection produces an identical sequence of injected faults across runs and across machines. This is the property that lets a failing test be reproduced reliably from a seed value alone — analogous to how `go test -run` plus a fixed input reproduces a deterministic unit test failure.
 
 ### Runtime fault mutation
 
 Decided by [M6-13](tasks/m6-review-findings.md#m6-13--decide-on-runtime-mutation-of-latency-and-loss) and written here **before** `SetLatency`/`SetPacketLoss` exist, which was the substantive half of that decision: the contract is the library's core promise, and settling it after an implementation had already shipped would mean the code, not this document, had picked the answer. [M7-4](tasks/m7-v0.2.0-implementation.md#m7-4--setlatency-and-setpacketloss) implements against what follows.
+
+**`SetDuplication` and `SetCorruption` join this section under the same posture** ([M9-4](tasks/m9-v1-surface-additions.md#m9-4--85-partial-setduplication-and-setcorruption), issue [#85](https://github.com/jpgomesr/netchaos/issues/85) partial): this widening lands before their code, the same discipline `M7-3` used ahead of `M7-4`. Everything below about `SetLatency`/`SetPacketLoss` — ordered-call semantics, live effect on already-established connections, and unchanged draw discipline — applies to `SetDuplication`/`SetCorruption` identically; both are Bernoulli draws with no serialization-clock interaction, the same shape packet loss already has. Restated explicitly because it is easy to get backwards: enabling duplication or corruption mid-run, when it was off at construction, **does** begin drawing from that kind's own independent stream from that point on — it does not shift any other kind's sequence, since kinds are independent by derivation (see the two bullets below). `SetBandwidth` is deliberately not part of this widening — see [06 — Scope & Roadmap § Explicitly out of scope for v1](06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1) for why bandwidth's live-setter case needs its own design pass.
 
 **The setters are ordered calls, exactly like `Partition` and `Heal`.** They join the list in the guarantee above. A test that calls them in a fixed order relative to its other `Network` calls reproduces exactly; one that calls them from a goroutine racing other `Network` calls does not, for the same reason and with the same fix as a racing `Dial`.
 

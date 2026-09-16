@@ -29,9 +29,13 @@ import (
 // evaluated per direction.
 //
 // This is a construction-time setting; there is no runtime setter. Unlike
-// SetLatency and SetPacketLoss (M7-4), a configured rate cannot be changed
-// on a live connection -- #50 named only latency and packet loss for runtime
-// mutation.
+// SetLatency, SetPacketLoss (M7-4), SetDuplication, and SetCorruption
+// (M9-4), a configured rate cannot be changed on a live connection --
+// bandwidth is the one fault kind whose live-setter case was split out and
+// deferred (issue #85, M8-7 finding F6): unlike the other four, it draws
+// nothing, so a setter's interaction with the pipe's serialization clock
+// (pipe.busyUntil) needs its own design pass rather than an assumption that
+// it mirrors SetLatency. See docs/06 § Explicitly out of scope for v1.
 func WithBandwidth(bytesPerSecond int) Option {
 	return func(c *networkConfig) {
 		c.bandwidthEnabled = true

@@ -3,10 +3,11 @@ package netchaos
 import "time"
 
 // faultConfig is the set of fault settings that can change during a run:
-// what SetLatency and SetPacketLoss write, and what the per-unit evaluator
-// reads. Kept as one value so it can be copied out from under a lock in a
-// single read rather than field by field, which would let a unit see half of
-// one configuration and half of the next.
+// what SetLatency, SetPacketLoss, SetDuplication, and SetCorruption write,
+// and what the per-unit evaluator reads. Kept as one value so it can be
+// copied out from under a lock in a single read rather than field by field,
+// which would let a unit see half of one configuration and half of the
+// next.
 type faultConfig struct {
 	lossEnabled bool
 	lossRate    float64
@@ -14,9 +15,9 @@ type faultConfig struct {
 	latencyEnabled         bool
 	latencyMin, latencyMax time.Duration
 
-	// bandwidthEnabled/bandwidthBPS is the throttle SetLatency/SetPacketLoss
-	// have no counterpart for -- #50 named only latency and packet loss for
-	// runtime mutation (M7-5), so this pair is set once, from
+	// bandwidthEnabled/bandwidthBPS is the throttle with no live setter
+	// (M9-4, #85 split the other four fault kinds' setters from bandwidth's
+	// -- see WithBandwidth's godoc for why), so this pair is set once, from
 	// networkConfig, in NewNetwork, and never written again. It lives here
 	// rather than in a construction-only struct so the evaluator below reads
 	// it from the same single copy taken under fp.current()'s lock, with the
@@ -27,16 +28,13 @@ type faultConfig struct {
 
 	// duplicateEnabled/duplicateRate is WithDuplication's per-unit
 	// probability of admitting a delivered write a second time (M7-8, #53
-	// candidate 3). There is no runtime setter, matching bandwidth: #50
-	// named only latency and packet loss for M7-4's runtime-mutation
-	// contract.
+	// candidate 3). SetDuplication (M9-4, #85 partial) writes this pair live.
 	duplicateEnabled bool
 	duplicateRate    float64
 
 	// corruptEnabled/corruptRate is WithCorruption's per-unit probability of
-	// flipping a bit in a delivered write (M7-9, #53 candidate 4). There is
-	// no runtime setter, matching bandwidth: #50 named only latency and
-	// packet loss for M7-4's runtime-mutation contract.
+	// flipping a bit in a delivered write (M7-9, #53 candidate 4).
+	// SetCorruption (M9-4, #85 partial) writes this pair live.
 	corruptEnabled bool
 	corruptRate    float64
 }

@@ -89,10 +89,10 @@ func (c *networkConfig) validate() {
 		validateBandwidthRate(c.bandwidthBPS)
 	}
 	if c.duplicateEnabled {
-		validateDuplicationRate(c.duplicateRate)
+		validateDuplicationRate("WithDuplication", c.duplicateRate)
 	}
 	if c.corruptEnabled {
-		validateCorruptionRate(c.corruptRate)
+		validateCorruptionRate("WithCorruption", c.corruptRate)
 	}
 	if c.pipeBoundEnabled {
 		validatePipeBound(c.pipeBound)
@@ -101,7 +101,7 @@ func (c *networkConfig) validate() {
 		validateListenerBacklog(c.listenerBacklog)
 	}
 	for _, p := range c.staticPartitions {
-		validatePartitionPair(p)
+		validatePartitionPair("WithPartition", p)
 	}
 }
 

@@ -17,8 +17,8 @@
 //
 // A Network's fault sequence is reproducible from a seed (WithSeed): the
 // same seed, with the same order of Dial/Listen/Partition/Heal/SetLatency/
-// SetPacketLoss calls, always produces the same sequence of injected faults
-// on every connection.
+// SetPacketLoss/SetDuplication/SetCorruption calls, always produces the
+// same sequence of injected faults on every connection.
 // Each connection derives its own RNG stream from the seed, its
 // establishment order, and its direction, so one connection's fault
 // sequence never depends on how the Go scheduler interleaved it with
