@@ -41,8 +41,15 @@ func (n *Network) Dial(network, addr string) (net.Conn, error)
 func (n *Network) DialContext(ctx context.Context, network, addr string) (net.Conn, error)
 func (n *Network) Listen(network, addr string) (net.Listener, error)
 
-// Added by M7-2 (issue #36), post-v0.1.0.
-func (n *Network) DialerFor(name string) func(network, addr string) (net.Conn, error)
+// Added by M7-2 (issue #36), post-v0.1.0. Gained opts in M9-2 (issue #86);
+// without any, behaviour is unchanged from before that task.
+func (n *Network) DialerFor(name string, opts ...DialerOption) func(network, addr string) (net.Conn, error)
+
+// Added by M9-2 (issue #86): bounds a DialerFor dialer's wait against a
+// partitioned peer, which previously had no context to bound it with.
+type DialerOption func(*dialerConfig)
+
+func WithDialTimeout(d time.Duration) DialerOption
 
 func (n *Network) Partition(peerA, peerB string)
 func (n *Network) Heal(peerA, peerB string)
@@ -217,6 +224,19 @@ func (n *Network) DialContext(ctx context.Context, network, addr string) (net.Co
 // Connections dialed to addr from elsewhere in the Network are delivered
 // to this listener's Accept, subject to the Network's fault policy.
 func (n *Network) Listen(network, addr string) (net.Listener, error)
+
+// DialerFor returns a dial function, exactly net.Dial's shape, that names
+// itself as name -- see Dynamic partition control for why this matters and
+// DialerFor(name) versus DialContext(WithPeerName(ctx, name), ...)'s
+// trade-off. opts is optional; WithDialTimeout is the only DialerOption.
+func (n *Network) DialerFor(name string, opts ...DialerOption) func(network, addr string) (net.Conn, error)
+
+// WithDialTimeout bounds every dial made through the returned DialerFor
+// closure to d, per call: a dial that would otherwise block on a
+// partitioned peer instead fails after d with an error satisfying
+// errors.Is(err, context.DeadlineExceeded) (M9-2, issue #86). d must be
+// positive; WithDialTimeout panics immediately otherwise, naming itself.
+func WithDialTimeout(d time.Duration) DialerOption
 ```
 
 The intent is for `Network.Dial` (and `Network.DialContext`) to be usable anywhere calling code accepts a `func(network, addr string) (net.Conn, error)` (or its context-aware equivalent) — e.g., as the dial function passed into an HTTP transport, a gRPC dialer, or a hand-rolled client constructor. This is the "swap a `net.Dial` call for a factory" adoption path described in [03 — Architecture](03-architecture.md#design-goals-driving-the-architecture).
@@ -283,7 +303,7 @@ c, _ := n.DialContext(netchaos.WithPeerName(ctx, "client"), "tcp", "server") // 
 c, _ := n.Dial("tcp", "server")                        // NOT targetable — ephemeral identity
 ```
 
-The trade between the first two is the wait: a `DialerFor` dialer blocks for the duration of a partition with no context to bound it, while `DialContext` can be given a deadline. Reach for `DialContext` when the dial must fail rather than hang.
+The trade between the first two used to be the wait: a `DialerFor` dialer had no context to bound it, while `DialContext` could be given a deadline. [M9-2](tasks/m9-v1-surface-additions.md#m9-2--86-dialerfor-gains-a-bounded-wait) (issue [#86](https://github.com/jpgomesr/netchaos/issues/86)) closed that gap — `n.DialerFor("client", netchaos.WithDialTimeout(time.Second))` fails after the given duration instead of hanging until `Heal`, the same `errors.Is(err, context.DeadlineExceeded)` shape a `DialContext` deadline produces. Without `WithDialTimeout`, `DialerFor` keeps its original unbounded-wait behaviour — purely additive, no existing `DialerFor(name)` call needs to change. Reach for `DialContext` (or `DialerFor` with `WithDialTimeout`) when the dial must fail rather than hang.
 
 The wait happens **before** the connection's ordinal is assigned, so a dial that blocks and is then cancelled does not burn an ordinal; see the [determinism contract](#determinism-contract)'s note on this.
 

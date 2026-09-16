@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`DialerOption` and `WithDialTimeout`** (closes #86). `Network.DialerFor` now accepts optional `DialerOption`s: `DialerFor(name, WithDialTimeout(d))` bounds every dial made through the returned closure to `d`, failing with an error satisfying `errors.Is(err, context.DeadlineExceeded)` instead of hanging until `Heal` against a partitioned peer. Purely additive — `DialerFor(name)` without options keeps its existing unbounded-wait behaviour, so no call site needs to change.
+
 ### Changed
 
 - **`Network.Partition`, `Network.Heal`, and `Network.Reset` now panic on an empty peer name or a self-pair** (closes #83), matching `WithPartition`'s existing construction-time check. Previously the three runtime methods silently accepted `Partition("", "server")` or `Partition("a", "a")` as if they were legitimate no-ops; they now panic naming themselves and the offending value, the same message shape `WithPartition` already uses. The no-op behaviour for a peer that was never `Dial`ed or `Listen`ed is unchanged.
