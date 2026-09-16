@@ -8,7 +8,7 @@
 [![golangci-lint](https://github.com/jpgomesr/netchaos/actions/workflows/golangci-lint.yml/badge.svg)](https://github.com/jpgomesr/netchaos/actions/workflows/golangci-lint.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> **Status: `v0.2.0` released.** v1's simulated transport and its three core faults are implemented, tested, and documented; `v0.2.0` adds bandwidth throttling, packet duplication, data corruption, mid-stream connection reset, live mutation of latency/loss on established connections, and an exported fault trace on top of it. The API is stable but not frozen until `v1.0.0` — see [docs/07 — Contributing](docs/07-contributing.md). Requires Go 1.25+ (`testing/synctest`).
+> **Status: `v0.3.0` released.** v1's simulated transport and its three core faults are implemented, tested, and documented; `v0.2.0` added bandwidth throttling, packet duplication, data corruption, mid-stream connection reset, live mutation of latency/loss on established connections, and an exported fault trace; `v0.3.0` adds runtime validation on `Partition`/`Heal`/`Reset`, a bounded wait on `DialerFor` via `WithDialTimeout`, payload size and corruption site on `FaultEvent`, and live mutation of duplication and corruption rates. The API is stable but not frozen until `v1.0.0` — see [docs/07 — Contributing](docs/07-contributing.md). Requires Go 1.25+ (`testing/synctest`).
 
 **Full design documentation:** [`docs/`](docs/README.md)
 
@@ -109,14 +109,25 @@ Everything above shipped as `v0.1.0`. `v0.2.0` adds, on top of it:
 - **`Network.Trace`** — exports the full per-connection fault decision log, so a test can assert an exact count ("exactly 3 writes dropped") instead of only the downstream symptom.
 - **`WithPipeBound`/`WithListenerBacklog`** — the connection buffer size and accept-queue depth, previously fixed constants, are now configurable.
 
-Full detail on each: [`CHANGELOG.md`](CHANGELOG.md) for what shipped and why, [docs/04 — API Design](docs/04-api-design.md) for the exact signatures and semantics, [docs/05 — Fault Injection](docs/05-fault-injection.md) for the fault mechanics. The Claude Code skill at [`.claude/skills/netchaos/`](.claude/skills/netchaos/) is a self-contained reference covering the whole `v0.2.0` surface, usable from any project that adds netchaos as a dependency.
+Full detail on each: [`CHANGELOG.md`](CHANGELOG.md) for what shipped and why, [docs/04 — API Design](docs/04-api-design.md) for the exact signatures and semantics, [docs/05 — Fault Injection](docs/05-fault-injection.md) for the fault mechanics.
+
+## `v0.3.0` additions
+
+Everything above shipped as `v0.2.0`. `v0.3.0` adds, on top of it:
+
+- **`Partition`/`Heal`/`Reset` validate their arguments** the way `WithPartition` already does — an empty peer name or a self-pair now panics naming the offending call, instead of silently doing nothing. Naming a peer that was never dialed or listened is still a legitimate no-op.
+- **`Network.DialerFor` gains a bounded wait** — `DialerFor(name, netchaos.WithDialTimeout(d))` fails with an error satisfying `errors.Is(err, context.DeadlineExceeded)` after `d` instead of hanging until `Heal` against a partitioned peer. Plain `DialerFor(name)` keeps its original unbounded-wait behaviour.
+- **`FaultEvent` gains payload size and corruption site** — `Size`, `CorruptedByte`, and `CorruptedBit` let a corruption or duplication failure be diagnosed, or an exact byte reproduced, directly from `Network.Trace()`.
+- **`Network.SetDuplication` and `Network.SetCorruption`** — live mutation of the duplication and corruption rates, the same "already-established connections, not just future dials" semantics `SetLatency`/`SetPacketLoss` already have.
+
+Full detail on each: [`CHANGELOG.md`](CHANGELOG.md) for what shipped and why, [docs/04 — API Design](docs/04-api-design.md) for the exact signatures and semantics. The Claude Code skill at [`.claude/skills/netchaos/`](.claude/skills/netchaos/) is a self-contained reference covering the whole `v0.3.0` surface, usable from any project that adds netchaos as a dependency.
 
 ## Installation
 
 Requires **Go 1.25 or later** — `testing/synctest`, which netchaos's virtual-time integration depends on, was introduced in Go 1.25 and cannot be used on an older toolchain.
 
 ```
-go get github.com/jpgomesr/netchaos@v0.2.0
+go get github.com/jpgomesr/netchaos@v0.3.0
 ```
 
 ## Contributing

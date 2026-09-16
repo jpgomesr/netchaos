@@ -8,7 +8,8 @@ description: >
   no proxy, no daemon, no real sockets. Read this BEFORE writing or
   reviewing Go test code that imports netchaos, calls
   NewNetwork/Dial/DialContext/DialerFor/Listen/Partition/Heal/Reset/
-  SetLatency/SetPacketLoss/Trace, or needs to simulate flaky/partitioned
+  SetLatency/SetPacketLoss/SetDuplication/SetCorruption/Trace, or needs to
+  simulate flaky/partitioned
   network conditions to test retry, timeout, backoff, or circuit-breaker
   logic. Applies equally inside this repo or when adding netchaos to a
   fresh project/API as a dependency. Also read it when the user asks "how
@@ -36,7 +37,7 @@ wrong from the type signatures alone.
 ## Adding it to a project
 
 ```
-go get github.com/jpgomesr/netchaos@v0.2.0
+go get github.com/jpgomesr/netchaos@v0.3.0
 ```
 
 Requires Go 1.25+ (`testing/synctest`). No other setup — no daemon, no
@@ -51,26 +52,33 @@ config file, no network access needed at test time.
   - `WithLatency`, `WithPacketLoss`, `WithBandwidth`, `WithDuplication`,
     `WithCorruption` — all **global** (apply to every connection).
   - `WithPartition` / `Network.Partition` / `Network.Heal` — **pair-scoped**,
-    named by peer identity, static or dynamic.
+    named by peer identity, static or dynamic. `Partition`/`Heal`/`Reset`
+    panic on an empty peer name or a self-pair, the same check
+    `WithPartition` already does at construction time; naming a peer
+    that was never dialed or listened is still a legitimate no-op.
   - Plus **`Network.Reset`** — imperative, mid-stream `ECONNRESET`;
     outside the evaluator entirely, not a per-unit fault, draws nothing,
     no runtime "un-reset."
-- `SetLatency`/`SetPacketLoss` mutate latency/loss **live**, reaching
-  connections already established — the other five kinds are
-  construction-time only.
-- `network.Dial` / `network.DialContext` / `network.DialerFor(name)` all
-  have `net.Dial`'s exact shape (`func(network, addr string) (net.Conn, error)`),
+- `SetLatency`/`SetPacketLoss`/`SetDuplication`/`SetCorruption` mutate
+  their rates **live**, reaching connections already established —
+  `WithBandwidth` is the one kind left construction-time only.
+- `network.Dial` / `network.DialContext` / `network.DialerFor(name, opts...)`
+  all have `net.Dial`'s exact shape (`func(network, addr string) (net.Conn, error)`),
   so hand any of them straight to `http.Transport.DialContext`, a gRPC
   `WithContextDialer`, or a hand-rolled client constructor. `DialerFor` is
   the one to reach for when the call site only accepts a plain dial
   function but the connection still needs to be partition/reset-targetable.
+  Pass `netchaos.WithDialTimeout(d)` to bound the wait against a
+  partitioned peer instead of hanging until `Heal`.
 - Addresses have a real host:port shape — `net.SplitHostPort` works on
   `RemoteAddr().String()` — but peer **identity** (what `Partition`/`Heal`/
   `Reset` name) is the host half only; nothing resolves on port.
 - `Network.Trace() []FaultEvent` exports the full fault decision log for
   every connection the `Network` has ever dialed — use it to assert an
   exact count ("exactly 3 writes dropped") instead of only the downstream
-  symptom.
+  symptom. Each event also carries `Size`, `CorruptedByte`, and
+  `CorruptedBit`, so a corruption failure can be diagnosed directly from
+  the trace.
 - Always pair with `testing/synctest` so injected latency/timeouts don't
   cost real wall-clock time in the test suite.
 - Always set `WithSeed(n)` for a specific reproducible fault sequence
@@ -117,24 +125,30 @@ func TestFailoverOnPartition(t *testing.T) {
 
 ## Before writing a test, check `references/api.md` for
 
-- How `DialerFor` differs from `WithPeerName` + `DialContext`, and when a
-  named `Dial`/`DialContext` blocks on a partition with no way to bound
-  the wait.
+- How `DialerFor` differs from `WithPeerName` + `DialContext`. Plain
+  `DialerFor(name)` blocks on a partition with no way to bound the wait;
+  `DialerFor(name, netchaos.WithDialTimeout(d))` fails after `d` with an
+  error satisfying `errors.Is(err, context.DeadlineExceeded)` instead.
 - Why a dropped write reports `n=len(p), nil` (silent gap, not an error) —
   don't assert an error return for packet loss.
 - Why `Duplicated`/`Corrupted` on a `FaultEvent` can both be `true`
   alongside `Dropped` — the draw discipline records them even for a
   discarded unit — and why `Delay == 0` doesn't mean latency wasn't
   configured.
+- Why `CorruptedByte`/`CorruptedBit` are only meaningful when
+  `Corrupted && Size > 0 && !Dropped` — a zero-length or dropped unit
+  still draws the corruption decision but never reaches the byte/bit draw.
 - The four sentinel errors (`ErrUnsupportedNetwork`, `ErrConnectionRefused`,
   `ErrAddressInUse`, `ErrBacklogFull`), plus `syscall.ECONNRESET` (a
   stdlib error, not a netchaos sentinel) for a reset connection, and when
   each fires — match with `errors.Is`.
 - Why invalid option/setter values (rate outside `[0,1]`, `min > max`, a
-  non-positive bandwidth/bound/backlog) **panic**, not return an error.
-- Which fault kinds have a runtime setter (`SetLatency`/`SetPacketLoss`
-  only — the other five are construction-time) and the ordering limit
-  a setter has against concurrent in-flight I/O.
+  non-positive bandwidth/bound/backlog/timeout, or an empty/self-pair
+  peer name on `Partition`/`Heal`/`Reset`) **panic**, not return an error.
+- Which fault kinds have a runtime setter (`SetLatency`/`SetPacketLoss`/
+  `SetDuplication`/`SetCorruption` — only `WithBandwidth` is
+  construction-time-only) and the ordering limit a setter has against
+  concurrent in-flight I/O.
 - The determinism contract's limit: concurrent, *unordered* `Dial` calls
   race for connection ordinals — dial sequentially before starting
   concurrent I/O if a test needs reproducible fault assignment.

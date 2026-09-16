@@ -15,7 +15,7 @@ relevant threat model is narrow — mainly:
 
 ## Supported versions
 
-netchaos has no tagged releases yet — everything on `main` is in scope.
+The API is stable but not frozen until `v1.0.0` (see [docs/07 — Contributing](docs/07-contributing.md)), so there is no formal support matrix yet: the latest tag and `main` are both in scope.
 
 ## Reporting a vulnerability
 
