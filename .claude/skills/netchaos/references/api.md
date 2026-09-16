@@ -2,14 +2,14 @@
 
 `import "github.com/jpgomesr/netchaos"` — single flat package, no
 subpackages. Requires Go 1.25+ (uses `testing/synctest`). Add it with
-`go get github.com/jpgomesr/netchaos@v0.2.0` (or the latest tag — check
+`go get github.com/jpgomesr/netchaos@v0.3.0` (or the latest tag — check
 `go list -m -versions github.com/jpgomesr/netchaos` if unsure).
 
 This reference is self-contained: everything needed to use the library
 correctly from an external project/API lives here, without needing the
 netchaos repo's own `docs/` checked out.
 
-## Full surface (v0.2.0)
+## Full surface (v0.3.0)
 
 ```go
 type Network struct{ /* unexported */ }
@@ -30,15 +30,21 @@ func WithListenerBacklog(backlog int) Option
 
 func (n *Network) Dial(network, addr string) (net.Conn, error)
 func (n *Network) DialContext(ctx context.Context, network, addr string) (net.Conn, error)
-func (n *Network) DialerFor(name string) func(network, addr string) (net.Conn, error)
+func (n *Network) DialerFor(name string, opts ...DialerOption) func(network, addr string) (net.Conn, error)
 func (n *Network) Listen(network, addr string) (net.Listener, error)
 
-func (n *Network) Partition(peerA, peerB string)
-func (n *Network) Heal(peerA, peerB string)
-func (n *Network) Reset(peerA, peerB string)
+type DialerOption func(*dialerConfig)
+
+func WithDialTimeout(d time.Duration) DialerOption
+
+func (n *Network) Partition(peerA, peerB string) // panics on an empty name or a self-pair
+func (n *Network) Heal(peerA, peerB string)       // panics on an empty name or a self-pair
+func (n *Network) Reset(peerA, peerB string)      // panics on an empty name or a self-pair
 
 func (n *Network) SetLatency(min, max time.Duration)
 func (n *Network) SetPacketLoss(rate float64)
+func (n *Network) SetDuplication(rate float64)
+func (n *Network) SetCorruption(rate float64)
 
 func (n *Network) Trace() []FaultEvent
 
@@ -64,6 +70,10 @@ type FaultEvent struct {
     Delay         time.Duration
     Serialization time.Duration
     Effective     time.Duration
+
+    Size          int
+    CorruptedByte int
+    CorruptedBit  uint8
 }
 
 var ErrUnsupportedNetwork = errors.New("netchaos: unsupported network")
@@ -82,11 +92,14 @@ var ErrBacklogFull = errors.New("netchaos: accept backlog full")
 returns an error, and no `Option` returns an error — **invalid option
 values panic at construction time** (e.g. `WithPacketLoss` outside
 `[0.0, 1.0]`, `WithLatency`/`SetLatency` with `min > max`, a non-positive
-`WithBandwidth`/`WithPipeBound`/`WithListenerBacklog`). This mirrors
-`regexp.MustCompile`: invalid options are programmer errors in test code,
-not a runtime condition to handle. Don't wrap `NewNetwork`/`Option` calls
-in error-handling — there's nothing to handle. `SetLatency`/`SetPacketLoss`
-(the runtime setters) panic the same way, with the same message shape.
+`WithBandwidth`/`WithPipeBound`/`WithListenerBacklog`, a non-positive
+`WithDialTimeout`, or an empty/self-pair peer name on `WithPartition`/
+`Partition`/`Heal`/`Reset`). This mirrors `regexp.MustCompile`: invalid
+options are programmer errors in test code, not a runtime condition to
+handle. Don't wrap `NewNetwork`/`Option` calls in error-handling —
+there's nothing to handle. `SetLatency`/`SetPacketLoss`/`SetDuplication`/
+`SetCorruption` (the runtime setters) panic the same way, with the same
+message shape.
 
 ## Fault options
 
@@ -112,26 +125,33 @@ below. All are **global** except `WithPartition`, which is pair-scoped.
   function of unit size and rate, so it can never perturb the loss/
   latency/duplication/corruption sequence. Composes **additively** with
   `WithLatency`: total per-unit delay is serialization time + latency
-  draw, never one superseding the other. No runtime setter exists for
-  this — it's construction-time only.
+  draw, never one superseding the other. **No runtime setter exists for
+  this** — unlike every other fault kind (`SetLatency`, `SetPacketLoss`,
+  `SetDuplication`, `SetCorruption`), bandwidth draws nothing, so a live
+  setter's interaction with the pipe's serialization clock needs its own
+  design pass; it's construction-time only.
 - **`WithDuplication(rate)`** — admits a delivered `Write` unit a second
   time, with probability `rate`, drawn from its own stream. The duplicate
   reuses the **same** release timing (bandwidth + latency) already
   computed for the original, and carries whatever `WithCorruption`
   already did to the first copy — never independently delayed or
   independently corrupted. Counts against the pipe buffer bound like any
-  other delivered bytes. No runtime setter.
+  other delivered bytes. Runtime setter: `Network.SetDuplication(rate)`.
 - **`WithCorruption(rate)`** — flips a single bit, chosen uniformly at
   random, in a delivered unit's content, with probability `rate`. Length
   is never affected, and the caller's original buffer is never mutated
   (`conn.Write` copies before the pipe sees it). A zero-length write still
-  draws the decision but has no bit to flip. No runtime setter.
+  draws the decision but has no bit to flip. Runtime setter:
+  `Network.SetCorruption(rate)`.
 - **`WithPartition(peerA, peerB)`** — marks traffic between two named
   peers as dropped from construction onward. Static for the `Network`'s
   lifetime; use `Network.Partition`/`Network.Heal` to change it mid-test.
   **Pair-scoped**, not global. Draws **nothing** — partition is
   deterministic by nature, so partitioning one pair can never perturb any
-  other connection's fault sequence.
+  other connection's fault sequence. `peerA`/`peerB` must be non-empty
+  and distinct; `WithPartition` panics otherwise, and so do the runtime
+  methods `Network.Partition`/`Network.Heal`/`Network.Reset` (matching
+  this construction-time check).
 - **`WithPipeBound(bound)`** / **`WithListenerBacklog(backlog)`** —
   structural bounds, not faults. `WithPipeBound` sets the per-connection-
   direction buffer size that decides when a `Write` blocks on
@@ -158,7 +178,7 @@ whole, never split.
   is cancelled before the simulated connection establishes. Prefer this
   over `Dial` whenever the peer might be partitioned, since `Dial` has no
   way to time out.
-- **`DialerFor(name string) func(network, addr string) (net.Conn, error)`**
+- **`DialerFor(name string, opts ...DialerOption) func(network, addr string) (net.Conn, error)`**
   — the fix for "I want partition-targeting but my client constructor only
   takes a `net.Dial`-shaped function." Returns a closure with the exact
   `net.Dial` shape, pre-named so connections it creates are targetable by
@@ -169,9 +189,17 @@ whole, never split.
   ```
   A `DialerFor` dialer **is** subject to the dial-time partition check
   (it blocks against a partitioned peer, same as a `WithPeerName`-named
-  `DialContext`), but has no context to bound the wait — use
-  `DialContext` + `WithPeerName` instead if the dial must fail rather
-  than hang.
+  `DialContext`). Without an option, it has no context to bound the wait,
+  same as plain `Dial`. Pass `WithDialTimeout(d)` to bound it instead:
+  ```go
+  dial := network.DialerFor("client", netchaos.WithDialTimeout(5*time.Second))
+  conn, err := dial("tcp", "server") // fails after 5s if server stays partitioned
+  // errors.Is(err, context.DeadlineExceeded)
+  ```
+  `d <= 0` panics. Purely additive — `DialerFor(name)` without options
+  keeps its original unbounded-wait behaviour, so no existing call site
+  needs to change. Reach for `DialContext` + `WithPeerName` instead if
+  the call site can hold a `context.Context` directly.
 - **`Listen(network, addr)`** registers a listener; `Dial`s to `addr` from
   elsewhere in the same `Network` are delivered to its `Accept`.
   `addr` may be written with or without a port — see
@@ -249,8 +277,9 @@ other connection's fault sequence.
 **Consequence:** `network.Dial(...)` (uses `context.Background()`) into a
 partitioned peer **hangs forever** — no timeout, no error. If a test
 dials a possibly-partitioned peer, use `DialContext` with a deadline, or
-this is exactly the hang the test wants to assert (wrap it in its own
-`t.Fatal`-style timeout).
+`DialerFor(name, WithDialTimeout(d))` if the call site only accepts a
+plain dial function, or this is exactly the hang the test wants to assert
+(wrap it in its own `t.Fatal`-style timeout).
 
 **Effect on already-established connections:** writes into a partitioned
 pair are accepted and silently discarded (same silent-gap model as packet
@@ -263,6 +292,12 @@ delivery on `Heal`.
   "start partitioned" setup.
 - `Heal` with no partition in effect for that pair — idempotent, safe to
   call unconditionally from `defer`/cleanup.
+
+**Panics (misuse, not a no-op):** `peerA`/`peerB` empty, or `peerA == peerB`
+(a self-pair) — `Partition`/`Heal` panic naming themselves and the
+offending value, matching `WithPartition`'s construction-time check.
+Naming a peer that was never dialed or listened is still the legitimate
+no-op above; only an empty name or a self-pair panics.
 
 ## Mid-stream connection reset
 
@@ -290,7 +325,9 @@ Three ways this differs from `Partition`, all deliberate:
    — same convention as `Partition`/`Heal`.
 
 Naming resolves exactly as `Partition`/`Heal` do — an unnamed dialer's
-`ephemeral-N` identity isn't practically targetable here either.
+`ephemeral-N` identity isn't practically targetable here either. `Reset`
+panics on an empty `peerA`/`peerB` or a self-pair, the same check
+`Partition`/`Heal`/`WithPartition` enforce.
 
 **What it's for:** testing reconnect/retry logic against an abrupt
 failure — does a client detect `ECONNRESET` and reconnect (vs. treating it
@@ -302,6 +339,8 @@ of handing it out again.
 ```go
 func (n *Network) SetLatency(min, max time.Duration)
 func (n *Network) SetPacketLoss(rate float64)
+func (n *Network) SetDuplication(rate float64)
+func (n *Network) SetCorruption(rate float64)
 ```
 
 Same live semantics as `Partition`/`Heal`: **a change applies to
@@ -312,18 +351,22 @@ the equivalent `Option`.
 
 Draw discipline is unchanged by a setter: every configured fault still
 draws unconditionally on every unit past the partition gate. Two
-consequences easy to get wrong:
+consequences easy to get wrong, and they hold for all four setters:
 
-- `SetLatency(0, 0)` is an **explicit fixed-zero delay**, not "off" — it
-  still draws. Disabling a fault mid-run does not save draws, and
-  re-enabling it does not resume a paused stream.
+- `SetLatency(0, 0)` (or `SetDuplication(0.0)`/`SetCorruption(0.0)`) is an
+  **explicit "never" policy**, not "off" — it still draws. Disabling a
+  fault mid-run does not save draws, and re-enabling it does not resume a
+  paused stream.
 - Enabling a fault kind that was never configured at construction time
   **does** begin drawing from that kind's stream mid-run — this shifts
   nothing else, since kinds are independent by derivation.
 
-**No setter exists for `WithBandwidth`, `WithDuplication`, or
-`WithCorruption`** — those are construction-time only. Only latency and
-packet loss are mutable at runtime.
+**No setter exists for `WithBandwidth`** — it's the one fault kind left
+construction-time only. Unlike latency, packet loss, duplication, and
+corruption, bandwidth draws nothing (a deterministic function of unit
+size and rate), so a live setter's interaction with the pipe's
+serialization clock (`busyUntil`) needs its own design pass rather than
+an assumption that it mirrors `SetLatency`.
 
 **Ordering limit:** the determinism contract fixes a setter's order
 *relative to other `Network` calls*, not relative to in-flight I/O on
@@ -356,6 +399,10 @@ type FaultEvent struct {
     Delay         time.Duration // drawn from the latency stream
     Serialization time.Duration // link-busy contribution under WithBandwidth
     Effective     time.Duration // delay applied AFTER serialization finished
+
+    Size          int    // payload length in bytes; zero on a Partitioned event
+    CorruptedByte int    // meaningful only when Corrupted && Size > 0 && !Dropped
+    CorruptedBit  uint8  // meaningful only when Corrupted && Size > 0 && !Dropped
 }
 ```
 
@@ -385,6 +432,19 @@ a later `Trace()` call, never affects the other.
   zero** — loss short-circuits the evaluator before either is computed.
   `Delay` may still be non-zero on a dropped event (drawn, then
   discarded) — it describes what was drawn, not a delivery that happened.
+- **`Size` is the unit's payload length**, recorded on every event past
+  the partition gate (including a `Dropped` one) and always zero on a
+  `Partitioned` event — but the converse doesn't hold: a zero-length
+  `Write` also reports `Size == 0` on a non-`Partitioned` event, so
+  `Size == 0` alone never implies `Partitioned`.
+- **`CorruptedByte`/`CorruptedBit` are only meaningful when
+  `Corrupted && Size > 0 && !Dropped`.** Two cases leave both at zero even
+  though `Corrupted` is `true`: a zero-length write still draws the
+  corruption decision (per the draw discipline) but has no byte to flip,
+  so the byte/bit draw never runs; and a unit that is both `Dropped` and
+  `Corrupted` also has a zero site, since `Dropped` short-circuits the
+  evaluator before that draw. Don't read either field as "byte 0, bit 0
+  was flipped" without checking `Size > 0` and `!Dropped` first.
 
 **What `Trace()` does NOT cover:**
 - `Network.Reset` — an imperative action, not a per-unit decision. No event.
@@ -417,17 +477,18 @@ shared `rand.Rand`. Each connection direction's RNG stream derives from
   fault's sequence either.
 
 **Guarantee:** for a fixed seed and a fixed *order* of `Dial`, `Listen`,
-`Partition`, `Heal`, `SetLatency`, `SetPacketLoss` calls, every
-connection's fault sequence is identical across runs and machines. This
-is what makes a failing seed reproducible.
+`Partition`, `Heal`, `SetLatency`, `SetPacketLoss`, `SetDuplication`,
+`SetCorruption` calls, every connection's fault sequence is identical
+across runs and machines. This is what makes a failing seed reproducible.
 
 **Limit:** the guarantee covers *call order*, not wall-clock concurrency.
 Two goroutines racing to `Dial` concurrently get ordinals in whichever
 order the scheduler picks — dial sequentially before starting concurrent
 I/O if a test needs reproducible per-connection fault assignment.
 Concurrent I/O on already-established connections is fully deterministic
-per-connection regardless. A setter (`SetLatency`/`SetPacketLoss`) racing
-in-flight I/O on another goroutine has the same limit — see
+per-connection regardless. A setter (`SetLatency`/`SetPacketLoss`/
+`SetDuplication`/`SetCorruption`) racing in-flight I/O on another
+goroutine has the same limit — see
 [Runtime fault mutation](#runtime-fault-mutation).
 
 ### Fault composition and draw discipline
@@ -490,21 +551,28 @@ connection's errors satisfy `errors.Is(err, syscall.ECONNRESET)`.
   via `WithPeerName` or `DialerFor` on the dialer side — silently never
   matches; the dial won't block, traffic won't drop, nothing resets,
   because the peer identity doesn't exist as far as that call is concerned.
+  This is different from an **empty name or a self-pair**, which panics
+  rather than no-ops — see [Dynamic partition control](#dynamic-partition-control).
 - Using `network.Dial` (not `DialContext`) against a peer that might be
   partitioned, then wondering why the test hangs — `Dial` has no deadline.
+  A `DialerFor` dialer hangs the same way unless given `WithDialTimeout`.
 - Forgetting `WithSeed` — the test still runs (default seed `1`, not
   random), but a deliberately-varied seed is what makes a specific failing
   sequence reproducible on purpose.
-- Wrapping `NewNetwork`/`Option`/`SetLatency`/`SetPacketLoss` calls in
-  `if err != nil` — none of them return errors; invalid values panic.
+- Wrapping `NewNetwork`/`Option`/`SetLatency`/`SetPacketLoss`/
+  `SetDuplication`/`SetCorruption` calls in `if err != nil` — none of
+  them return errors; invalid values panic.
 - Running latency/timeout/reset-heavy netchaos tests outside
   `synctest.Test` — they'll work, but burn real wall-clock time instead
   of virtual time.
 - Reading `FaultEvent.Delay == 0` as "latency wasn't configured" — it
   isn't; see [Full fault trace export](#full-fault-trace-export).
+- Reading `FaultEvent.CorruptedByte`/`CorruptedBit` as a flipped byte
+  without checking `Corrupted && Size > 0 && !Dropped` first — see
+  [Full fault trace export](#full-fault-trace-export).
 - Expecting `Trace()` to show a `Network.Reset` — resets aren't per-unit
   decisions and produce no trace event.
 - Expecting a `WithLatency`/`WithPacketLoss`/`WithBandwidth`/
   `WithDuplication`/`WithCorruption` variant scoped to one peer pair — it
-  doesn't exist as of `v0.2.0`; only `WithPartition` is pair-scoped, and
+  doesn't exist as of `v0.3.0`; only `WithPartition` is pair-scoped, and
   all five other faults are global to the `Network`.
