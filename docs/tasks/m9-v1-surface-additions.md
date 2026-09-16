@@ -65,7 +65,7 @@
 
 ## M9-3 — `#78`: `FaultEvent` gains payload size and corruption site
 
-**Status:** todo
+**Status:** done — [#102](https://github.com/jpgomesr/netchaos/pull/102)
 **Issue:** [#78](https://github.com/jpgomesr/netchaos/issues/78) — payload size and corruption-site fields only; `Reset` attribution stays deferred ([docs/06](../06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1))
 
 **Decision, recorded here so implementation doesn't have to pick it:** `FaultEvent`'s existing godoc promises "Partitioned is never true alongside any other field... every other field on that event is its zero value." **That invariant is preserved, not amended** — the new `Size`/corruption-site fields stay zero on a `Partitioned` event, exactly like every other field there. They are populated on every event past the partition gate, including a `Dropped` one (mirroring how `Duplicated`/`Corrupted` are already recorded on a dropped unit per the draw discipline), since size is known and meaningful even for a unit that was discarded.

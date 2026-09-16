@@ -158,10 +158,17 @@ func installFaultPolicy(p *pipe, fp faultPolicy) {
 			corrupted = p.corrupt.bernoulli(cfg.corruptRate)
 		}
 
+		// size is recorded once per unit, at the point len(data) is first
+		// known, for every unit that reaches here (i.e. every
+		// non-partitioned unit) -- M9-3 (#78), zero only on a partitioned
+		// event (the record call above), matching that event's existing
+		// zero-value invariant.
+		size := len(data)
+
 		if dropped {
 			p.bufBytes -= len(data)
 			if p.trace != nil {
-				p.trace.record(faultEvent{dropped: true, drawn: drawn, duplicated: duplicated, corrupted: corrupted})
+				p.trace.record(faultEvent{dropped: true, drawn: drawn, duplicated: duplicated, corrupted: corrupted, size: size})
 			}
 			p.broadcastLocked()
 			return
@@ -172,9 +179,18 @@ func installFaultPolicy(p *pipe, fp faultPolicy) {
 		// separately from corrupted: a zero-length write draws the same
 		// unconditional decision above, but there is no bit to flip in an
 		// empty payload, so the draw happens and nothing is mutated.
+		//
+		// corruptByte/corruptBit (M9-3, #78) record exactly the site
+		// corruptionSite drew, rather than discarding it after the flip --
+		// they stay zero when corrupted is false, or when it's true but the
+		// unit is empty (corruptionSite is never called in that case, so
+		// there is no site to record).
+		var corruptByte int
+		var corruptBit uint8
 		if corrupted && len(data) > 0 {
 			byteIndex, bitIndex := p.corrupt.corruptionSite(len(data))
 			data[byteIndex] ^= 1 << bitIndex
+			corruptByte, corruptBit = byteIndex, uint8(bitIndex)
 		}
 
 		// base is when this unit finishes transmitting onto the (possibly
@@ -195,7 +211,7 @@ func installFaultPolicy(p *pipe, fp faultPolicy) {
 
 		if !cfg.latencyEnabled && !cfg.bandwidthEnabled {
 			if p.trace != nil {
-				p.trace.record(faultEvent{duplicated: duplicated, corrupted: corrupted})
+				p.trace.record(faultEvent{duplicated: duplicated, corrupted: corrupted, size: size, corruptByte: corruptByte, corruptBit: corruptBit})
 			}
 			p.readable = append(p.readable, data)
 			if duplicated {
@@ -214,7 +230,7 @@ func installFaultPolicy(p *pipe, fp faultPolicy) {
 			}
 		}
 		if p.trace != nil {
-			p.trace.record(faultEvent{drawn: drawn, serialized: serialized, effective: releaseAt.Sub(base), duplicated: duplicated, corrupted: corrupted})
+			p.trace.record(faultEvent{drawn: drawn, serialized: serialized, effective: releaseAt.Sub(base), duplicated: duplicated, corrupted: corrupted, size: size, corruptByte: corruptByte, corruptBit: corruptBit})
 		}
 		p.pending = append(p.pending, pendingUnit{data: data, releaseAt: releaseAt})
 		p.armLatencyForAppendLocked()

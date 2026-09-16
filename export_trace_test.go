@@ -209,7 +209,8 @@ func TestTraceRecordsPartitionedUnits(t *testing.T) {
 	for _, ev := range got {
 		if ev.Partitioned {
 			found = true
-			if ev.Dropped || ev.Duplicated || ev.Corrupted || ev.Delay != 0 || ev.Serialization != 0 || ev.Effective != 0 {
+			if ev.Dropped || ev.Duplicated || ev.Corrupted || ev.Delay != 0 || ev.Serialization != 0 || ev.Effective != 0 ||
+				ev.Size != 0 || ev.CorruptedByte != 0 || ev.CorruptedBit != 0 {
 				t.Fatalf("partitioned event carries extra state: %+v", ev)
 			}
 		}
@@ -228,5 +229,121 @@ func TestSideString(t *testing.T) {
 	}
 	if got := SideAcceptor.String(); got != "acceptor" {
 		t.Fatalf("SideAcceptor.String() = %q, want %q", got, "acceptor")
+	}
+}
+
+// TestTraceReportsSizeAndCorruptionSite is M9-3's headline claim (#78,
+// payload size and corruption site): a corrupted event's Size, and the
+// exact byte/bit index corruptionSite drew, are both recoverable from
+// Trace() without re-deriving the stream by hand.
+func TestTraceReportsSizeAndCorruptionSite(t *testing.T) {
+	const seed = 55
+	n := NewNetwork(WithSeed(seed), WithCorruption(1.0))
+	client, _ := dialNamedPair(t, n)
+
+	payload := make([]byte, 32)
+	for i := range payload {
+		payload[i] = byte(i)
+	}
+	if _, err := client.Write(payload); err != nil {
+		t.Fatal(err)
+	}
+
+	got := n.Trace()
+	var ev FaultEvent
+	found := false
+	for _, e := range got {
+		if e.Ordinal == 0 && e.Side == SideDialer {
+			ev = e
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("Trace() has no event for the dialer direction of connection 0")
+	}
+	if !ev.Corrupted {
+		t.Fatal("event not marked Corrupted at rate 1.0")
+	}
+	if ev.Size != len(payload) {
+		t.Fatalf("Size = %d, want %d", ev.Size, len(payload))
+	}
+
+	// Independently recompute the draw this event's corruption site must
+	// match: the same stream derivation the evaluator itself uses
+	// (deriveStream, rand.go), bernoulli(1.0) first (the Bernoulli trial
+	// installFaultPolicy draws before corruptionSite), then corruptionSite.
+	s := deriveStream(seed, ev.Ordinal, connSide(ev.Side), kindCorrupt)
+	if !s.bernoulli(1.0) {
+		t.Fatal("test assumption violated: bernoulli(1.0) must always report true")
+	}
+	wantByte, wantBit := s.corruptionSite(len(payload))
+	if int(ev.CorruptedByte) != wantByte || uint(ev.CorruptedBit) != wantBit {
+		t.Fatalf("corruption site = (byte %d, bit %d), want (byte %d, bit %d) per corruptionSite's own draw for this seed/ordinal/side",
+			ev.CorruptedByte, ev.CorruptedBit, wantByte, wantBit)
+	}
+}
+
+// TestTraceReportsSizeOnDroppedUnit confirms Size is recorded even for a
+// unit packet loss discarded -- size is known and meaningful for a dropped
+// write, unlike a partitioned one (M9-3, #78).
+func TestTraceReportsSizeOnDroppedUnit(t *testing.T) {
+	n := NewNetwork(WithSeed(7), WithPacketLoss(1.0))
+	client, _ := dialPair(t, n)
+
+	if _, err := client.Write([]byte("hello")); err != nil {
+		t.Fatal(err)
+	}
+
+	got := n.Trace()
+	found := false
+	for _, ev := range got {
+		if ev.Dropped {
+			found = true
+			if ev.Size != 5 {
+				t.Fatalf("Size = %d on a dropped 5-byte write, want 5", ev.Size)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("Trace() has no Dropped event for a write under WithPacketLoss(1.0)")
+	}
+}
+
+// TestTraceCorruptedByteZeroOnDroppedUnit is the case FaultEvent's godoc
+// warns about explicitly: a unit can be both Dropped and Corrupted (the
+// draw discipline draws corruption's Bernoulli trial unconditionally, even
+// for a unit loss already dropped), but Dropped short-circuits the
+// evaluator (installFaultPolicy, faults.go) before the byte/bit draw
+// corruptionSite would otherwise have performed. CorruptedByte/CorruptedBit
+// must therefore stay zero here -- not "byte 0, bit 0 was flipped", since
+// nothing was flipped and no site was drawn at all.
+func TestTraceCorruptedByteZeroOnDroppedUnit(t *testing.T) {
+	n := NewNetwork(WithSeed(7), WithPacketLoss(1.0), WithCorruption(1.0))
+	client, _ := dialPair(t, n)
+
+	if _, err := client.Write([]byte("hello")); err != nil {
+		t.Fatal(err)
+	}
+
+	got := n.Trace()
+	found := false
+	for _, ev := range got {
+		if ev.Dropped {
+			found = true
+			if !ev.Corrupted {
+				t.Fatalf("event not marked Corrupted at rate 1.0: %+v", ev)
+			}
+			if ev.Size != 5 {
+				t.Fatalf("Size = %d on a dropped 5-byte write, want 5", ev.Size)
+			}
+			if ev.CorruptedByte != 0 || ev.CorruptedBit != 0 {
+				t.Fatalf("corruption site = (byte %d, bit %d) on a dropped-and-corrupted unit, want (0, 0): "+
+					"corruptionSite must never be called once Dropped short-circuits the evaluator", ev.CorruptedByte, ev.CorruptedBit)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("Trace() has no Dropped event for a write under WithPacketLoss(1.0)")
 	}
 }

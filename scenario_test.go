@@ -199,8 +199,13 @@ func TestScenarioRetryUnderLossGolden(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading golden file %s: %v (run with -update to generate it)", path, err)
 	}
-	if !trace.equal(want) {
-		t.Fatalf("trace does not match golden file %s:\n%s", path, trace.diff(want))
+	// size/corruptByte/corruptBit (M9-3) are nonzero in the live trace on
+	// every unit regardless of configured faults, so they're normalized to
+	// zero here since this scenario doesn't declare "site" -- see
+	// canonicalTrace.stripUndeclaredSiteFields.
+	got := trace.stripUndeclaredSiteFields(sc.fields)
+	if !got.equal(want) {
+		t.Fatalf("trace does not match golden file %s:\n%s", path, got.diff(want))
 	}
 }
 
