@@ -106,7 +106,7 @@
 
 ## M9-5 — close out M9: sync `README.md` and the skill
 
-**Status:** done — PR link to follow in a same-branch follow-up commit
+**Status:** done — [#103](https://github.com/jpgomesr/netchaos/pull/103)
 **Issue:** —
 **Depends on:** `M9-1`, `M9-2`, `M9-3`, `M9-4`
 **Blocks:** —
