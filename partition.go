@@ -36,14 +36,18 @@ func WithPartition(peerA, peerB string) Option {
 	}
 }
 
-// validatePartitionPair panics, naming WithPartition and the offending
-// value, if p's peer names are empty or identical.
-func validatePartitionPair(p partitionPair) {
+// validatePartitionPair panics, naming caller and the offending value, if
+// p's peer names are empty or identical. caller is the identifier the panic
+// message names -- WithPartition's own validation and Partition/Heal/Reset
+// (M9-1, issue #83) share this function but must each be named for their
+// own call, not each other's, matching the convention
+// validateLatencyRange/validateLossRate already established (M8-2).
+func validatePartitionPair(caller string, p partitionPair) {
 	if p.peerA == "" || p.peerB == "" {
-		panic(fmt.Sprintf("netchaos: WithPartition: peer names must not be empty, got (%q, %q)", p.peerA, p.peerB))
+		panic(fmt.Sprintf("netchaos: %s: peer names must not be empty, got (%q, %q)", caller, p.peerA, p.peerB))
 	}
 	if p.peerA == p.peerB {
-		panic(fmt.Sprintf("netchaos: WithPartition: peerA and peerB must differ, got %q for both", p.peerA))
+		panic(fmt.Sprintf("netchaos: %s: peerA and peerB must differ, got %q for both", caller, p.peerA))
 	}
 }
 
@@ -77,7 +81,12 @@ func validatePartitionPair(p partitionPair) {
 // already-established connections between the pair
 // (writes are accepted and silently discarded; reads block until their
 // deadline).
+//
+// peerA and peerB must be non-empty and distinct, the same requirement
+// WithPartition already enforces; Partition panics otherwise, naming
+// Partition and the offending value (M9-1, issue #83).
 func (n *Network) Partition(peerA, peerB string) {
+	validatePartitionPair("Partition", partitionPair{peerA, peerB})
 	k := newPairKey(peerName(peerA), peerName(peerB))
 
 	n.partMu.Lock()
@@ -99,7 +108,12 @@ func (n *Network) Partition(peerA, peerB string) {
 // caveat applies: a dialer that never named itself — with WithPeerName or
 // Network.DialerFor — is not targetable under any name, and a Heal aimed at
 // one is one of the silent no-ops above.
+//
+// peerA and peerB must be non-empty and distinct, the same requirement
+// WithPartition already enforces; Heal panics otherwise, naming Heal and
+// the offending value (M9-1, issue #83).
 func (n *Network) Heal(peerA, peerB string) {
+	validatePartitionPair("Heal", partitionPair{peerA, peerB})
 	k := newPairKey(peerName(peerA), peerName(peerB))
 
 	n.partMu.Lock()

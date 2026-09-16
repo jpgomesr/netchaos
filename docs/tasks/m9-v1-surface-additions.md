@@ -24,7 +24,7 @@
 
 ## M9-1 — `#83`: validate `Partition`/`Heal`/`Reset` the way `WithPartition` already does
 
-**Status:** todo
+**Status:** done — [#99](https://github.com/jpgomesr/netchaos/pull/99)
 **Issue:** [#83](https://github.com/jpgomesr/netchaos/issues/83)
 **Depends on:** —
 **Blocks:** —
