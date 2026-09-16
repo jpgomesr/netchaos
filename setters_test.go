@@ -2,6 +2,9 @@ package netchaos
 
 import (
 	"io"
+	"math"
+	"math/bits"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -110,6 +113,12 @@ func TestSettersPanicOnInvalidValues(t *testing.T) {
 		{"loss below 0", func(n *Network) { n.SetPacketLoss(-0.1) }, "SetPacketLoss"},
 		{"latency min above max", func(n *Network) { n.SetLatency(2*time.Second, time.Second) }, "SetLatency"},
 		{"negative latency", func(n *Network) { n.SetLatency(-time.Second, time.Second) }, "SetLatency"},
+		{"duplication above 1", func(n *Network) { n.SetDuplication(1.5) }, "SetDuplication"},
+		{"duplication below 0", func(n *Network) { n.SetDuplication(-0.1) }, "SetDuplication"},
+		{"duplication NaN", func(n *Network) { n.SetDuplication(math.NaN()) }, "SetDuplication"},
+		{"corruption above 1", func(n *Network) { n.SetCorruption(1.5) }, "SetCorruption"},
+		{"corruption below 0", func(n *Network) { n.SetCorruption(-0.1) }, "SetCorruption"},
+		{"corruption NaN", func(n *Network) { n.SetCorruption(math.NaN()) }, "SetCorruption"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -170,10 +179,131 @@ func TestSettersRaceWithLiveIO(t *testing.T) {
 		for i := 0; i < 200; i++ {
 			n.SetPacketLoss(float64(i%2) * 0.5)
 			n.SetLatency(time.Duration(i%3)*time.Millisecond, time.Duration(i%3)*time.Millisecond)
+			n.SetDuplication(float64(i%2) * 0.5)
+			n.SetCorruption(float64(i%2) * 0.5)
 		}
 	}()
 
 	wg.Wait()
 	close(done)
 	reader.Wait()
+}
+
+// TestSetDuplicationAppliesToLiveConn is the duplication half of #85 (M9-4):
+// SetDuplication reaches a connection that already exists, the same live
+// semantics SetLatency/SetPacketLoss/Partition/Heal already have.
+func TestSetDuplicationAppliesToLiveConn(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		n := NewNetwork()
+		client, server := dialPair(t, n)
+
+		if _, err := client.Write([]byte("ab")); err != nil {
+			t.Fatal(err)
+		}
+
+		n.SetDuplication(1.0)
+		if _, err := client.Write([]byte("cd")); err != nil {
+			t.Fatal(err)
+		}
+
+		n.SetDuplication(0.0)
+		if _, err := client.Write([]byte("ef")); err != nil {
+			t.Fatal(err)
+		}
+
+		synctest.Wait()
+		buf := make([]byte, 8)
+		if _, err := io.ReadFull(server, buf); err != nil {
+			t.Fatal(err)
+		}
+		if got, want := string(buf), "abcdcdef"; got != want {
+			t.Fatalf("read %q, want %q (the middle write must be admitted twice by the live SetDuplication(1.0))", got, want)
+		}
+	})
+}
+
+// TestSetCorruptionAppliesToLiveConn is the corruption half of #85 (M9-4):
+// SetCorruption reaches a connection that already exists.
+func TestSetCorruptionAppliesToLiveConn(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		n := NewNetwork()
+		client, server := dialPair(t, n)
+
+		payload := []byte("healthy!")
+		if _, err := client.Write(payload); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		buf := make([]byte, len(payload))
+		if _, err := io.ReadFull(server, buf); err != nil {
+			t.Fatal(err)
+		}
+		if string(buf) != string(payload) {
+			t.Fatalf("read %q before SetCorruption, want %q unmodified", buf, payload)
+		}
+
+		n.SetCorruption(1.0)
+		corrupted := []byte("corrupted")
+		if _, err := client.Write(corrupted); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		got := make([]byte, len(corrupted))
+		if _, err := io.ReadFull(server, got); err != nil {
+			t.Fatal(err)
+		}
+		diffBits := 0
+		for i := range got {
+			diffBits += bits.OnesCount8(got[i] ^ corrupted[i])
+		}
+		if diffBits != 1 {
+			t.Fatalf("delivered payload differs from written in %d bits, want exactly 1 "+
+				"(SetCorruption(1.0) flips a single bit)", diffBits)
+		}
+
+		n.SetCorruption(0.0)
+		healthyAgain := []byte("healthy2")
+		if _, err := client.Write(healthyAgain); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		final := make([]byte, len(healthyAgain))
+		if _, err := io.ReadFull(server, final); err != nil {
+			t.Fatal(err)
+		}
+		if string(final) != string(healthyAgain) {
+			t.Fatalf("read %q after SetCorruption(0.0), want %q unmodified", final, healthyAgain)
+		}
+	})
+}
+
+// TestDuplicationCorruptionSettersDeterministic is #85's determinism
+// requirement: two Networks with the same seed and the same call order
+// (dial, write, SetDuplication, SetCorruption, more writes) produce
+// identical traces.
+func TestDuplicationCorruptionSettersDeterministic(t *testing.T) {
+	run := func(t *testing.T) []FaultEvent {
+		n := NewNetwork(WithSeed(11))
+		client, _ := dialNamedPair(t, n)
+
+		for i := 0; i < 10; i++ {
+			if i == 5 {
+				n.SetDuplication(0.5)
+				n.SetCorruption(0.5)
+			}
+			if _, err := client.Write([]byte{byte(i)}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		synctest.Wait()
+		return n.Trace()
+	}
+
+	var a, b []FaultEvent
+	synctest.Test(t, func(t *testing.T) { a = run(t) })
+	synctest.Test(t, func(t *testing.T) { b = run(t) })
+
+	if !reflect.DeepEqual(a, b) {
+		t.Fatalf("traces differ across identical runs:\na = %+v\nb = %+v", a, b)
+	}
 }

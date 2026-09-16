@@ -33,6 +33,10 @@ import (
 // The caller's original buffer is never mutated: conn.Write already copies
 // it before the data reaches the pipe, so corruption mutates only that
 // private copy.
+//
+// This sets the value a Network starts with. Network.SetCorruption (M9-4)
+// changes it mid-test, on connections that already exist as well as future
+// ones -- the same live semantics SetLatency/SetPacketLoss already have.
 func WithCorruption(rate float64) Option {
 	return func(c *networkConfig) {
 		c.corruptEnabled = true
@@ -40,11 +44,15 @@ func WithCorruption(rate float64) Option {
 	}
 }
 
-// validateCorruptionRate panics, naming WithCorruption and the offending
-// value, if rate is outside [0.0, 1.0] -- including NaN, which always
-// compares false and so would otherwise pass any range check silently.
-func validateCorruptionRate(rate float64) {
+// validateCorruptionRate panics, naming caller and the offending value, if
+// rate is outside [0.0, 1.0] -- including NaN, which always compares false
+// and so would otherwise pass any range check silently. caller is the
+// identifier the panic message names -- WithCorruption's own validation and
+// SetCorruption (M9-4) share this function but must each be named for
+// their own call, not each other's, matching the convention
+// validateLatencyRange/validateLossRate already established (M8-2).
+func validateCorruptionRate(caller string, rate float64) {
 	if math.IsNaN(rate) || rate < 0 || rate > 1 {
-		panic(fmt.Sprintf("netchaos: WithCorruption: rate must be in [0.0, 1.0], got %v", rate))
+		panic(fmt.Sprintf("netchaos: %s: rate must be in [0.0, 1.0], got %v", caller, rate))
 	}
 }

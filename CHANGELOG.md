@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`Network.SetDuplication` and `Network.SetCorruption`** (closes #85 — partial; `SetBandwidth` is deferred, see [`docs/06` § Explicitly out of scope for v1](docs/06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1)). Live mutation of the duplication and corruption rates, the same semantics `SetLatency`/`SetPacketLoss` (`M7-4`) already have: a change reaches connections that already exist, not only future dials, with the same panic-on-invalid-value convention and unchanged draw discipline — enabling a fault kind mid-run that was off at construction begins drawing from that kind's own stream without shifting any other kind's sequence.
 - **`DialerOption` and `WithDialTimeout`** (closes #86). `Network.DialerFor` now accepts optional `DialerOption`s: `DialerFor(name, WithDialTimeout(d))` bounds every dial made through the returned closure to `d`, failing with an error satisfying `errors.Is(err, context.DeadlineExceeded)` instead of hanging until `Heal` against a partitioned peer. Purely additive — `DialerFor(name)` without options keeps its existing unbounded-wait behaviour, so no call site needs to change.
 
 ### Changed
