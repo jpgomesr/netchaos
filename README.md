@@ -1,4 +1,4 @@
-# netchaos
+![netchaos banner](./docs/assets/netchaos-text-banner-monochromatic-dark.png)
 
 **Deterministic network fault injection for Go, in-process, no infrastructure required.**
 
