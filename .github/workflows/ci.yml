@@ -13,7 +13,7 @@ jobs:
   test:
     strategy:
       matrix:
-        go-version: ["1.25", "latest"]
+        go-version: ["1.25", "stable"]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -41,11 +41,11 @@ jobs:
         run: go test -race ./...
 
       - name: Coverage
-        if: matrix.go-version == 'latest'
+        if: matrix.go-version == 'stable'
         run: |
           go test -coverprofile=cover.out ./...
           go tool cover -func=cover.out | tail -1
 
       - name: Fuzz
-        if: matrix.go-version == 'latest'
+        if: matrix.go-version == 'stable'
         run: go test -run=^$ -fuzz=FuzzPipeAccounting -fuzztime=20s ./...
