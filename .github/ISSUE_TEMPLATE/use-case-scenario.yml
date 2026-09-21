@@ -33,4 +33,12 @@ body:
     id: fault-types
     attributes:
       label: What fault types would you need?
-      description: Latency, packet loss, partition, reordering, etc.
+      description: Latency, packet loss, bandwidth, duplication, corruption, reset, partition, reordering, etc.
+
+  - type: input
+    id: version
+    attributes:
+      label: Which netchaos version are you using?
+      description: e.g. v0.3.0. Helps tell an already-covered gap apart from a genuinely new one.
+    validations:
+      required: false

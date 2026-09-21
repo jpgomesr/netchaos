@@ -134,6 +134,8 @@ go get github.com/jpgomesr/netchaos@v0.3.0
 
 netchaos v1 is implemented, tested, and documented. Bug reports and implementation PRs are welcome; see [docs/07 — Contributing](docs/07-contributing.md) for what's most useful to contribute right now, and note the API is stable but not frozen until `v1.0.0`.
 
+Using netchaos in a real project? A [use-case report](https://github.com/jpgomesr/netchaos/issues/new?template=use-case-scenario.yml) is the most useful thing you can send right now — it's the evidence the remaining post-v1 decisions and the `v1.0.0` tag are waiting on.
+
 ## License
 
 [MIT](LICENSE)
