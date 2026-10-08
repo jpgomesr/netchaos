@@ -1,7 +1,10 @@
 package netchaos
 
 import (
+	"cmp"
 	"net"
+	"slices"
+	"sync"
 	"testing"
 	"time"
 )
@@ -345,5 +348,74 @@ func TestTraceCorruptedByteZeroOnDroppedUnit(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("Trace() has no Dropped event for a write under WithPacketLoss(1.0)")
+	}
+}
+
+// byOrdinalSideSeq is Network.Trace's documented canonical order.
+func byOrdinalSideSeq(a, b FaultEvent) int {
+	return cmp.Or(cmp.Compare(a.Ordinal, b.Ordinal), cmp.Compare(a.Side, b.Side), cmp.Compare(a.Seq, b.Seq))
+}
+
+// TestTraceOrderUnderConcurrentDials pins issue #112: Trace's (Ordinal,
+// Side, Seq) order must hold however dials interleave, not only when they
+// happen one at a time as in TestTraceOrderIsOrdinalSideSeq. A connection
+// pool (net/http's Transport, gRPC) dials from many goroutines, and
+// DialContext assigns the ordinal and registers the trace handles in two
+// separate critical sections, so registration order alone is not ordinal
+// order.
+func TestTraceOrderUnderConcurrentDials(t *testing.T) {
+	const dialers = 32
+	for round := range 100 {
+		n := NewNetwork()
+		l, err := n.Listen("tcp", "server")
+		if err != nil {
+			t.Fatal(err)
+		}
+		go func() {
+			for {
+				if _, err := l.Accept(); err != nil {
+					return
+				}
+			}
+		}()
+
+		conns := make([]net.Conn, dialers)
+		var wg sync.WaitGroup
+		for i := range conns {
+			wg.Go(func() {
+				c, err := n.Dial("tcp", "server")
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				conns[i] = c
+			})
+		}
+		wg.Wait()
+		if t.Failed() {
+			t.FailNow()
+		}
+		for _, c := range conns {
+			if _, err := c.Write([]byte("x")); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		got := n.Trace()
+		if len(got) != dialers {
+			t.Fatalf("round %d: len(Trace()) = %d, want %d (one write per conn)", round, len(got), dialers)
+		}
+		if !slices.IsSortedFunc(got, byOrdinalSideSeq) {
+			ords := make([]uint64, len(got))
+			for i, ev := range got {
+				ords[i] = ev.Ordinal
+			}
+			t.Fatalf("round %d: Trace() not in (Ordinal, Side, Seq) order; ordinals = %v", round, ords)
+		}
+
+		for _, c := range conns {
+			_ = c.Close()
+		}
+		_ = l.Close()
 	}
 }

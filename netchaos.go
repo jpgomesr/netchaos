@@ -476,10 +476,12 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 	server.nw, server.pair = n, fp.pair
 	n.registerReset(fp.pair, client, server)
 
-	// Registered for Network.Trace (M7-10): one handle per direction, in
-	// dial order, which is also ordinal order — the canonical order Trace
-	// returns needs no sort as a result. client.writePipe/server.writePipe
-	// are each direction's recorder (newConnPairWithSeed, conn.go).
+	// Registered for Network.Trace (M7-10): one handle per direction.
+	// Registration happens outside the n.mu section that assigned ordinal,
+	// so concurrent dials can register out of ordinal order; Trace sorts
+	// rather than trusting append order (#112). client.writePipe/
+	// server.writePipe are each direction's recorder (newConnPairWithSeed,
+	// conn.go).
 	n.registerTrace(ordinal, sideDialer, client.writePipe.trace)
 	n.registerTrace(ordinal, sideAcceptor, server.writePipe.trace)
 

@@ -1,6 +1,8 @@
 package netchaos
 
 import (
+	"cmp"
+	"slices"
 	"sync"
 	"time"
 )
@@ -201,10 +203,11 @@ type traceHandle struct {
 }
 
 // registerTrace records rec as one connection direction's trace. Called
-// once per direction from DialContext, in dial order — which is also
-// ordinal order, since the determinism contract already fixes that — so
-// Network.Trace's (ordinal, side, seq) canonical order falls out of append
-// order and needs no sort.
+// once per direction from DialContext. Append order is NOT ordinal order
+// in general: DialContext assigns the ordinal under n.mu and registers here
+// later under traceMu, so concurrent dials can register out of ordinal
+// order (#112). Network.Trace sorts by (ordinal, side) instead of relying
+// on append order.
 //
 // Unlike registerReset (reset.go), an entry here is never removed: it is
 // deliberately not pruned when its conn closes, since Network.Trace exists
@@ -221,14 +224,17 @@ func (n *Network) registerTrace(ordinal uint64, side connSide, rec *traceRecorde
 // Trace returns every fault-injection decision recorded across every
 // connection n has ever dialed, in (Ordinal, Side, Seq) order — the same
 // canonical order the reproducibility harness (M3-3, reproducibility_test.go)
-// compares golden traces in. This closes the deferral M2-1 recorded when
+// compares golden traces in. The order holds however dials interleave,
+// including connections dialed concurrently from many goroutines (#112).
+// This closes the deferral M2-1 recorded when
 // the trace was first built: always recorded, never exported, until M6-14
 // decided the full trace (not counters) belonged in v0.2.0's scope.
 //
 // The returned slice is a copy: mutating it, or a later call to Trace,
 // never affects the other. Reused from traceRecorder.snapshot, which
 // already establishes this per direction (TestTraceSnapshotIsACopy);
-// Trace does no second copy of its own beyond concatenating those.
+// Trace copies no events of its own beyond concatenating those (it only
+// sorts a copy of its per-direction handles).
 //
 // See FaultEvent's own godoc for what is and is not recorded — notably,
 // Network.Reset produces no event, and a dial that never establishes
@@ -237,8 +243,17 @@ func (n *Network) Trace() []FaultEvent {
 	n.traceMu.Lock()
 	defer n.traceMu.Unlock()
 
+	// Concurrent dials can register out of ordinal order (#112), so sort a
+	// copy by (ordinal, side); each direction's own events are already in
+	// seq order. Stable keeps a dialer/acceptor pair's two handles in their
+	// registration order, though side alone already distinguishes them.
+	handles := slices.Clone(n.traces)
+	slices.SortStableFunc(handles, func(a, b traceHandle) int {
+		return cmp.Or(cmp.Compare(a.ordinal, b.ordinal), cmp.Compare(a.side, b.side))
+	})
+
 	var out []FaultEvent
-	for _, h := range n.traces {
+	for _, h := range handles {
 		for _, e := range h.rec.snapshot() {
 			out = append(out, FaultEvent{
 				Ordinal:       h.ordinal,
