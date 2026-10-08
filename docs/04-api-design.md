@@ -221,9 +221,11 @@ func (n *Network) Dial(network, addr string) (net.Conn, error)
 // DialContext is Dial with a context: the dial is aborted, returning
 // ctx.Err(), if ctx is cancelled before the simulated connection is
 // established. Ships in v1 (decided by M0-5) because http.Transport's
-// DialContext and grpc.WithContextDialer both expect this shape — a
-// library claiming drop-in transport compatibility needs it from the
-// start rather than adding it as a breaking follow-up.
+// DialContext expects exactly this shape — a library claiming drop-in
+// transport compatibility needs it from the start rather than adding it as
+// a breaking follow-up. grpc.WithContextDialer takes func(ctx, addr string)
+// instead, so it needs a one-line adapter over DialContext that fixes the
+// network (issue #108).
 func (n *Network) DialContext(ctx context.Context, network, addr string) (net.Conn, error)
 
 // Listen registers a simulated listener at addr within this Network.
