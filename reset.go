@@ -13,7 +13,9 @@ package netchaos
 // the named peers: both ends' subsequent Read and Write calls, and any
 // already in-flight on another goroutine, fail with an error satisfying
 // errors.Is(err, syscall.ECONNRESET) wrapped in a *net.OpError (matching
-// the uniform error shape M6-2 established). A reset connection stays
+// the uniform error shape M6-2 established). On plan9, whose syscall
+// package has no ECONNRESET, it is instead a plain error with the same
+// "connection reset by peer" message (#113). A reset connection stays
 // reset -- there is no way to "un-reset" it, unlike a partition, which
 // Heal reverses. The one exception is an end that is also closed locally:
 // in either order, a closed end fails with net.ErrClosed, never
