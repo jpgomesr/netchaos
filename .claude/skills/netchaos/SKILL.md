@@ -37,7 +37,7 @@ wrong from the type signatures alone.
 ## Adding it to a project
 
 ```
-go get github.com/jpgomesr/netchaos@v0.3.0
+go get github.com/jpgomesr/netchaos@v0.3.1
 ```
 
 Requires Go 1.25+ (`testing/synctest`). No other setup — no daemon, no

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.3.1] — 2026-10-08
+
+A patch release: the five `v0.3.0` defects that need no change to the exported surface and no change to documented behaviour, tracked as [M10](docs/tasks/m10-v0.3.1-patch.md) (`#108`, `#111`–`#114`), one PR each (`#120`–`#124`). Upgrading from `v0.3.0` needs no code change. Behaviour changes found in the same review (`#107`, `#109`, `#115`, part of `#116`) are deliberately held for `v0.4.0`.
+
 ### Fixed
 
 - **A connection that is reset and also closed locally now always fails `Read`/`Write` with `net.ErrClosed`** (closes #111). `Read` and `Write` checked "closed" and "reset" in a single `select`, so once both held, the Go runtime picked the error at random — about half `net.ErrClosed`, half `ECONNRESET`, independent of the seed. A local `Close` now always takes precedence, in either order, matching `Close`'s documented contract and a real `net.Conn`. `Reset` without a local `Close` still yields `ECONNRESET`.
