@@ -151,14 +151,22 @@ func (c *conn) opError(op string, err error) error {
 // coalescing/partial-read behaviour.
 //
 // A reset connection (Network.Reset, M7-7) always fails Read with an error
-// satisfying errors.Is(err, syscall.ECONNRESET), checked first and
-// unconditionally: unlike the pipe-state checks below it, a reset does not
-// let already-buffered data drain first.
+// satisfying errors.Is(err, syscall.ECONNRESET), checked before any pipe
+// state: unlike the pipe-state checks below it, a reset does not let
+// already-buffered data drain first. The one thing checked ahead of it is
+// this end's own Close: a conn that was reset and then closed locally (or
+// the reverse) fails with net.ErrClosed, never ECONNRESET (#111).
 func (c *conn) Read(b []byte) (int, error) {
 	for {
+		// Two separate checks, not one select: once both channels are
+		// closed a single select would pick between them at random, and a
+		// local Close must always win over a reset (#111).
 		select {
 		case <-c.closed:
 			return 0, c.opError("read", net.ErrClosed)
+		default:
+		}
+		select {
 		case <-c.resetCh:
 			return 0, c.opError("read", syscall.ECONNRESET)
 		default:
@@ -186,17 +194,24 @@ func (c *conn) Read(b []byte) (int, error) {
 // non-nil error, per io.Writer's contract.
 //
 // A reset connection (Network.Reset, M7-7) always fails Write with an error
-// satisfying errors.Is(err, syscall.ECONNRESET), checked first and
-// unconditionally, the same as Read.
+// satisfying errors.Is(err, syscall.ECONNRESET), checked before any pipe
+// state, the same as Read -- and, the same as Read, a local Close takes
+// precedence over a reset (#111).
 func (c *conn) Write(b []byte) (int, error) {
 	// io.Writer callers may reuse b once Write returns; the pipe retains
 	// queued data beyond this call, so it needs its own copy.
 	data := append([]byte(nil), b...)
 
 	for {
+		// Two separate checks, not one select: once both channels are
+		// closed a single select would pick between them at random, and a
+		// local Close must always win over a reset (#111).
 		select {
 		case <-c.closed:
 			return 0, c.opError("write", net.ErrClosed)
+		default:
+		}
+		select {
 		case <-c.resetCh:
 			return 0, c.opError("write", syscall.ECONNRESET)
 		default:

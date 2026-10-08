@@ -115,6 +115,55 @@ func TestResetConnectionStaysReset(t *testing.T) {
 	}
 }
 
+// TestResetThenCloseIsDeterministicallyClosed pins issue #111: once a reset
+// connection is also closed locally -- the usual reaction to seeing
+// ECONNRESET -- every later Read/Write fails with net.ErrClosed, never
+// ECONNRESET. The local Close wins, as Close's own contract (conn.go) and a
+// real net.Conn both promise. Looped because the defect was a runtime
+// select picking between two ready cases pseudo-randomly: a single
+// iteration passes about half the time.
+func TestResetThenCloseIsDeterministicallyClosed(t *testing.T) {
+	buf := make([]byte, 1)
+	for i := range 10000 {
+		n := NewNetwork()
+		client, server := dialNamedPair(t, n)
+
+		n.Reset("client", "server")
+		_ = client.Close()
+
+		if _, err := client.Read(buf); !errors.Is(err, net.ErrClosed) {
+			t.Fatalf("iteration %d: Read after Reset then Close = %v, want errors.Is(net.ErrClosed)", i, err)
+		}
+		if _, err := client.Write([]byte("x")); !errors.Is(err, net.ErrClosed) {
+			t.Fatalf("iteration %d: Write after Reset then Close = %v, want errors.Is(net.ErrClosed)", i, err)
+		}
+		// The peer end was reset but not closed, so it still sees the reset.
+		if _, err := server.Read(buf); !errors.Is(err, syscall.ECONNRESET) {
+			t.Fatalf("iteration %d: peer Read after Reset = %v, want errors.Is(syscall.ECONNRESET)", i, err)
+		}
+	}
+}
+
+// TestCloseThenReset is the reverse order: a conn closed locally before a
+// Reset reaches it still reports net.ErrClosed afterwards.
+func TestCloseThenReset(t *testing.T) {
+	buf := make([]byte, 1)
+	for i := range 1000 {
+		n := NewNetwork()
+		client, _ := dialNamedPair(t, n)
+
+		_ = client.Close()
+		n.Reset("client", "server")
+
+		if _, err := client.Read(buf); !errors.Is(err, net.ErrClosed) {
+			t.Fatalf("iteration %d: Read after Close then Reset = %v, want errors.Is(net.ErrClosed)", i, err)
+		}
+		if _, err := client.Write([]byte("x")); !errors.Is(err, net.ErrClosed) {
+			t.Fatalf("iteration %d: Write after Close then Reset = %v, want errors.Is(net.ErrClosed)", i, err)
+		}
+	}
+}
+
 // TestResetIsNoOpForUnestablishedPair mirrors Partition/Heal's no-op
 // convention (partition_test.go: TestPartitionUnknownPeerIsNoop,
 // TestHealUnpartitionedPairIsNoop): Reset on a pair with nothing currently

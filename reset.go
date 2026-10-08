@@ -15,7 +15,9 @@ package netchaos
 // errors.Is(err, syscall.ECONNRESET) wrapped in a *net.OpError (matching
 // the uniform error shape M6-2 established). A reset connection stays
 // reset -- there is no way to "un-reset" it, unlike a partition, which
-// Heal reverses.
+// Heal reverses. The one exception is an end that is also closed locally:
+// in either order, a closed end fails with net.ErrClosed, never
+// ECONNRESET, the same as a real net.Conn closed after an RST (#111).
 //
 // This is the gap Partition cannot fill: Partition is a deliberately
 // silent black hole (writes accepted and discarded, reads blocking to
