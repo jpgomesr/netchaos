@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **The library module now has no requirements** (closes #110). `golang.org/x/net` was the module's only dependency and was used only by the `nettest` conformance test; that test now lives in a nested module, `internal/conformance`, so x/net (and its transitive `x/crypto`, `x/sys`, `x/term`, `x/text`) no longer appears in a consumer's module graph, and x/net updates can resume there without raising the library's Go floor. The Go version policy is now written down in [`docs/07` § Go version support](docs/07-contributing.md#go-version-support): the floor stays at Go 1.25. CI sets `GOTOOLCHAIN: local` explicitly so the 1.25 leg keeps catching a raised `go` line, and Dependabot watches the nested module.
+- **CI now runs on macOS and Windows and on a weekly schedule** (part of #117, NC-33). A `test-os` job builds, vets and tests on `macos-latest` and `windows-latest` with stable Go; the cross-build step adds `freebsd/amd64`; and the CI workflow also runs every Monday, so a new Go release or runner-image change that breaks the build surfaces between pushes.
 
 ## [v0.3.1] — 2026-10-08
 
