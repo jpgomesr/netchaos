@@ -21,7 +21,7 @@ Tasks M0-1 through M0-4 are **decision tasks**: they produce a written decision,
 **Objective**
 Settle the single documented contradiction in the design: the root `README.md` intro prose lists reordering as a fault netchaos injects, while the v1 checklist in the same file (and in [06](../06-scope-and-roadmap.md)) does not. Until this resolves, the delivery path in M1 cannot commit to a write-ordering guarantee.
 
-**Options considered** (both stated verbatim in [05](../05-fault-injection.md#reordering-open-question))
+**Options considered** (both stated verbatim in [05](../05-fault-injection.md#reordering-deferred-not-in-v1))
 1. **Reordering is in v1** — the checklist is incomplete and gains a fourth item. Cost: the delivery queue in M1-1 must support holding a window of pending writes and releasing them in a seeded-random permutation, and every fault-composition rule in M2-5 grows a case.
 2. **Reordering is out of v1** — the README's intro prose is trimmed to "latency, packet loss, partitions", and reordering joins the deferred list in [06](../06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1). Cost: none to the implementation; the README loses a selling point until post-v1.
 
@@ -32,7 +32,7 @@ In or out. This is the maintainer's call — `AGENTS.md` explicitly instructs ag
 
 **Where the decision gets recorded**
 - [06 — Scope & Roadmap](../06-scope-and-roadmap.md) — replace the "Reordering: in or out of v1?" section with the outcome.
-- [05 — Fault Injection](../05-fault-injection.md#reordering-open-question) — replace the open-question section with either the full mechanic (option 1) or a pointer to the deferred list (option 2).
+- [05 — Fault Injection](../05-fault-injection.md#reordering-deferred-not-in-v1) — replace the open-question section with either the full mechanic (option 1) or a pointer to the deferred list (option 2).
 - Root `README.md` — either add the fourth checklist item (option 1) or trim the intro prose (option 2).
 - [docs/README.md](../README.md) — remove the "Open question flagged in these docs" section.
 - A `needs-discussion` issue is the natural venue if outside input is wanted first; `.claude/commands/issue.md` covers the flow.

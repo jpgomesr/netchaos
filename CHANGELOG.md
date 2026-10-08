@@ -51,7 +51,7 @@ Implements every item [`docs/06` § Accepted before v1.0.0](docs/06-scope-and-ro
 
 ## [v0.2.0] — 2026-08-31
 
-Implements every item [`docs/06` § Accepted for v0.2.0](docs/06-scope-and-roadmap.md#accepted-for-v02) accepted, plus `Network.DialerFor` — the one thing [M7](docs/tasks/m7-v0.2.0-implementation.md) decided itself rather than inherited from a prior milestone's decision. Ten tasks, ten PRs, each tracked against an open issue (`#36`, `#49` through `#53`); see `docs/tasks/m7-v0.2.0-implementation.md` for the full sequencing and how each was resolved.
+Implements every item [`docs/06` § Accepted for v0.2.0](docs/06-scope-and-roadmap.md#accepted-for-v020) accepted, plus `Network.DialerFor` — the one thing [M7](docs/tasks/m7-v0.2.0-implementation.md) decided itself rather than inherited from a prior milestone's decision. Ten tasks, ten PRs, each tracked against an open issue (`#36`, `#49` through `#53`); see `docs/tasks/m7-v0.2.0-implementation.md` for the full sequencing and how each was resolved.
 
 No breaking change in the sense of code that fails to compile against `v0.1.0` — every addition below is a new identifier. **One behavioural change worth flagging on upgrade:** address strings now carry a synthesized port (`RemoteAddr().String()` returns `"server:8000"`, not `"server"`), so any test asserting an address string literally will need updating; peer identity (what `Partition`/`Heal`/`Reset` target) is unaffected, since it stays the host half alone.
 
