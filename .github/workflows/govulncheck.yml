@@ -1,0 +1,32 @@
+name: govulncheck
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Weekly, so a vulnerability published against a dependency or the Go
+  # standard library surfaces even when nothing in the repo changes. A
+  # finding in golang.org/x/net that needs a newer Go is the one trigger
+  # for revisiting the Go 1.25 floor (docs/07 § Go version support).
+  schedule:
+    - cron: "23 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    strategy:
+      fail-fast: false
+      matrix:
+        # The library module (no requirements; checks the standard library
+        # it uses) and the nested conformance module that holds x/net.
+        work-dir: [".", "internal/conformance"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
+        with:
+          go-version-input: stable
+          work-dir: ${{ matrix.work-dir }}
+          go-package: ./...
