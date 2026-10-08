@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A connection that is reset and also closed locally now always fails `Read`/`Write` with `net.ErrClosed`** (closes #111). `Read` and `Write` checked "closed" and "reset" in a single `select`, so once both held, the Go runtime picked the error at random — about half `net.ErrClosed`, half `ECONNRESET`, independent of the seed. A local `Close` now always takes precedence, in either order, matching `Close`'s documented contract and a real `net.Conn`. `Reset` without a local `Close` still yields `ECONNRESET`.
+
 ## [v0.3.0] — 2026-09-16
 
 Implements every item [`docs/06` § Accepted before v1.0.0](docs/06-scope-and-roadmap.md#accepted-before-v100) accepted, from [M8-7](docs/tasks/m8-v1-readiness.md)'s ergonomics review of the `v0.2.0` surface — four tasks, four PRs (`#99`–`#102`), each tracked against an open issue (`#83`, `#86`, `#78` partial, `#85` partial); see `docs/tasks/m9-v1-surface-additions.md` for the full sequencing. Also includes the `M8` bug fixes and tooling additions landed on `main` since `v0.2.0` (below). **One behavioural change worth flagging on upgrade:** `Network.Partition`, `Network.Heal`, and `Network.Reset` now panic on an empty peer name or a self-pair, where they previously accepted both silently as no-ops.

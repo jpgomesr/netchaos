@@ -88,6 +88,8 @@ netchaos's v1 scope (per the root README's checklist) covers three fault categor
 
 **Configuration:** `Network.Reset(peerA, peerB string)` — an imperative method, like `Partition`/`Heal`, decided by the maintainer rather than a per-unit drawn `Option`. See [04 — API Design § Mid-stream connection reset](04-api-design.md#mid-stream-connection-reset) for the full contract, including how it differs from `Partition` in three deliberate ways (no effect on `Dial`, does not persist past the connections live at the moment it is called, and is a no-op for an unestablished pair).
 
+**A local `Close` wins:** an end that is reset and also closed locally, in either order, fails `Read`/`Write` with `net.ErrClosed`, never `ECONNRESET` ([#111](https://github.com/jpgomesr/netchaos/issues/111)).
+
 **Not a per-unit fault:** unlike every other kind in this document, `Reset` takes no random draws, has no `faultKind`, and plays no part in `installFaultPolicy`'s composed evaluator or its fixed order above. It cannot perturb, and is not perturbed by, any connection's loss/latency/bandwidth/duplication/corruption sequence.
 
 **What it's for:** Testing reconnect and retry logic against an abrupt failure — does your client detect `ECONNRESET` and reconnect rather than treating it like a timeout, does a connection pool evict a reset connection instead of returning it to a caller again.
