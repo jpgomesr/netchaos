@@ -2,14 +2,14 @@
 
 `import "github.com/jpgomesr/netchaos"` — single flat package, no
 subpackages. Requires Go 1.25+ (uses `testing/synctest`). Add it with
-`go get github.com/jpgomesr/netchaos@v0.3.0` (or the latest tag — check
+`go get github.com/jpgomesr/netchaos@v0.3.1` (or the latest tag — check
 `go list -m -versions github.com/jpgomesr/netchaos` if unsure).
 
 This reference is self-contained: everything needed to use the library
 correctly from an external project/API lives here, without needing the
 netchaos repo's own `docs/` checked out.
 
-## Full surface (v0.3.0)
+## Full surface (v0.3.1)
 
 ```go
 type Network struct{ /* unexported */ }
@@ -602,5 +602,5 @@ connection's errors satisfy `errors.Is(err, syscall.ECONNRESET)`.
   decisions and produce no trace event.
 - Expecting a `WithLatency`/`WithPacketLoss`/`WithBandwidth`/
   `WithDuplication`/`WithCorruption` variant scoped to one peer pair — it
-  doesn't exist as of `v0.3.0`; only `WithPartition` is pair-scoped, and
+  doesn't exist as of `v0.3.1`; only `WithPartition` is pair-scoped, and
   all five other faults are global to the `Network`.

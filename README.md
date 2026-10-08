@@ -8,7 +8,7 @@
 [![golangci-lint](https://github.com/jpgomesr/netchaos/actions/workflows/golangci-lint.yml/badge.svg)](https://github.com/jpgomesr/netchaos/actions/workflows/golangci-lint.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> **Status: `v0.3.0` released.** v1's simulated transport and its three core faults are implemented, tested, and documented; `v0.2.0` added bandwidth throttling, packet duplication, data corruption, mid-stream connection reset, live mutation of latency/loss on established connections, and an exported fault trace; `v0.3.0` adds runtime validation on `Partition`/`Heal`/`Reset`, a bounded wait on `DialerFor` via `WithDialTimeout`, payload size and corruption site on `FaultEvent`, and live mutation of duplication and corruption rates. The API is stable but not frozen until `v1.0.0` — see [docs/07 — Contributing](docs/07-contributing.md). Requires Go 1.25+ (`testing/synctest`).
+> **Status: `v0.3.1` released.** v1's simulated transport and its three core faults are implemented, tested, and documented; `v0.2.0` added bandwidth throttling, packet duplication, data corruption, mid-stream connection reset, live mutation of latency/loss on established connections, and an exported fault trace; `v0.3.0` adds runtime validation on `Partition`/`Heal`/`Reset`, a bounded wait on `DialerFor` via `WithDialTimeout`, payload size and corruption site on `FaultEvent`, and live mutation of duplication and corruption rates; `v0.3.1` is a bug-fix patch on top of it (see below). The API is stable but not frozen until `v1.0.0` — see [docs/07 — Contributing](docs/07-contributing.md). Requires Go 1.25+ (`testing/synctest`).
 
 **Full design documentation:** [`docs/`](docs/README.md)
 
@@ -120,14 +120,24 @@ Everything above shipped as `v0.2.0`. `v0.3.0` adds, on top of it:
 - **`FaultEvent` gains payload size and corruption site** — `Size`, `CorruptedByte`, and `CorruptedBit` let a corruption or duplication failure be diagnosed, or an exact byte reproduced, directly from `Network.Trace()`.
 - **`Network.SetDuplication` and `Network.SetCorruption`** — live mutation of the duplication and corruption rates, the same "already-established connections, not just future dials" semantics `SetLatency`/`SetPacketLoss` already have.
 
-Full detail on each: [`CHANGELOG.md`](CHANGELOG.md) for what shipped and why, [docs/04 — API Design](docs/04-api-design.md) for the exact signatures and semantics. The Claude Code skill at [`.claude/skills/netchaos/`](.claude/skills/netchaos/) is a self-contained reference covering the whole `v0.3.0` surface, usable from any project that adds netchaos as a dependency.
+Full detail on each: [`CHANGELOG.md`](CHANGELOG.md) for what shipped and why, [docs/04 — API Design](docs/04-api-design.md) for the exact signatures and semantics. The Claude Code skill at [`.claude/skills/netchaos/`](.claude/skills/netchaos/) is a self-contained reference covering the whole `v0.3.x` surface, usable from any project that adds netchaos as a dependency.
+
+## `v0.3.1` fixes
+
+A patch release — no API change, nothing to update in calling code:
+
+- **A reset connection that is also closed locally always reports `net.ErrClosed`**, in either order, instead of `net.ErrClosed` or `ECONNRESET` at random.
+- **`Network.Trace()` keeps its (Ordinal, Side, Seq) order when connections are dialed concurrently**, e.g. from a connection pool.
+- **A nil `Option` or `DialerOption` panics with a named message** (`netchaos: NewNetwork: nil Option at index N`) instead of a nil-pointer dereference.
+- **The package builds on plan9 again**; CI now cross-builds for plan9, windows, darwin, js/wasm and wasip1.
+- **The skill's dialer guidance is corrected**: a plain, unnamed `Dial` ignores partitions and never blocks — only a named dial (`DialerFor`, `WithPeerName`) waits; only `DialContext` fits `http.Transport.DialContext`, and gRPC's `WithContextDialer` needs a one-line adapter.
 
 ## Installation
 
 Requires **Go 1.25 or later** — `testing/synctest`, which netchaos's virtual-time integration depends on, was introduced in Go 1.25 and cannot be used on an older toolchain.
 
 ```
-go get github.com/jpgomesr/netchaos@v0.3.0
+go get github.com/jpgomesr/netchaos@v0.3.1
 ```
 
 ## Contributing
