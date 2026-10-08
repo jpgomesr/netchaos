@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The test package now compiles and passes on 32-bit platforms** (closes #127). Three `serializationDelay` overflow tests passed integer constants above 2³¹ where an `int` is expected, so `go vet`/`go test` failed to compile with `GOARCH=386` (and arm, mips) since `v0.3.0`; the library itself always built. They now skip on platforms where `int` is 32 bits — no `Write` can be that large there, so the overflow path they guard cannot occur — and still run unchanged on 64-bit. CI gains a `GOARCH=386` vet-and-test step.
 
+### Changed
+
+- **The library module now has no requirements** (closes #110). `golang.org/x/net` was the module's only dependency and was used only by the `nettest` conformance test; that test now lives in a nested module, `internal/conformance`, so x/net (and its transitive `x/crypto`, `x/sys`, `x/term`, `x/text`) no longer appears in a consumer's module graph, and x/net updates can resume there without raising the library's Go floor. The Go version policy is now written down in [`docs/07` § Go version support](docs/07-contributing.md#go-version-support): the floor stays at Go 1.25. CI sets `GOTOOLCHAIN: local` explicitly so the 1.25 leg keeps catching a raised `go` line, and Dependabot watches the nested module.
+
 ## [v0.3.1] — 2026-10-08
 
 A patch release: the five `v0.3.0` defects that need no change to the exported surface and no change to documented behaviour, tracked as [M10](docs/tasks/m10-v0.3.1-patch.md) (`#108`, `#111`–`#114`), one PR each (`#120`–`#124`). Upgrading from `v0.3.0` needs no code change. Behaviour changes found in the same review (`#107`, `#109`, `#115`, part of `#116`) are deliberately held for `v0.4.0`.

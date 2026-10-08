@@ -5,6 +5,15 @@ updates:
     schedule:
       interval: "weekly"
 
+  # The library module has no requirements. golang.org/x/net is needed only by
+  # the nettest conformance suite, which lives in this nested module so that
+  # x/net can follow upstream (even when it raises its own go line) without
+  # ever raising the library's Go 1.25 floor (#110).
+  - package-ecosystem: "gomod"
+    directory: "/internal/conformance"
+    schedule:
+      interval: "weekly"
+
   - package-ecosystem: "github-actions"
     directory: "/.github/workflows"
     schedule:

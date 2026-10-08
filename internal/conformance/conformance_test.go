@@ -1,10 +1,17 @@
-package netchaos
+// Package conformance_test runs golang.org/x/net/nettest's net.Conn
+// conformance suite against netchaos. It lives in its own module so that
+// golang.org/x/net -- needed only here -- is never a requirement of the
+// library itself, and can follow upstream without raising the library's
+// Go floor (#110).
+package conformance_test
 
 import (
 	"net"
 	"testing"
 
 	"golang.org/x/net/nettest"
+
+	"github.com/jpgomesr/netchaos"
 )
 
 // TestConnConformance runs the standard net.Conn conformance suite against a
@@ -29,7 +36,7 @@ func TestConnConformance(t *testing.T) {
 // Network per invocation, so the suite's subtests cannot perturb each other's
 // connection ordinals or share a listener address.
 func makeNetchaosPipe() (c1, c2 net.Conn, stop func(), err error) {
-	n := NewNetwork()
+	n := netchaos.NewNetwork()
 
 	l, err := n.Listen("tcp", "server")
 	if err != nil {

@@ -9,6 +9,12 @@ on:
 permissions:
   contents: read
 
+# Never let the go command download a newer toolchain: the 1.25 leg must
+# run on Go 1.25 itself, so a dependency bump that raises the module's go
+# line fails CI here instead of silently dropping Go 1.25 support (#110).
+env:
+  GOTOOLCHAIN: local
+
 jobs:
   test:
     strategy:
@@ -47,6 +53,16 @@ jobs:
 
       - name: Test
         run: go test -race ./...
+
+      # The nettest conformance suite lives in its own module so that
+      # golang.org/x/net is never a requirement of the library (#110). Only
+      # on stable: x/net may require a newer Go than the library's floor.
+      - name: Conformance (nettest)
+        if: matrix.go-version == 'stable'
+        working-directory: internal/conformance
+        run: |
+          go vet ./...
+          go test -race ./...
 
       - name: 32-bit (GOARCH=386)
         if: matrix.go-version == 'stable'
