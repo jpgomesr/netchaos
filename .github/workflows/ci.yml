@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Weekly, so a new Go release or a runner-image change that breaks the
+  # build shows up between pushes, not on the next unrelated PR.
+  schedule:
+    - cron: "17 6 * * 1"
 
 permissions:
   contents: read
@@ -34,7 +38,7 @@ jobs:
       - name: Cross-build
         if: matrix.go-version == 'stable'
         run: |
-          for target in plan9/amd64 windows/amd64 darwin/arm64 js/wasm wasip1/wasm; do
+          for target in plan9/amd64 windows/amd64 darwin/arm64 freebsd/amd64 js/wasm wasip1/wasm; do
             echo "GOOS=${target%/*} GOARCH=${target#*/}"
             GOOS="${target%/*}" GOARCH="${target#*/}" go build ./...
           done
@@ -81,3 +85,28 @@ jobs:
       - name: Fuzz
         if: matrix.go-version == 'stable'
         run: go test -run=^$ -fuzz=FuzzPipeAccounting -fuzztime=20s ./...
+
+  # Build, vet and test natively on macOS and Windows, on stable only; the
+  # Linux job above keeps the Go 1.25 floor, 32-bit, coverage and fuzz
+  # steps. Cross-building alone only proves these platforms compile.
+  test-os:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
