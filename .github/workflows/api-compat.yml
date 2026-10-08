@@ -1,0 +1,40 @@
+name: API compatibility
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  gorelease:
+    runs-on: ubuntu-latest
+    # Informational until v1.0.0: v0.4.0 changes the exported API on purpose,
+    # and pre-v1 semver allows that in a minor release. The report still
+    # shows every added, changed or removed identifier and the version bump
+    # it implies. Remove this line at v1.0.0 so an incompatible change fails
+    # the PR (#117 NC-21; RELEASING.md).
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+
+      # Without -base, gorelease compares against the latest version
+      # published on the module proxy. Only the library module is checked;
+      # internal/conformance is never published.
+      - name: gorelease
+        run: |
+          set -o pipefail
+          go run golang.org/x/exp/cmd/gorelease@latest | tee gorelease.txt
+          {
+            echo '## gorelease'
+            echo '```'
+            cat gorelease.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

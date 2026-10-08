@@ -18,6 +18,8 @@ How the repository keeps that promise ([#110](https://github.com/jpgomesr/netcha
 
 If a change ever does need to raise the floor, it ships in a minor version, never a patch, and the CHANGELOG calls it out.
 
+How a version is cut — close-out PR, choosing patch vs. minor from the API compatibility report, tagging, release notes, verification — is in [`RELEASING.md`](../RELEASING.md).
+
 ## What's useful to contribute right now
 
 With v1 shipped, implementation contributions are now the highest-value ones — this inverts the earlier guidance, which deferred them because the API was still unsettled:
