@@ -4,7 +4,6 @@ import (
 	"net"
 	"os"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -135,7 +134,9 @@ func newConnPairWithSeed(clientAddr, serverAddr *addr, ordinal uint64, network s
 
 // triggerReset closes c.resetCh, idempotently, causing every current and
 // future Read/Write on c to fail with an error satisfying
-// errors.Is(err, syscall.ECONNRESET) -- Network.Reset's mechanism (M7-7).
+// errors.Is(err, syscall.ECONNRESET) (errConnReset; on plan9, which has
+// no ECONNRESET, a plain error with the same message -- see
+// reset_errno_plan9.go) -- Network.Reset's mechanism (M7-7).
 // Unexported: only Network.Reset calls it, never a conn on itself.
 func (c *conn) triggerReset() {
 	c.resetOnce.Do(func() {
@@ -155,7 +156,9 @@ func (c *conn) opError(op string, err error) error {
 // state: unlike the pipe-state checks below it, a reset does not let
 // already-buffered data drain first. The one thing checked ahead of it is
 // this end's own Close: a conn that was reset and then closed locally (or
-// the reverse) fails with net.ErrClosed, never ECONNRESET (#111).
+// the reverse) fails with net.ErrClosed, never ECONNRESET (#111). On plan9,
+// whose syscall package has no ECONNRESET, the reset error is a plain error
+// with the same message instead (#113).
 func (c *conn) Read(b []byte) (int, error) {
 	for {
 		// Two separate checks, not one select: once both channels are
@@ -168,7 +171,7 @@ func (c *conn) Read(b []byte) (int, error) {
 		}
 		select {
 		case <-c.resetCh:
-			return 0, c.opError("read", syscall.ECONNRESET)
+			return 0, c.opError("read", errConnReset)
 		default:
 		}
 
@@ -196,7 +199,8 @@ func (c *conn) Read(b []byte) (int, error) {
 // A reset connection (Network.Reset, M7-7) always fails Write with an error
 // satisfying errors.Is(err, syscall.ECONNRESET), checked before any pipe
 // state, the same as Read -- and, the same as Read, a local Close takes
-// precedence over a reset (#111).
+// precedence over a reset (#111). The plan9 caveat on Read applies here
+// too (#113).
 func (c *conn) Write(b []byte) (int, error) {
 	// io.Writer callers may reuse b once Write returns; the pipe retains
 	// queued data beyond this call, so it needs its own copy.
@@ -213,7 +217,7 @@ func (c *conn) Write(b []byte) (int, error) {
 		}
 		select {
 		case <-c.resetCh:
-			return 0, c.opError("write", syscall.ECONNRESET)
+			return 0, c.opError("write", errConnReset)
 		default:
 		}
 
