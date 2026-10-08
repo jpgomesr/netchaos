@@ -113,7 +113,8 @@ type Network struct {
 // applied in argument order; a later option of the same kind overrides an
 // earlier one. Every Option is validated once, after all of them have been
 // applied — see Option and WithSeed for what that means for invalid values
-// and for the determinism contract.
+// and for the determinism contract. A nil Option panics with a message
+// naming its index (#114), like any other invalid option.
 //
 // If WithSeed is not given, NewNetwork uses the fixed default seed 1 rather
 // than a random one: netchaos's whole premise is that a test run is
@@ -124,7 +125,10 @@ type Network struct {
 // picked.
 func NewNetwork(opts ...Option) *Network {
 	cfg := networkConfig{seed: defaultSeed}
-	for _, opt := range opts {
+	for i, opt := range opts {
+		if opt == nil {
+			panic(fmt.Sprintf("netchaos: NewNetwork: nil Option at index %d", i))
+		}
 		opt(&cfg)
 	}
 	cfg.validate()
@@ -330,9 +334,15 @@ func WithDialTimeout(d time.Duration) DialerOption {
 // opts, there remains no way to bound that wait — use WithDialTimeout(d) to
 // fail after d instead of hanging until Heal, or reach for DialContext with
 // WithPeerName and your own context deadline instead (M9-2, issue #86).
+//
+// A nil DialerOption in opts panics when DialerFor is called, naming its
+// index (#114).
 func (n *Network) DialerFor(name string, opts ...DialerOption) func(network, addr string) (net.Conn, error) {
 	var cfg dialerConfig
-	for _, opt := range opts {
+	for i, opt := range opts {
+		if opt == nil {
+			panic(fmt.Sprintf("netchaos: DialerFor: nil DialerOption at index %d", i))
+		}
 		opt(&cfg)
 	}
 	base := WithPeerName(context.Background(), name)

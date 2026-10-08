@@ -133,3 +133,21 @@ func TestValidationMessagesNameTheOption(t *testing.T) {
 		NewNetwork(WithPacketLoss(1.5))
 	})
 }
+
+// TestNilOptionPanicsWithName pins issue #114: a nil Option or DialerOption
+// -- typically a conditionally built option slice with a nil entry -- gets
+// the same named panic every other misuse does (docs/04 § Error and no-op
+// behaviour), not an anonymous nil-pointer dereference.
+func TestNilOptionPanicsWithName(t *testing.T) {
+	expectPanic(t, []string{"netchaos: NewNetwork: nil Option at index 0"}, func() {
+		NewNetwork(nil)
+	})
+	expectPanic(t, []string{"netchaos: NewNetwork: nil Option at index 1"}, func() {
+		NewNetwork(WithSeed(1), nil)
+	})
+	// DialerFor panics when called, not on the first dial through the
+	// closure it returns, the same way WithDialTimeout validates eagerly.
+	expectPanic(t, []string{"netchaos: DialerFor: nil DialerOption at index 0"}, func() {
+		NewNetwork().DialerFor("client", nil)
+	})
+}
