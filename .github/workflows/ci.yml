@@ -48,6 +48,14 @@ jobs:
       - name: Test
         run: go test -race ./...
 
+      - name: 32-bit (GOARCH=386)
+        if: matrix.go-version == 'stable'
+        env:
+          GOARCH: "386"
+        run: |
+          go vet ./...
+          go test ./...
+
       - name: Coverage
         if: matrix.go-version == 'stable'
         run: |

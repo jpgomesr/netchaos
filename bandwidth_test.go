@@ -10,6 +10,7 @@ package netchaos
 import (
 	"math"
 	"net"
+	"strconv"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -169,15 +170,27 @@ func TestWithBandwidthPanicsOnInvalidRate(t *testing.T) {
 	}
 }
 
+// intOrSkip returns v as an int, or skips the test when v does not fit in
+// one. The overflow tests below feed serializationDelay sizes and rates past
+// 2^31; on a 32-bit platform (GOARCH=386, arm, mips) no Write can be that
+// large -- len is an int -- so the path they guard cannot occur there.
+// Taking v as int64 rather than as an untyped constant is what lets this
+// file compile on 32-bit at all (#127).
+func intOrSkip(t *testing.T, v int64) int {
+	t.Helper()
+	if v > math.MaxInt {
+		t.Skipf("%d does not fit in a %d-bit int; this overflow path cannot occur on this platform", v, strconv.IntSize)
+	}
+	return int(v)
+}
+
 // TestBandwidthOnALargeWriteDoesNotOverflow guards serializationDelay's
 // overflow avoidance: size*time.Second/bytesPerSecond overflows int64
 // nanoseconds past roughly 8.5 GiB, which a caller of conn.Write is free to
 // attempt.
 func TestBandwidthOnALargeWriteDoesNotOverflow(t *testing.T) {
-	const (
-		size = 10 << 30 // 10 GiB
-		bps  = 1 << 20  // 1 MiB/s
-	)
+	size := intOrSkip(t, 10<<30) // 10 GiB
+	bps := 1 << 20               // 1 MiB/s
 	got := serializationDelay(size, bps)
 	want := 10 * 1024 * time.Second
 	if got != want {
@@ -195,10 +208,8 @@ func TestBandwidthOnALargeWriteDoesNotOverflow(t *testing.T) {
 // wrapped to a negative Duration even though the split was meant to avoid
 // exactly this.
 func TestBandwidthAboveGBPerSecondDoesNotOverflow(t *testing.T) {
-	const (
-		bps  = 10_000_000_000 // 10 GB/s
-		size = 9_300_000_000  // a single 9.3 GB Write
-	)
+	bps := intOrSkip(t, 10_000_000_000) // 10 GB/s
+	size := intOrSkip(t, 9_300_000_000) // a single 9.3 GB Write
 	got := serializationDelay(size, bps)
 	want := 930 * time.Millisecond
 	if got != want {
@@ -213,10 +224,8 @@ func TestBandwidthAboveGBPerSecondDoesNotOverflow(t *testing.T) {
 // represent at all. serializationDelay must clamp to the maximum
 // representable Duration rather than wrap to a negative value.
 func TestBandwidthExtremeLowRateClampsInsteadOfOverflowing(t *testing.T) {
-	const (
-		bps  = 1
-		size = 1 << 40 // 1 TiB at 1 byte/sec is far beyond any representable Duration
-	)
+	bps := 1
+	size := intOrSkip(t, 1<<40) // 1 TiB at 1 byte/sec is far beyond any representable Duration
 	got := serializationDelay(size, bps)
 	if got < 0 {
 		t.Fatalf("serializationDelay(%d, %d) = %v, want a non-negative clamp", size, bps, got)
