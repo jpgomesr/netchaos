@@ -62,14 +62,22 @@ config file, no network access needed at test time.
 - `SetLatency`/`SetPacketLoss`/`SetDuplication`/`SetCorruption` mutate
   their rates **live**, reaching connections already established —
   `WithBandwidth` is the one kind left construction-time only.
-- `network.Dial` / `network.DialContext` / `network.DialerFor(name, opts...)`
-  all have `net.Dial`'s exact shape (`func(network, addr string) (net.Conn, error)`),
-  so hand any of them straight to `http.Transport.DialContext`, a gRPC
-  `WithContextDialer`, or a hand-rolled client constructor. `DialerFor` is
-  the one to reach for when the call site only accepts a plain dial
-  function but the connection still needs to be partition/reset-targetable.
-  Pass `netchaos.WithDialTimeout(d)` to bound the wait against a
-  partitioned peer instead of hanging until `Heal`.
+- Dialer shapes differ — pick the one the call site takes:
+  - `network.Dial` and `network.DialerFor(name, opts...)` have `net.Dial`'s
+    shape, `func(network, addr string) (net.Conn, error)` — for a
+    hand-rolled client constructor that takes a plain dial function.
+  - `network.DialContext` is `func(ctx, network, addr string)` — goes
+    straight into `http.Transport{DialContext: network.DialContext}`.
+  - gRPC's `WithContextDialer` takes `func(ctx, addr string)`, which none of
+    them fit; adapt it: `grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) { return network.DialContext(ctx, "tcp", addr) })`.
+
+  `DialerFor` is the one to reach for when the call site only accepts a
+  plain dial function but the connection still needs to be
+  partition/reset-targetable. An unnamed `Dial` is never
+  partition-targetable, so it never blocks on a partition; a *named* dial
+  (`DialerFor`, or `DialContext` with `WithPeerName`) blocks against a
+  partitioned peer until `Heal` — pass `netchaos.WithDialTimeout(d)` (or a
+  context deadline) to bound that wait.
 - Addresses have a real host:port shape — `net.SplitHostPort` works on
   `RemoteAddr().String()` — but peer **identity** (what `Partition`/`Heal`/
   `Reset` name) is the host half only; nothing resolves on port.

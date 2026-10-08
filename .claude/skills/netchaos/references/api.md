@@ -175,9 +175,27 @@ whole, never split.
   synthesized `ephemeral-N:port` identity that can never be targeted by
   `Partition`/`Heal`/`Reset`.
 - **`DialContext(ctx, network, addr)`** — aborts with `ctx.Err()` if `ctx`
-  is cancelled before the simulated connection establishes. Prefer this
-  over `Dial` whenever the peer might be partitioned, since `Dial` has no
-  way to time out.
+  is cancelled before the simulated connection establishes. Its shape is
+  `func(ctx context.Context, network, addr string) (net.Conn, error)`, not
+  `net.Dial`'s — the one that fits `http.Transport.DialContext` directly.
+  With `WithPeerName` on `ctx` it is a *named* dial that a partition
+  blocks, and `ctx`'s deadline is what bounds that wait. (An unnamed `Dial`
+  needs no deadline for partitions: it is never partition-targetable, so it
+  never blocks on one.)
+- **Plugging into common clients:**
+  ```go
+  // net/http: DialContext fits as-is.
+  tr := &http.Transport{DialContext: network.DialContext}
+
+  // gRPC: WithContextDialer takes func(ctx, addr string), so adapt it.
+  conn, err := grpc.NewClient("passthrough:///server",
+      grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
+          return network.DialContext(ctx, "tcp", addr)
+      }),
+      grpc.WithTransportCredentials(insecure.NewCredentials()))
+  ```
+  Wrap `ctx` with `netchaos.WithPeerName(ctx, "client")` inside either
+  adapter to make those connections partition/reset-targetable.
 - **`DialerFor(name string, opts ...DialerOption) func(network, addr string) (net.Conn, error)`**
   — the fix for "I want partition-targeting but my client constructor only
   takes a `net.Dial`-shaped function." Returns a closure with the exact
@@ -189,8 +207,9 @@ whole, never split.
   ```
   A `DialerFor` dialer **is** subject to the dial-time partition check
   (it blocks against a partitioned peer, same as a `WithPeerName`-named
-  `DialContext`). Without an option, it has no context to bound the wait,
-  same as plain `Dial`. Pass `WithDialTimeout(d)` to bound it instead:
+  `DialContext`). Without an option, nothing bounds that wait — it blocks
+  until `Heal`. (Plain `Dial` differs here: being unnamed, it never blocks
+  on a partition at all.) Pass `WithDialTimeout(d)` to bound it instead:
   ```go
   dial := network.DialerFor("client", netchaos.WithDialTimeout(5*time.Second))
   conn, err := dial("tcp", "server") // fails after 5s if server stays partitioned
@@ -274,12 +293,16 @@ blocks on this check. The wait happens *before* the connection's ordinal
 is assigned, so a dial that blocks and is then cancelled never shifts any
 other connection's fault sequence.
 
-**Consequence:** `network.Dial(...)` (uses `context.Background()`) into a
-partitioned peer **hangs forever** — no timeout, no error. If a test
-dials a possibly-partitioned peer, use `DialContext` with a deadline, or
-`DialerFor(name, WithDialTimeout(d))` if the call site only accepts a
-plain dial function, or this is exactly the hang the test wants to assert
-(wrap it in its own `t.Fatal`-style timeout).
+**Consequence:** a *named* dial into a partitioned peer — `DialerFor(name)`
+with no `WithDialTimeout`, or `DialContext` with `WithPeerName` on a
+context with no deadline — blocks until `Heal`, with no timeout and no
+error. If a test dials a possibly-partitioned peer by name, give it
+`WithDialTimeout(d)` or a context deadline, or treat the block as exactly
+what the test wants to assert (wrap it in its own `t.Fatal`-style
+timeout). A plain, unnamed `network.Dial(...)` is the opposite case: it is
+never partition-targetable, so it connects and delivers normally even
+under `WithPartition` naming the peer you meant it to be — use
+`DialerFor` if the partition should apply to it.
 
 **Effect on already-established connections:** writes into a partitioned
 pair are accepted and silently discarded (same silent-gap model as packet
@@ -553,9 +576,14 @@ connection's errors satisfy `errors.Is(err, syscall.ECONNRESET)`.
   because the peer identity doesn't exist as far as that call is concerned.
   This is different from an **empty name or a self-pair**, which panics
   rather than no-ops — see [Dynamic partition control](#dynamic-partition-control).
-- Using `network.Dial` (not `DialContext`) against a peer that might be
-  partitioned, then wondering why the test hangs — `Dial` has no deadline.
-  A `DialerFor` dialer hangs the same way unless given `WithDialTimeout`.
+- Using plain `network.Dial` and expecting a partition to affect it — an
+  unnamed `Dial` is never partition-targetable, so it connects and
+  delivers as if no partition existed. Use `DialerFor(name)` (or
+  `DialContext` with `WithPeerName`) to make it targetable.
+- Using a *named* dial (`DialerFor` without `WithDialTimeout`, or
+  `WithPeerName` on a context with no deadline) against a peer that might
+  be partitioned, then wondering why the test hangs — it blocks until
+  `Heal`.
 - Forgetting `WithSeed` — the test still runs (default seed `1`, not
   random), but a deliberately-varied seed is what makes a specific failing
   sequence reproducible on purpose.
