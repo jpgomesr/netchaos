@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The test package now compiles and passes on 32-bit platforms** (closes #127). Three `serializationDelay` overflow tests passed integer constants above 2³¹ where an `int` is expected, so `go vet`/`go test` failed to compile with `GOARCH=386` (and arm, mips) since `v0.3.0`; the library itself always built. They now skip on platforms where `int` is 32 bits — no `Write` can be that large there, so the overflow path they guard cannot occur — and still run unchanged on 64-bit. CI gains a `GOARCH=386` vet-and-test step.
+
 ## [v0.3.1] — 2026-10-08
 
 A patch release: the five `v0.3.0` defects that need no change to the exported surface and no change to documented behaviour, tracked as [M10](docs/tasks/m10-v0.3.1-patch.md) (`#108`, `#111`–`#114`), one PR each (`#120`–`#124`). Upgrading from `v0.3.0` needs no code change. Behaviour changes found in the same review (`#107`, `#109`, `#115`, part of `#116`) are deliberately held for `v0.4.0`.
