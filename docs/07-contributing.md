@@ -6,6 +6,18 @@ netchaos v1 is implemented: the core transport, all three fault types (latency, 
 
 The latest tag is `v0.3.0`, not `v1.0.0` — deliberately. The surface has never had external users yet, and staying below `v1.0.0` leaves room to correct an ergonomics mistake or naming regret before committing to the stricter compatibility expectations a `v1.0.0` tag implies. Treat the API as stable but not frozen until `v1.0.0`: a breaking change is possible, but it needs a real justification, not routine churn.
 
+## Go version support
+
+**The minimum supported Go version is 1.25**, the release that introduced `testing/synctest`, which netchaos's virtual-time integration depends on. netchaos has promised 1.25+ support from its first release, and the floor stays at 1.25: it is not raised to follow Go's own two-release support window. The one trigger for revisiting it is a security fix that cannot be had without a newer Go — in practice a CVE in `golang.org/x/net`, the project's only third-party import — and that decision goes to the maintainer, not to a dependency bump.
+
+How the repository keeps that promise ([#110](https://github.com/jpgomesr/netchaos/issues/110)):
+
+- **The library module has no requirements.** `golang.org/x/net` is used only by the `nettest` conformance suite, which lives in its own module under `internal/conformance/`. x/net can follow upstream there, even when a release raises its own `go` line, without touching the library's.
+- **CI runs a Go 1.25 leg with `GOTOOLCHAIN: local`.** A change that raises the library's `go` line fails that leg instead of silently dropping Go 1.25 for every consumer.
+- **Dependabot watches both modules.** Updates to the conformance module never affect what consumers of netchaos need.
+
+If a change ever does need to raise the floor, it ships in a minor version, never a patch, and the CHANGELOG calls it out.
+
 ## What's useful to contribute right now
 
 With v1 shipped, implementation contributions are now the highest-value ones — this inverts the earlier guidance, which deferred them because the API was still unsettled:
