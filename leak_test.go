@@ -14,10 +14,12 @@ import (
 // time.AfterFunc callbacks (deadline.go and latency.go), each of which
 // self-terminates once it fires or is stopped (see Network's godoc) — this
 // test is the audit that backs that claim for the deadline timer.
-// TestNoLatencyTimerLeaks (synctest_test.go) is the equivalent audit for
-// the latency timer; TestCloseWithInFlightWorkInBubble (synctest_test.go)
-// is the stronger, bubble-based proof that a still-pending latency timer
-// never outlives its conn's Close.
+// TestCloseWithInFlightWorkInBubble (synctest_test.go) is the equivalent,
+// bubble-based proof for the latency timer: a still-pending delivery timer
+// never outlives its conn's Close. (A wall-clock NumGoroutine poll for the
+// latency timer, TestNoLatencyTimerLeaks, was removed in M11-6: it could
+// not observe an armed time.AfterFunc at all, which is exactly the case
+// assertPipeTimerDisarmed covers.)
 //
 // This replaces a runtime.NumGoroutine() baseline polled on a wall-clock
 // loop for up to two seconds (M6-6). That version was the one genuinely

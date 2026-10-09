@@ -1,11 +1,14 @@
 package netchaos
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -58,43 +61,109 @@ func TestDirectionAndKindIndependent(t *testing.T) {
 }
 
 func TestConcurrencyDoesNotPerturbStreams(t *testing.T) {
+	// Through a real Network, with every drawing fault on: the same eight
+	// connections write the same payloads once one connection at a time
+	// and once from eight concurrent goroutines, and every draw-derived
+	// field of every event must match. Deriving the streams directly (what
+	// this test used to do) held by construction and could not catch a
+	// shared RNG or a lock-order bug in the evaluator.
 	const (
 		seed        = int64(99)
 		connections = 8
-		drawsEach   = 50
+		writesEach  = 50
 	)
 
-	baseline := make([][]uint64, connections)
-	for ord := 0; ord < connections; ord++ {
-		s := deriveStream(seed, uint64(ord), sideDialer, kindLoss)
-		draws := make([]uint64, drawsEach)
-		for i := range draws {
-			draws[i] = s.next()
+	run := func(t *testing.T, concurrent bool) []FaultEvent {
+		var events []FaultEvent
+		synctest.Test(t, func(t *testing.T) {
+			n := NewNetwork(
+				WithSeed(seed),
+				WithPacketLoss(0.5),
+				WithLatency(time.Millisecond, 50*time.Millisecond),
+				WithDuplication(0.2),
+				WithCorruption(0.2),
+			)
+			l, err := n.Listen("tcp", "server")
+			if err != nil {
+				t.Fatal(err)
+			}
+			go func() {
+				for {
+					if _, err := l.Accept(); err != nil {
+						return
+					}
+				}
+			}()
+
+			// Dialed one at a time, so ordinals are fixed across both runs.
+			conns := make([]net.Conn, connections)
+			for i := range conns {
+				c, err := n.Dial("tcp", "server")
+				if err != nil {
+					t.Fatal(err)
+				}
+				conns[i] = c
+			}
+
+			write := func(c net.Conn) {
+				for i := 0; i < writesEach; i++ {
+					if _, err := c.Write(make([]byte, i%7+1)); err != nil {
+						t.Error(err)
+						return
+					}
+				}
+			}
+			if concurrent {
+				var wg sync.WaitGroup
+				for _, c := range conns {
+					wg.Go(func() { write(c) })
+				}
+				wg.Wait()
+			} else {
+				for _, c := range conns {
+					write(c)
+				}
+			}
+
+			events = n.Trace()
+			for _, c := range conns {
+				_ = c.Close()
+			}
+			_ = l.Close()
+		})
+		return events
+	}
+
+	type drawn struct {
+		ordinal                        uint64
+		side                           Side
+		seq                            uint64
+		dropped, duplicated, corrupted bool
+		delay                          time.Duration
+		size, corruptedByte            int
+		corruptBit                     uint8
+	}
+	project := func(evs []FaultEvent) []drawn {
+		out := make([]drawn, len(evs))
+		for i, ev := range evs {
+			out[i] = drawn{ev.Ordinal, ev.Side, ev.Seq, ev.Dropped, ev.Duplicated, ev.Corrupted, ev.Delay, ev.Size, ev.CorruptedByte, ev.CorruptedBit}
 		}
-		baseline[ord] = draws
+		return out
 	}
 
-	got := make([][]uint64, connections)
-	var wg sync.WaitGroup
-	wg.Add(connections)
-	for ord := 0; ord < connections; ord++ {
-		go func(ord int) {
-			defer wg.Done()
-			s := deriveStream(seed, uint64(ord), sideDialer, kindLoss)
-			draws := make([]uint64, drawsEach)
-			for i := range draws {
-				draws[i] = s.next()
-			}
-			got[ord] = draws
-		}(ord)
+	sequential := project(run(t, false))
+	if len(sequential) != connections*writesEach {
+		t.Fatalf("sequential run recorded %d events, want %d", len(sequential), connections*writesEach)
 	}
-	wg.Wait()
-
-	for ord := 0; ord < connections; ord++ {
-		for i := 0; i < drawsEach; i++ {
-			if got[ord][i] != baseline[ord][i] {
-				t.Fatalf("ordinal %d draw %d perturbed by concurrent access: got %d, want %d (baseline)", ord, i, got[ord][i], baseline[ord][i])
+	for round := 0; round < 20; round++ {
+		concurrent := project(run(t, true))
+		if !slices.Equal(concurrent, sequential) {
+			for i := range sequential {
+				if i >= len(concurrent) || concurrent[i] != sequential[i] {
+					t.Fatalf("round %d: event %d differs under concurrent writes:\n concurrent %+v\n sequential %+v", round, i, concurrent[min(i, len(concurrent)-1)], sequential[i])
+				}
 			}
+			t.Fatalf("round %d: concurrent run recorded %d events, sequential %d", round, len(concurrent), len(sequential))
 		}
 	}
 }

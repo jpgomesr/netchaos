@@ -5,7 +5,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"reflect"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -86,7 +85,10 @@ func TestLatencyRanged(t *testing.T) {
 }
 
 func TestLatencyDeterministic(t *testing.T) {
-	trace := func() []faultEvent {
+	// trace takes the bubble's own t: calling the outer test's t.Fatal from
+	// inside a synctest bubble reports against the wrong test and skips
+	// the bubble's own cleanup.
+	trace := func(t *testing.T) []faultEvent {
 		n := NewNetwork(WithSeed(42), WithLatency(10*time.Millisecond, 200*time.Millisecond))
 		l, err := n.Listen("tcp", "server")
 		if err != nil {
@@ -119,8 +121,8 @@ func TestLatencyDeterministic(t *testing.T) {
 	}
 
 	var a, b []faultEvent
-	synctest.Test(t, func(_ *testing.T) { a = trace() })
-	synctest.Test(t, func(_ *testing.T) { b = trace() })
+	synctest.Test(t, func(t *testing.T) { a = trace(t) })
+	synctest.Test(t, func(t *testing.T) { b = trace(t) })
 
 	if len(a) != len(b) {
 		t.Fatalf("trace lengths differ: %d vs %d", len(a), len(b))
@@ -207,11 +209,31 @@ func TestLatencyCloseInFlight(t *testing.T) {
 }
 
 func TestNoLatencyByDefault(t *testing.T) {
-	client, server := newTestConnPair()
-	defer func() { _ = client.Close() }()
-	defer func() { _ = server.Close() }()
+	// Through a real Network, the path users take: every Network conn has
+	// the fault evaluator installed, so checking a raw pipe's deliver
+	// function (what this test used to do) proved nothing about it.
+	synctest.Test(t, func(t *testing.T) {
+		n := NewNetwork(WithSeed(42))
+		client, server := dialNamedPair(t, n)
 
-	if reflect.ValueOf(client.writePipe.deliver).Pointer() != reflect.ValueOf(passThroughDeliver).Pointer() {
-		t.Fatal("a pipe with no WithLatency configured must keep the M1 pass-through deliver function")
-	}
+		start := time.Now()
+		for i := 0; i < 10; i++ {
+			if _, err := client.Write([]byte{byte(i)}); err != nil {
+				t.Fatal(err)
+			}
+			buf := make([]byte, 1)
+			if _, err := io.ReadFull(server, buf); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if elapsed := time.Since(start); elapsed != 0 {
+			t.Fatalf("10 writes and reads with no WithLatency took %v of virtual time, want 0", elapsed)
+		}
+
+		for _, ev := range n.Trace() {
+			if ev.Delay != 0 || ev.Effective != 0 {
+				t.Fatalf("event %+v has a delay with no WithLatency configured", ev)
+			}
+		}
+	})
 }

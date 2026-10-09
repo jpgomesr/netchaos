@@ -280,29 +280,19 @@ func TestLossIsolatedPerConnection(t *testing.T) {
 // drops permanently inflate bufBytes and eventually wedge the writer with
 // false back-pressure that nothing will ever relieve.
 func TestLossDoesNotWedgeWriterOnRepeatedDrops(t *testing.T) {
-	client, server := newConnPairWithBound(&addr{network: "tcp", peer: "client"}, &addr{network: "tcp", peer: "server"}, 0, "tcp", 16)
-	defer func() { _ = client.Close() }()
-	defer func() { _ = server.Close() }()
+	// In a bubble, a wedged writer is a deadlock synctest reports, rather
+	// than a wall-clock timeout that could also fire on a slow machine.
+	synctest.Test(t, func(t *testing.T) {
+		client, server := newConnPairWithBound(&addr{network: "tcp", peer: "client"}, &addr{network: "tcp", peer: "server"}, 0, "tcp", 16)
+		defer func() { _ = client.Close() }()
+		defer func() { _ = server.Close() }()
 
-	installFaultPolicy(client.writePipe, faultPolicy{static: faultConfig{lossEnabled: true, lossRate: 1.0}})
+		installFaultPolicy(client.writePipe, faultPolicy{static: faultConfig{lossEnabled: true, lossRate: 1.0}})
 
-	done := make(chan error, 1)
-	go func() {
 		for i := 0; i < 1000; i++ {
 			if _, err := client.Write([]byte("0123456789")); err != nil {
-				done <- err
-				return
+				t.Fatalf("write %d failed: %v", i, err)
 			}
 		}
-		done <- nil
-	}()
-
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("write failed: %v", err)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("writes wedged: bufBytes was not released on drop")
-	}
+	})
 }
