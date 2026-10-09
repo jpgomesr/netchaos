@@ -560,3 +560,38 @@ func TestPartitionPortSuffixedSelfPairDoesNotPanic(_ *testing.T) {
 	n := NewNetwork()
 	n.Partition("client:1", "client:2") // must not panic -- reproduces the gap, not verified safe
 }
+
+// TestRepeatedPartitionIsIdempotent: partitioning a pair that is already
+// partitioned is a no-op, not a count -- a single Heal restores it.
+func TestRepeatedPartitionIsIdempotent(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		n := NewNetwork()
+		l, err := n.Listen("tcp", "server")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = l.Close() }()
+		go func() {
+			for {
+				if _, err := l.Accept(); err != nil {
+					return
+				}
+			}
+		}()
+
+		n.Partition("client", "server")
+		n.Partition("server", "client") // same unordered pair
+
+		dial := n.DialerFor("client", WithDialTimeout(time.Second))
+		if _, err := dial("tcp", "server"); !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("dial while partitioned = %v, want context.DeadlineExceeded", err)
+		}
+
+		n.Heal("client", "server")
+		c, err := dial("tcp", "server")
+		if err != nil {
+			t.Fatalf("dial after one Heal of a twice-partitioned pair = %v, want nil", err)
+		}
+		_ = c.Close()
+	})
+}

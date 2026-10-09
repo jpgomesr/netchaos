@@ -325,3 +325,47 @@ func TestDeadlineRace(_ *testing.T) {
 	wg.Wait()
 	<-done
 }
+
+// TestBlockedWriteWakesOnCloseOrReset covers the two non-deadline ways a
+// Write blocked on back-pressure is released: this end's own Close
+// (net.ErrClosed) and a mid-stream reset (ECONNRESET). Both wake it from
+// the blocking select rather than at the top of the loop.
+func TestBlockedWriteWakesOnCloseOrReset(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		act  func(c *conn)
+		want error
+	}{
+		{"close", func(c *conn) { _ = c.Close() }, net.ErrClosed},
+		{"reset", func(c *conn) { c.triggerReset() }, errConnReset},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				client, server := newTestConnPairWithBound(4)
+				defer func() { _ = client.Close() }()
+				defer func() { _ = server.Close() }()
+
+				if _, err := client.Write([]byte("full")); err != nil {
+					t.Fatal(err)
+				}
+				result := make(chan error, 1)
+				go func() {
+					_, err := client.Write([]byte("x"))
+					result <- err
+				}()
+
+				synctest.Wait()
+				select {
+				case err := <-result:
+					t.Fatalf("Write past the bound returned before %s: %v", tc.name, err)
+				default:
+				}
+
+				tc.act(client)
+				if err := <-result; !errors.Is(err, tc.want) {
+					t.Fatalf("blocked Write after %s = %v, want errors.Is(%v)", tc.name, err, tc.want)
+				}
+			})
+		})
+	}
+}

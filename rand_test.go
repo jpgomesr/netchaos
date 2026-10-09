@@ -1,6 +1,7 @@
 package netchaos
 
 import (
+	"math/big"
 	"net"
 	"os"
 	"path/filepath"
@@ -341,5 +342,70 @@ func TestBernoulliBoundaries(t *testing.T) {
 		if !s.bernoulli(1.0) {
 			t.Fatalf("bernoulli(1.0) returned false on draw %d", i)
 		}
+	}
+}
+
+// referenceBounded is an independent implementation of Lemire's
+// multiply-shift bounded draw, written with math/big so it shares no
+// arithmetic with boundedUint64: take a raw 64-bit draw r, form the
+// 128-bit product r*n, accept when its low 64 bits are at least 2^64 mod n,
+// and return the high 64 bits; otherwise draw again. It returns the value
+// and how many raw draws it consumed.
+func referenceBounded(next func() uint64, n uint64) (uint64, int) {
+	two64 := new(big.Int).Lsh(big.NewInt(1), 64)
+	bn := new(big.Int).SetUint64(n)
+	thresh := new(big.Int).Mod(two64, bn)
+	for draws := 1; ; draws++ {
+		prod := new(big.Int).Mul(new(big.Int).SetUint64(next()), bn)
+		lo := new(big.Int).Mod(prod, two64)
+		if lo.Cmp(thresh) >= 0 {
+			return new(big.Int).Rsh(prod, 64).Uint64(), draws
+		}
+	}
+}
+
+// TestBoundedUint64RejectionMatchesReference covers boundedUint64's
+// rejection loop, which no other test reaches: it only runs when a raw
+// draw's low product bits fall below 2^64 mod n, which for the small n
+// netchaos normally uses (latency spans, byte and bit indices) almost
+// never happens. With n = 2^63+1 the rejection zone is nearly half the
+// range, so a stream that rejects on its first draw is easy to find. The
+// value boundedUint64 returns is compared against referenceBounded fed the
+// same raw draws from an identically derived stream, so a change to the
+// rejection logic -- which would shift every later draw on that stream and
+// break cross-version reproducibility -- fails here.
+func TestBoundedUint64RejectionMatchesReference(t *testing.T) {
+	for _, n := range []uint64{1<<63 + 1, 1<<62 + 3, 3, 1000} {
+		rejected := false
+		for ordinal := uint64(0); ordinal < 200; ordinal++ {
+			got := deriveStream(7, ordinal, sideDialer, kindLatency)
+			raw := deriveStream(7, ordinal, sideDialer, kindLatency)
+			for i := 0; i < 20; i++ {
+				v := got.boundedUint64(n)
+				want, draws := referenceBounded(raw.next, n)
+				if v != want {
+					t.Fatalf("n=%d ordinal=%d draw %d: boundedUint64 = %d, reference = %d", n, ordinal, i, v, want)
+				}
+				if v >= n {
+					t.Fatalf("n=%d: boundedUint64 = %d, want < n", n, v)
+				}
+				if draws > 1 {
+					rejected = true
+				}
+			}
+		}
+		// The two large n reject often enough that 4,000 draws without a
+		// rejection would mean the loop is not being exercised at all.
+		if n > 1<<61 && !rejected {
+			t.Fatalf("n=%d: no draw hit the rejection loop; the test is not covering it", n)
+		}
+	}
+}
+
+// TestSideStringUnknown pins Side's fallback for a value outside the two
+// defined sides, used only in test failure output.
+func TestSideStringUnknown(t *testing.T) {
+	if got := Side(99).String(); got != "unknown" {
+		t.Fatalf("Side(99).String() = %q, want \"unknown\"", got)
 	}
 }
