@@ -82,9 +82,16 @@ jobs:
           go test -coverprofile=cover.out ./...
           go tool cover -func=cover.out | tail -1
 
+      # go test accepts one -fuzz target per invocation, so each target
+      # gets its own short run; the committed corpora under testdata/fuzz
+      # also replay on every plain `go test`.
       - name: Fuzz
         if: matrix.go-version == 'stable'
-        run: go test -run=^$ -fuzz=FuzzPipeAccounting -fuzztime=20s ./...
+        run: |
+          for target in FuzzPipeAccounting FuzzSplitAddr FuzzSerializationDelay FuzzStreamIntegrity FuzzEvaluatorAccounting; do
+            echo "== $target"
+            go test -run='^$' -fuzz="^${target}\$" -fuzztime=10s .
+          done
 
   # Build, vet and test natively on macOS and Windows, on stable only; the
   # Linux job above keeps the Go 1.25 floor, 32-bit, coverage and fuzz
