@@ -154,63 +154,70 @@ func TestWritePastDeadlineWithBufferSpace(t *testing.T) {
 }
 
 func TestDeadlineUnblocksInFlightRead(t *testing.T) {
-	client, server := newTestConnPair()
-	defer func() { _ = client.Close() }()
-	defer func() { _ = server.Close() }()
+	synctest.Test(t, func(t *testing.T) {
+		client, server := newTestConnPair()
+		defer func() { _ = client.Close() }()
+		defer func() { _ = server.Close() }()
 
-	started := make(chan struct{})
-	result := make(chan error, 1)
-	go func() {
-		close(started)
-		_, err := server.Read(make([]byte, 4))
-		result <- err
-	}()
+		result := make(chan error, 1)
+		go func() {
+			_, err := server.Read(make([]byte, 4))
+			result <- err
+		}()
 
-	<-started
-	time.Sleep(20 * time.Millisecond)
-	if err := server.SetReadDeadline(time.Now().Add(-time.Second)); err != nil {
-		t.Fatal(err)
-	}
+		// Wait until the reader is durably blocked, and prove it is: a
+		// Read that returned early would make the deadline below moot.
+		synctest.Wait()
+		select {
+		case err := <-result:
+			t.Fatalf("Read returned before any deadline was set: %v", err)
+		default:
+		}
 
-	select {
-	case err := <-result:
-		assertDeadlineExceeded(t, err)
-	case <-time.After(time.Second):
-		t.Fatal("Read did not unblock after a past deadline was set from another goroutine")
-	}
+		if err := server.SetReadDeadline(time.Now().Add(-time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		// No timeout: if Read never unblocks, the bubble deadlocks and
+		// synctest fails the test.
+		assertDeadlineExceeded(t, <-result)
+	})
 }
 
 func TestZeroTimeClearsDeadline(t *testing.T) {
-	client, server := newTestConnPair()
-	defer func() { _ = client.Close() }()
-	defer func() { _ = server.Close() }()
+	synctest.Test(t, func(t *testing.T) {
+		client, server := newTestConnPair()
+		defer func() { _ = client.Close() }()
+		defer func() { _ = server.Close() }()
 
-	if err := server.SetReadDeadline(time.Now().Add(-time.Second)); err != nil {
-		t.Fatal(err)
-	}
-	if err := server.SetReadDeadline(time.Time{}); err != nil {
-		t.Fatal(err)
-	}
+		if err := server.SetReadDeadline(time.Now().Add(-time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		if err := server.SetReadDeadline(time.Time{}); err != nil {
+			t.Fatal(err)
+		}
 
-	result := make(chan error, 1)
-	go func() {
-		_, err := server.Read(make([]byte, 4))
-		result <- err
-	}()
+		result := make(chan error, 1)
+		go func() {
+			_, err := server.Read(make([]byte, 4))
+			result <- err
+		}()
 
-	time.Sleep(20 * time.Millisecond)
-	if _, err := client.Write([]byte("data")); err != nil {
-		t.Fatal(err)
-	}
+		// With the past deadline cleared, Read must block rather than
+		// fail immediately.
+		synctest.Wait()
+		select {
+		case err := <-result:
+			t.Fatalf("Read returned before data arrived: %v (the cleared deadline still applied)", err)
+		default:
+		}
 
-	select {
-	case err := <-result:
-		if err != nil {
+		if _, err := client.Write([]byte("data")); err != nil {
+			t.Fatal(err)
+		}
+		if err := <-result; err != nil {
 			t.Fatalf("Read after clearing deadline = %v, want nil", err)
 		}
-	case <-time.After(time.Second):
-		t.Fatal("Read did not complete after deadline was cleared and data arrived")
-	}
+	})
 }
 
 func TestSetDeadlineAffectsBothDirections(t *testing.T) {

@@ -583,19 +583,13 @@ func ExampleWithPipeBound() {
 	}
 
 	// The direction is already at its bound, so this write blocks until a
-	// Read frees room.
-	blocked := make(chan struct{})
-	go func() {
-		_, _ = client.Write([]byte{'!'})
-		close(blocked)
-	}()
-
-	select {
-	case <-blocked:
-		fmt.Println("wrote without blocking")
-	case <-time.After(20 * time.Millisecond):
-		fmt.Println("blocked until read")
-	}
+	// Read frees room. A write deadline turns "blocks" into an observable
+	// result: it can only expire if the write was still waiting for room,
+	// so the outcome does not depend on how long the deadline is.
+	_ = client.SetWriteDeadline(time.Now().Add(10 * time.Millisecond))
+	_, err = client.Write([]byte{'!'})
+	fmt.Println("blocked until read:", errors.Is(err, os.ErrDeadlineExceeded))
+	_ = client.SetWriteDeadline(time.Time{})
 
 	buf := make([]byte, bound)
 	if _, err := io.ReadFull(server, buf); err != nil {
@@ -603,14 +597,14 @@ func ExampleWithPipeBound() {
 		return
 	}
 
-	select {
-	case <-blocked:
-		fmt.Println("unblocked after read")
-	case <-time.After(time.Second):
-		fmt.Println("still blocked")
+	// Reading freed the room, so the same write now succeeds at once.
+	if _, err := client.Write([]byte{'!'}); err != nil {
+		fmt.Println(err)
+		return
 	}
+	fmt.Println("unblocked after read")
 	// Output:
-	// blocked until read
+	// blocked until read: true
 	// unblocked after read
 }
 

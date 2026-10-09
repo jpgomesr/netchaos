@@ -12,7 +12,7 @@ import (
 	"errors"
 	"net"
 	"testing"
-	"time"
+	"testing/synctest"
 )
 
 // TestWithPipeBoundAppliesBackPressure exercises the back-pressure claim
@@ -24,60 +24,59 @@ func TestWithPipeBoundAppliesBackPressure(t *testing.T) {
 	const bound = 16
 	const bps = 1_000_000 // fast enough that throttling itself isn't the delay under test
 
-	n := NewNetwork(WithPipeBound(bound), WithBandwidth(bps))
-	l, err := n.Listen("tcp", "server")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = l.Close() }()
-
-	accepted := make(chan net.Conn, 1)
-	go func() {
-		c, err := l.Accept()
-		if err == nil {
-			accepted <- c
+	synctest.Test(t, func(t *testing.T) {
+		n := NewNetwork(WithPipeBound(bound), WithBandwidth(bps))
+		l, err := n.Listen("tcp", "server")
+		if err != nil {
+			t.Fatal(err)
 		}
-	}()
+		defer func() { _ = l.Close() }()
 
-	client, err := n.Dial("tcp", "server")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = client.Close() }()
-	server := <-accepted
-	defer func() { _ = server.Close() }()
+		accepted := make(chan net.Conn, 1)
+		go func() {
+			c, err := l.Accept()
+			if err == nil {
+				accepted <- c
+			}
+		}()
 
-	// The first write fits exactly at the bound and must not block.
-	if _, err := client.Write(make([]byte, bound)); err != nil {
-		t.Fatalf("first write (fills the bound exactly) = %v, want nil", err)
-	}
+		client, err := n.Dial("tcp", "server")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = client.Close() }()
+		server := <-accepted
+		defer func() { _ = server.Close() }()
 
-	// A second write, unread, must block: the direction is already at the
-	// configured bound of 16 bytes, not the 64 KiB default.
-	blocked := make(chan struct{})
-	go func() {
-		_, _ = client.Write(make([]byte, 1))
-		close(blocked)
-	}()
+		// The first write fits exactly at the bound and must not block.
+		if _, err := client.Write(make([]byte, bound)); err != nil {
+			t.Fatalf("first write (fills the bound exactly) = %v, want nil", err)
+		}
 
-	select {
-	case <-blocked:
-		t.Fatal("second write returned before anything was read; back-pressure did not apply at the configured bound")
-	case <-time.After(50 * time.Millisecond):
-	}
+		// A second write, unread, must block: the direction is already at
+		// the configured bound of 16 bytes, not the 64 KiB default.
+		blocked := make(chan struct{})
+		go func() {
+			_, _ = client.Write(make([]byte, 1))
+			close(blocked)
+		}()
 
-	// Reading the first write's bytes frees exactly enough room for the
-	// second, one-byte write to be admitted.
-	buf := make([]byte, bound)
-	if _, err := server.Read(buf); err != nil {
-		t.Fatal(err)
-	}
+		synctest.Wait()
+		select {
+		case <-blocked:
+			t.Fatal("second write returned before anything was read; back-pressure did not apply at the configured bound")
+		default:
+		}
 
-	select {
-	case <-blocked:
-	case <-time.After(time.Second):
-		t.Fatal("second write did not unblock after the first was read")
-	}
+		// Reading the first write's bytes frees exactly enough room for
+		// the second, one-byte write to be admitted. If it never is, the
+		// bubble deadlocks and synctest fails the test.
+		buf := make([]byte, bound)
+		if _, err := server.Read(buf); err != nil {
+			t.Fatal(err)
+		}
+		<-blocked
+	})
 }
 
 // TestWithListenerBacklogBoundsAcceptQueue mirrors

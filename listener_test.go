@@ -5,7 +5,6 @@ import (
 	"net"
 	"testing"
 	"testing/synctest"
-	"time"
 )
 
 func TestListenRegistersAddr(t *testing.T) {
@@ -81,38 +80,36 @@ func TestAcceptBlocksWhenEmpty(t *testing.T) {
 }
 
 func TestCloseUnblocksAccept(t *testing.T) {
-	n := NewNetwork()
-	l, err := n.Listen("tcp", "server")
-	if err != nil {
-		t.Fatal(err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		n := NewNetwork()
+		l, err := n.Listen("tcp", "server")
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	type acceptResult struct {
-		c   net.Conn
-		err error
-	}
-	result := make(chan acceptResult, 1)
-	started := make(chan struct{})
-	go func() {
-		close(started)
-		c, err := l.Accept()
-		result <- acceptResult{c, err}
-	}()
+		type acceptResult struct {
+			c   net.Conn
+			err error
+		}
+		result := make(chan acceptResult, 1)
+		go func() {
+			c, err := l.Accept()
+			result <- acceptResult{c, err}
+		}()
 
-	<-started
-	time.Sleep(20 * time.Millisecond)
-	if err := l.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	select {
-	case r := <-result:
-		if !errors.Is(r.err, net.ErrClosed) {
+		synctest.Wait()
+		select {
+		case r := <-result:
+			t.Fatalf("Accept returned before Close: (%v, %v)", r.c, r.err)
+		default:
+		}
+		if err := l.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if r := <-result; !errors.Is(r.err, net.ErrClosed) {
 			t.Fatalf("Accept after Close = %v, want errors.Is(net.ErrClosed)", r.err)
 		}
-	case <-time.After(time.Second):
-		t.Fatal("Accept did not unblock after Close")
-	}
+	})
 }
 
 func TestAcceptAfterClose(t *testing.T) {

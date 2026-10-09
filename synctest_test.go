@@ -61,7 +61,6 @@ package netchaos
 import (
 	"context"
 	"net"
-	"runtime"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -431,37 +430,4 @@ func TestNoGoroutinesOutliveBubble(t *testing.T) {
 		_ = client.Close()
 		_ = server.Close()
 	})
-}
-
-// TestNoLatencyTimerLeaks is a backstop, not the real proof: time.AfterFunc
-// allocates no goroutine until it fires, so runtime.NumGoroutine cannot
-// observe a latency timer that was stopped before it ever ran.
-// assertPipeTimerDisarmed, called from TestCloseWithInFlightWorkInBubble
-// (leak_test.go), is what actually proves pipe.close disarms a pending
-// delivery timer — not the bubble's completion by itself (M6-18). This
-// test only catches the (different, grosser) failure of a timer being left
-// running long enough to fire and leave its callback goroutine behind.
-func TestNoLatencyTimerLeaks(t *testing.T) {
-	before := runtime.NumGoroutine()
-
-	n := NewNetwork(WithLatency(500*time.Millisecond, 500*time.Millisecond))
-	client, server := dialNamedPair(t, n)
-
-	if _, err := client.Write([]byte("x")); err != nil {
-		t.Fatal(err)
-	}
-	_ = client.Close()
-	_ = server.Close()
-
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if runtime.NumGoroutine() <= before {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("goroutine count = %d, want <= %d (baseline) after closing with a pending latency timer", runtime.NumGoroutine(), before)
-		}
-		runtime.Gosched()
-		time.Sleep(10 * time.Millisecond)
-	}
 }

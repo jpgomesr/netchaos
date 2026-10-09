@@ -143,66 +143,61 @@ func TestPipeCoalescedReads(t *testing.T) {
 }
 
 func TestPipeBlocksWhenEmpty(t *testing.T) {
-	p := newPipe(defaultPipeBound)
-	started := make(chan struct{})
-	type readResult struct {
-		n   int
-		err error
-	}
-	result := make(chan readResult, 1)
-	go func() {
-		close(started)
-		buf := make([]byte, 5)
-		n, err := p.read(buf)
-		result <- readResult{n, err}
-	}()
-	<-started
-	time.Sleep(20 * time.Millisecond)
-	select {
-	case r := <-result:
-		t.Fatalf("read returned early: (%d, %v)", r.n, r.err)
-	default:
-	}
-	if _, err := p.write([]byte("hi")); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case r := <-result:
-		if r.err != nil || r.n != 2 {
+	synctest.Test(t, func(t *testing.T) {
+		p := newPipe(defaultPipeBound)
+		type readResult struct {
+			n   int
+			err error
+		}
+		result := make(chan readResult, 1)
+		go func() {
+			buf := make([]byte, 5)
+			n, err := p.read(buf)
+			result <- readResult{n, err}
+		}()
+
+		synctest.Wait()
+		select {
+		case r := <-result:
+			t.Fatalf("read returned early: (%d, %v)", r.n, r.err)
+		default:
+		}
+		if _, err := p.write([]byte("hi")); err != nil {
+			t.Fatal(err)
+		}
+		if r := <-result; r.err != nil || r.n != 2 {
 			t.Fatalf("read = (%d, %v), want (2, nil)", r.n, r.err)
 		}
-	case <-time.After(time.Second):
-		t.Fatal("read did not unblock after write")
-	}
+	})
 }
 
 func TestPipeCloseUnblocksReader(t *testing.T) {
-	p := newPipe(defaultPipeBound)
-	started := make(chan struct{})
-	type readResult struct {
-		n   int
-		err error
-	}
-	result := make(chan readResult, 1)
-	go func() {
-		close(started)
-		buf := make([]byte, 5)
-		n, err := p.read(buf)
-		result <- readResult{n, err}
-	}()
-	<-started
-	time.Sleep(20 * time.Millisecond)
-	if err := p.close(); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case r := <-result:
-		if !errors.Is(r.err, io.EOF) || r.n != 0 {
+	synctest.Test(t, func(t *testing.T) {
+		p := newPipe(defaultPipeBound)
+		type readResult struct {
+			n   int
+			err error
+		}
+		result := make(chan readResult, 1)
+		go func() {
+			buf := make([]byte, 5)
+			n, err := p.read(buf)
+			result <- readResult{n, err}
+		}()
+
+		synctest.Wait()
+		select {
+		case r := <-result:
+			t.Fatalf("read returned before close: (%d, %v)", r.n, r.err)
+		default:
+		}
+		if err := p.close(); err != nil {
+			t.Fatal(err)
+		}
+		if r := <-result; !errors.Is(r.err, io.EOF) || r.n != 0 {
 			t.Fatalf("read = (%d, %v), want (0, io.EOF)", r.n, r.err)
 		}
-	case <-time.After(time.Second):
-		t.Fatal("read did not unblock after close")
-	}
+	})
 }
 
 func TestPipeEOFAfterClose(t *testing.T) {
