@@ -32,6 +32,11 @@
 // scheduler, not the seed. Fix the dial order (e.g. dial sequentially
 // before starting concurrent I/O) if a test needs to reproduce exactly.
 //
+// What reproduces is the sequence of drawn decisions. Two fields
+// Network.Trace reports, FaultEvent.Serialization and FaultEvent.Effective,
+// are computed from the clock rather than drawn, so they reproduce only
+// inside a testing/synctest bubble -- see FaultEvent.
+//
 // # Using netchaos with testing/synctest
 //
 // netchaos composes with testing/synctest so that injected latency costs no
