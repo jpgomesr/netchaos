@@ -82,6 +82,12 @@ jobs:
           go test -coverprofile=cover.out ./...
           go tool cover -func=cover.out | tail -1
 
+      # One iteration of every benchmark, so a benchmark that no longer
+      # builds or fails its own setup is caught; timings are not checked.
+      - name: Benchmarks (smoke)
+        if: matrix.go-version == 'stable'
+        run: go test -run='^$' -bench=. -benchtime=1x .
+
       # go test accepts one -fuzz target per invocation, so each target
       # gets its own short run; the committed corpora under testdata/fuzz
       # also replay on every plain `go test`.
