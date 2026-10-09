@@ -32,6 +32,46 @@ func TestStaticPartition(t *testing.T) {
 	})
 }
 
+// TestHealRemovesStaticPartition pins that a WithPartition pair is not
+// static for the Network's lifetime: it is in effect from construction
+// until Heal removes it, exactly like a pair added by Network.Partition.
+func TestHealRemovesStaticPartition(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		n := NewNetwork(WithPartition("client", "server"))
+		l, err := n.Listen("tcp", "server")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = l.Close() }()
+		go func() {
+			if c, err := l.Accept(); err == nil {
+				_ = c.Close()
+			}
+		}()
+
+		dialed := make(chan error, 1)
+		go func() {
+			c, err := n.DialerFor("client")("tcp", "server")
+			if err == nil {
+				_ = c.Close()
+			}
+			dialed <- err
+		}()
+
+		synctest.Wait()
+		select {
+		case err := <-dialed:
+			t.Fatalf("dial across a WithPartition pair returned %v before Heal, want it blocked", err)
+		default:
+		}
+
+		n.Heal("client", "server")
+		if err := <-dialed; err != nil {
+			t.Fatalf("dial after Heal of a WithPartition pair = %v, want nil", err)
+		}
+	})
+}
+
 func TestDialUnderPartition(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		n := NewNetwork()

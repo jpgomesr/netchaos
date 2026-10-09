@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Benchmarks now cover the path users take** (part of #118, NC-31). `BenchmarkDialAccept`, `BenchmarkNetworkRoundTrip/{nofault,latency,loss,bandwidth,all}`, `BenchmarkTrace` (100,000 events) and `BenchmarkManyConns` (1,000 open conns) all go through a `Network`, unlike the existing raw-pipe benchmarks, and their baseline is recorded in `docs/tasks/m11-v0.3.2-hardening.md` (M11-9). CI runs each benchmark once as a smoke check.
 - **A golden trace now composes every fault in both directions and is checked through `Network.Trace()`** (closes #118 with NC-32). The existing goldens each isolate one or two faults, only one had acceptor-side lines, and all were read from internal recorders. `echo-all-faults-seed2027.golden` runs partition, loss, bandwidth, latency, corruption and duplication over one connection in both directions; its test compares the exported `Trace()` against the golden and against the internal recorders, so changing the acceptor's stream derivation or `Trace`'s field mapping fails it.
 - **The docs no longer say a silent drop is what TCP does, and they say which `FaultEvent` fields reproduce outside `synctest`** (part of #116, NC-11 and NC-12). `WithPacketLoss`, `docs/04` and `docs/05` justified the silent gap, for loss and for partition, as what a real socket does. It is not: TCP keeps unacknowledged data and retransmits it, so the application sees delay and then delivery, or a reset or timeout, never a gap. The text now gives the reason M0-3 actually recorded: a deliberate model of a transport that misbehaves. Behaviour is unchanged. The `FaultEvent` godoc, `docs/04` and the package doc now separate the draw-derived fields, which reproduce anywhere for a fixed seed and call order, from `Serialization` and `Effective`, which are computed from the clock and reproduce only inside a `testing/synctest` bubble. `TestTraceDrawnFieldsStableOutsideBubble` pins that split. `docs/04`'s short `FaultEvent` listing also gains `Size`, `CorruptedByte` and `CorruptedBit`.
+- **Stale claims are corrected, and the determinism contract states two more limits** (part of #116, NC-14 and NC-25).
+  - The docs no longer say the fault set is "three" categories or call the surface "frozen". `docs/04`'s `Frozen v1 surface` section is now `v1 surface`, and the old anchor still resolves.
+  - `WithPartition` is no longer described as static for the `Network`'s lifetime: `Heal` removes the pair, as `TestHealRemovesStaticPartition` now pins.
+  - `docs/04` no longer says the `v0.2.0` surface lacks an ergonomics pass (M8-7 ran), and its example list now names all 15.
+  - The ordered-call list in `WithSeed`, `docs/03` and `docs/04` now includes all four setters.
+  - `doc.go`, `WithSeed` and `docs/04` now state, in the same words, two limits that were missing. First, `Partition`/`Heal` racing in-flight writes shifts every later draw on that direction. Second, two goroutines writing one direction share a fixed sequence of decisions, but the scheduler picks which write gets which decision; `TestConcurrentWritersShareDecisionSequence` pins the half that holds.
+  - `CONTRIBUTING.md`, the design-feedback issue form, the `design` label description and the PR template (which now lists `golangci-lint run`) are brought up to date.
+  - The `v0.3.0` entry below gains a note that its "`1.27` leg" is now the `stable` leg, and this file gains version link references.
 
 ## [v0.3.1] — 2026-10-08
 
@@ -52,7 +60,7 @@ Implements every item [`docs/06` § Accepted before v1.0.0](docs/06-scope-and-ro
 ### Changed
 
 - **`Network.Partition`, `Network.Heal`, and `Network.Reset` now panic on an empty peer name or a self-pair** (closes #83), matching `WithPartition`'s existing construction-time check. Previously the three runtime methods silently accepted `Partition("", "server")` or `Partition("a", "a")` as if they were legitimate no-ops; they now panic naming themselves and the offending value, the same message shape `WithPartition` already uses. The no-op behaviour for a peer that was never `Dial`ed or `Listen`ed is unchanged.
-- **CI now surfaces coverage and runs a short fuzz pass** (closes #79), on the `1.27` leg only to avoid tripling CI time. `go tool cover -func` prints the total in the step output (no hard gate yet); `go test -fuzz=FuzzPipeAccounting -fuzztime=20s` explores new inputs instead of only replaying the committed seed corpus, which is how `testdata/fuzz/FuzzPipeAccounting/39c4be89a18cc8de` was originally found.
+- **CI now surfaces coverage and runs a short fuzz pass** (closes #79), on the `1.27` leg only to avoid tripling CI time. *(Note added later: the matrix was afterwards simplified to `1.25`/`stable`, and these steps now run on the `stable` leg.)* `go tool cover -func` prints the total in the step output (no hard gate yet); `go test -fuzz=FuzzPipeAccounting -fuzztime=20s` explores new inputs instead of only replaying the committed seed corpus, which is how `testdata/fuzz/FuzzPipeAccounting/39c4be89a18cc8de` was originally found.
 - **`.golangci.yml` enables `errorlint`, `revive`, `misspell`, and `godot`** (closes #87). `errorlint` enforces `errors.go`'s own documented `errors.Is`-only convention for sentinel comparisons. `redefines-builtin-id` (part of `revive`'s default set) is excluded project-wide: it flags `min`/`max` as parameter names, which is frozen public API (`WithLatency`, `SetLatency`) and established internal convention, not a defect. Fixed the handful of findings the other three surfaced (an `err != io.EOF` comparison, a few unused `t` test parameters, a missing doc comment on an exported const block, a comment not ending in a period).
 
 ### Fixed
@@ -422,3 +430,9 @@ and `v0.1.0` leaves room to correct an ergonomics mistake before committing
 to the stricter compatibility expectations a `v1.0.0` tag implies. The API
 is stable but not frozen until `v1.0.0` — see
 [docs/07 — Contributing](docs/07-contributing.md).
+
+[Unreleased]: https://github.com/jpgomesr/netchaos/compare/v0.3.1...HEAD
+[v0.3.1]: https://github.com/jpgomesr/netchaos/compare/v0.3.0...v0.3.1
+[v0.3.0]: https://github.com/jpgomesr/netchaos/compare/v0.2.0...v0.3.0
+[v0.2.0]: https://github.com/jpgomesr/netchaos/compare/v0.1.0...v0.2.0
+[v0.1.0]: https://github.com/jpgomesr/netchaos/releases/tag/v0.1.0

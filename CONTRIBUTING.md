@@ -22,7 +22,7 @@ This repo follows [Conventional Commits](https://www.conventionalcommits.org/) (
 ## Pull requests
 
 - Keep PRs focused — one logical change per PR.
-- If the change touches API shape or scope, link the relevant doc under `docs/` and expect discussion before merge, since the core interfaces are still being designed (see [docs/07-contributing.md](docs/07-contributing.md)).
+- If the change touches API shape or scope, link the relevant doc under `docs/` and expect discussion before merge, since the API is stable but not frozen until `v1.0.0` (see [docs/07-contributing.md](docs/07-contributing.md)).
 - Fill out the PR template checklist.
 
 ## License
