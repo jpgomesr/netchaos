@@ -22,15 +22,27 @@
 // Each connection derives its own RNG stream from the seed, its
 // establishment order, and its direction, so one connection's fault
 // sequence never depends on how the Go scheduler interleaved it with
-// another's — concurrent reads and writes on already-established
-// connections are fully covered by the guarantee.
+// another's — concurrent I/O on different established connections, and a
+// read concurrent with a write, are fully covered by the guarantee.
 //
 // The guarantee has a real limit: it is about the order Network methods are
-// called in, not about wall-clock concurrency of establishment itself. If a
-// test races two goroutines to Dial concurrently, which one gets which
-// connection ordinal — and therefore which RNG stream — is decided by the
-// scheduler, not the seed. Fix the dial order (e.g. dial sequentially
-// before starting concurrent I/O) if a test needs to reproduce exactly.
+// called in, not about wall-clock concurrency around them. In each of these
+// cases the scheduler, not the seed, decides the outcome:
+//
+//   - Two goroutines racing to Dial: which one gets which connection
+//     ordinal, and therefore which RNG stream.
+//   - A setter called while another goroutine is writing: which write is
+//     the first to see the new value.
+//   - Partition or Heal called while another goroutine is writing: which
+//     writes the partition catches. A partitioned write draws nothing, so
+//     this shifts every later draw on that direction, not only those writes.
+//   - Two goroutines writing the same direction of one connection: the
+//     sequence of decisions stays fixed, but which write receives which
+//     decision follows the order the writes arrive in.
+//
+// Sequence the calls a test depends on — dial before starting concurrent
+// I/O; write, then set, partition or heal, then write; one writer per
+// direction — if a test needs to reproduce exactly.
 //
 // What reproduces is the sequence of drawn decisions. Two fields
 // Network.Trace reports, FaultEvent.Serialization and FaultEvent.Effective,

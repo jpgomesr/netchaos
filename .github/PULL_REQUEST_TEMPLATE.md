@@ -12,3 +12,4 @@
 - [ ] `go vet ./...` passes
 - [ ] `go test -race ./...` passes
 - [ ] `gofmt -l .` reports no files
+- [ ] `golangci-lint run` passes

@@ -34,7 +34,7 @@ body:
     id: surface
     attributes:
       label: Would this change the exported API surface?
-      description: See the frozen v1 surface in [04 — API Design](https://github.com/jpgomesr/netchaos/blob/main/docs/04-api-design.md#frozen-v1-surface).
+      description: See the v1 surface in [04 — API Design](https://github.com/jpgomesr/netchaos/blob/main/docs/04-api-design.md#v1-surface).
       options:
         - "No — behaviour only"
         - "Yes — adds a new exported identifier"

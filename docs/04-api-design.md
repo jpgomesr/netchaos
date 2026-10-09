@@ -4,9 +4,11 @@
 
 This is a concrete elaboration of the code sample from the root [`README.md`](../README.md), scoped to the v1 fault types in [06 — Scope & Roadmap](06-scope-and-roadmap.md).
 
-## Frozen v1 surface
+<a id="frozen-v1-surface"></a>
 
-The v1 fault set is exactly **three** categories — latency, packet loss, partition. Reordering was considered and decided out of v1 by [M0-1](tasks/m0-decisions-and-foundations.md#m0-1--resolve-whether-reordering-is-in-v1); see [06 — Scope & Roadmap](06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1) for where it now lives on the deferred list. No exported identifier below relates to reordering.
+## v1 surface
+
+The fault set is latency, packet loss, bandwidth throttling, packet duplication, data corruption and partition, plus the imperative mid-stream connection reset. `v0.1.0` shipped the first three; the rest came in `v0.2.0`. The surface is stable but not frozen until `v1.0.0` (see [07 — Contributing](07-contributing.md)). Reordering was considered and decided out of v1 by [M0-1](tasks/m0-decisions-and-foundations.md#m0-1--resolve-whether-reordering-is-in-v1); see [06 — Scope & Roadmap](06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1) for where it now lives on the deferred list. No exported identifier below relates to reordering.
 
 Every exported identifier v1 ships, with its final signature:
 
@@ -104,7 +106,7 @@ var ErrBacklogFull = errors.New("netchaos: accept backlog full")
 
 The four error sentinels are matched with `errors.Is`; see [Error and no-op behaviour](#error-and-no-op-behaviour) below and each sentinel's own godoc for which call returns it and why.
 
-**The surface above is what `v0.1.0` shipped, plus everything [06 — Scope & Roadmap § Accepted for v0.2.0](06-scope-and-roadmap.md#accepted-for-v020) accepted — all of it now shipped too, as [M7](tasks/m7-v0.2.0-implementation.md) landed each task.** Every addition was input to [M5-2](tasks/m5-hardening-and-ergonomics.md#m5-2--api-ergonomics-review-before-v100)'s review of this surface rather than exempt from it, but `M5-2` itself closed before these ten tasks existed — the `v0.2.0` surface has not yet had its own ergonomics pass; see the release notes for `v0.2.0`.
+**The surface above is what `v0.1.0` shipped, plus everything [06 — Scope & Roadmap § Accepted for v0.2.0](06-scope-and-roadmap.md#accepted-for-v020) accepted — all of it now shipped too, as [M7](tasks/m7-v0.2.0-implementation.md) landed each task.** Every addition was input to [M5-2](tasks/m5-hardening-and-ergonomics.md#m5-2--api-ergonomics-review-before-v100)'s review of this surface rather than exempt from it, but `M5-2` itself closed before these ten tasks existed, so the `v0.2.0` surface got its own ergonomics pass later, as [M8-7](tasks/m8-v1-readiness.md#m8-7--api-ergonomics-review-of-the-v020-surface-the-v100-gate) (issue [#75](https://github.com/jpgomesr/netchaos/issues/75)), whose decisions [M9](tasks/m9-v1-surface-additions.md) implemented.
 
 - `WithPipeBound` and `WithListenerBacklog` ([M6-17](tasks/m6-review-findings.md#m6-17--decide-whether-the-pipe-bound-and-listener-backlog-become-configurable)) — shipped in [M7-6](tasks/m7-v0.2.0-implementation.md#m7-6--withpipebound-and-withlistenerbacklog) — see [Functional options](#functional-options).
 - `SetLatency` and `SetPacketLoss` ([M6-13](tasks/m6-review-findings.md#m6-13--decide-on-runtime-mutation-of-latency-and-loss)) — shipped in [M7-4](tasks/m7-v0.2.0-implementation.md#m7-4--setlatency-and-setpacketloss), after [M7-3](tasks/m7-v0.2.0-implementation.md#m7-3--widen-the-determinism-contract-for-runtime-fault-mutation) widened the contract ahead of the code, as that decision required. See [Runtime fault mutation](#runtime-fault-mutation).
@@ -151,8 +153,8 @@ Consistent with the idiomatic Go functional-options pattern, and with the shape 
 type Option func(*networkConfig)
 
 // WithSeed makes fault injection deterministic and reproducible: the same
-// seed, with the same order of Dial/Listen/Partition/Heal calls, always
-// produces the same sequence of injected faults on each connection. Seeds a
+// seed, with the same order of Dial/Listen/Partition/Heal/SetLatency/
+// SetPacketLoss/SetDuplication/SetCorruption calls, always produces the same sequence of injected faults on each connection. Seeds a
 // per-connection stream derivation, not a single shared random source — see
 // the determinism contract for the exact guarantee and its limits.
 func WithSeed(seed int64) Option
@@ -169,9 +171,9 @@ func WithLatency(min, max time.Duration) Option
 func WithPacketLoss(rate float64) Option
 
 // WithPartition marks all traffic between the named peers as dropped,
-// starting immediately when the Network is constructed. Partitions
-// configured this way are static for the lifetime of the Network; see
-// Network.Partition / Network.Heal for dynamic control during a test.
+// starting immediately when the Network is constructed. A pair
+// configured this way stays partitioned until Network.Heal removes it,
+// exactly like one added by Network.Partition.
 func WithPartition(peerA, peerB string) Option
 
 // WithPipeBound and WithListenerBacklog (M7-6, issue #52) are structural
@@ -299,7 +301,7 @@ func (n *Network) Heal(peerA, peerB string)
 
 Pairs are unordered: `Partition("a", "b")` and `Partition("b", "a")` name the same pair, and either heals the other.
 
-**`peerA` and `peerB` must be non-empty and distinct** — the same requirement `WithPartition` already enforces (see [Frozen v1 surface](#frozen-v1-surface)). `Partition` and `Heal` panic otherwise, naming themselves and the offending value ([M9-1](tasks/m9-v1-surface-additions.md#m9-1--83-validate-partitionhealreset-the-way-withpartition-already-does), issue [#83](https://github.com/jpgomesr/netchaos/issues/83)) — closing an asymmetry these two runtime methods used to have against `WithPartition`'s own construction-time check. The no-op behaviour below is otherwise unchanged: naming a peer that was never `Dial`ed or `Listen`ed stays a no-op, only an empty name or a self-pair newly panics.
+**`peerA` and `peerB` must be non-empty and distinct** — the same requirement `WithPartition` already enforces (see [v1 surface](#v1-surface)). `Partition` and `Heal` panic otherwise, naming themselves and the offending value ([M9-1](tasks/m9-v1-surface-additions.md#m9-1--83-validate-partitionhealreset-the-way-withpartition-already-does), issue [#83](https://github.com/jpgomesr/netchaos/issues/83)) — closing an asymmetry these two runtime methods used to have against `WithPartition`'s own construction-time check. The no-op behaviour below is otherwise unchanged: naming a peer that was never `Dial`ed or `Listen`ed stays a no-op, only an empty name or a self-pair newly panics.
 
 **Effect on connection establishment (decided in [M2-4](tasks/m2-determinism-and-faults.md#m2-4--network-partition-static-and-dynamic)):** only a dialer that named itself — via `WithPeerName` or `DialerFor` — is subject to this check at all. For such a dialer, `DialContext` **blocks** for the duration of the partition, returning `ctx.Err()` only once the context is done — a partition drops the SYN, so a real dial into a partitioned peer hangs the same way rather than failing fast. Give it a context with a deadline if that is not the intended behaviour.
 
@@ -441,7 +443,7 @@ func TestRetryOnPacketLoss(t *testing.T) {
 }
 ```
 
-`myservice.NewClient`/`FetchWithRetry` stand in for your own client and its retry policy; the only netchaos-specific line is handing your client `network.Dial`, a `func(network, addr string) (net.Conn, error)`. A fully self-contained, compiled version of this scenario lives as `TestReadmeUsageSnippet` in `example_test.go`, alongside a runnable `Example` per headline feature (`ExampleWithLatency`, `ExampleWithPacketLoss`, `ExampleWithBandwidth`, `ExampleWithDuplication`, `ExampleWithCorruption`, `ExampleNetwork_Partition`, `ExampleNetwork_Reset`, `ExampleNetwork_SetPacketLoss`, `ExampleNetwork_Trace`, `ExampleWithPipeBound`, `ExampleWithListenerBacklog`, `ExampleWithSeed`).
+`myservice.NewClient`/`FetchWithRetry` stand in for your own client and its retry policy; the only netchaos-specific line is handing your client `network.Dial`, a `func(network, addr string) (net.Conn, error)`. A fully self-contained, compiled version of this scenario lives as `TestReadmeUsageSnippet` in `example_test.go`, alongside a package-level `Example` and a runnable `Example` per headline feature (`ExampleNetwork_Dial`, `ExampleNetwork_DialerFor`, `ExampleWithLatency`, `ExampleWithPacketLoss`, `ExampleWithBandwidth`, `ExampleWithDuplication`, `ExampleWithCorruption`, `ExampleNetwork_Partition`, `ExampleNetwork_Reset`, `ExampleNetwork_SetPacketLoss`, `ExampleNetwork_Trace`, `ExampleWithPipeBound`, `ExampleWithListenerBacklog`, `ExampleWithSeed`).
 
 ## Determinism contract
 
@@ -474,7 +476,12 @@ Decided by [M6-13](tasks/m6-review-findings.md#m6-13--decide-on-runtime-mutation
 
 **The limit this adds, stated rather than implied:** the guarantee fixes the order of the setter *relative to other `Network` calls*, not relative to in-flight I/O on another goroutine. If a test writes in a loop on one goroutine and calls `SetPacketLoss` from another, **which unit is the first to see the new rate is decided by the scheduler, not by the seed.** There is no per-unit boundary the contract can name there. The fix is the same one the contract already prescribes for concurrent establishment: sequence the setter against the I/O the test cares about — write, then set, then write — rather than expecting netchaos to guess where the boundary should fall.
 
-**The limit, stated rather than implied:** the guarantee is about the *order of `Network` method calls*, not about wall-clock concurrency of the I/O itself. If a test races two goroutines to call `Dial` concurrently, which one gets which `connectionOrdinal` is nondeterministic, and the guarantee does not apply to that race — the fix is for the test to fix the dial order (e.g. by dialing sequentially before starting concurrent I/O), not for netchaos to guess an ordering. Concurrent I/O on **already-established** connections is fully covered; concurrent, unordered *establishment* of connections is not.
+**The limit, stated rather than implied:** the guarantee is about the *order of `Network` method calls*, not about wall-clock concurrency of the I/O itself. If a test races two goroutines to call `Dial` concurrently, which one gets which `connectionOrdinal` is nondeterministic, and the guarantee does not apply to that race — the fix is for the test to fix the dial order (e.g. by dialing sequentially before starting concurrent I/O), not for netchaos to guess an ordering. Concurrent I/O on **different** established connections, and a read concurrent with a write, is fully covered; concurrent, unordered *establishment* of connections is not.
+
+**Two more limits of the same kind** ([#116](https://github.com/jpgomesr/netchaos/issues/116) NC-25), worded the same way in `doc.go` and the `WithSeed` godoc:
+
+- **`Partition` or `Heal` racing in-flight I/O.** If a test calls `Partition` or `Heal` while another goroutine is writing, which writes the partition catches is the scheduler's choice. A partitioned write draws nothing, so that choice shifts every later draw on that direction, not only the writes it caught — a stronger effect than a racing setter's. The fix is the setters' fix: write, then partition or heal, then write.
+- **Two goroutines writing the same direction.** The sequence of decisions on one direction of one connection stays fixed by the seed, but which write receives which decision follows the order the writes arrive in, which the scheduler picks. Use one writer per direction, or serialize the writes, when a test needs to reproduce which payload was dropped, delayed, corrupted or duplicated. `TestConcurrentWritersShareDecisionSequence` pins the part that does hold.
 
 **Fault composition and draw discipline, permanent as of [M2-5](tasks/m2-determinism-and-faults.md#m2-5--fault-composition-rules):** when more than one fault is configured on the same connection direction, they are evaluated in exactly one fixed order — **partition, then packet loss, then bandwidth, then latency, then corruption, then duplication** ([M7-8](tasks/m7-v0.2.0-implementation.md#m7-8--fault-kind-packet-duplication), [M7-9](tasks/m7-v0.2.0-implementation.md#m7-9--fault-kind-data-corruption)) — by a single evaluator, not independent hooks that happen to run in some order. Corruption is evaluated before duplication specifically so a duplicated unit's second copy carries whatever corruption already did to the first, rather than an independently corrupted copy (`installFaultPolicy`, `faults.go`). Partition short-circuits before any draw: a partitioned unit is discarded with **zero** stream consumption, since partition must stay deterministic by nature and a draw there would perturb every later unit's loss/latency/duplication/corruption sequence on that direction. Packet loss, evaluated next, is the same kind of gate for bandwidth, corruption, and duplication alike: a dropped unit never reaches the link (so it costs no simulated transmission time), is never corrupted (so there is nothing for a bit flip to land in), and is never duplicated (so there is nothing for a second copy to attach to).
 
