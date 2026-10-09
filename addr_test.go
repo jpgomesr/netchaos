@@ -496,3 +496,38 @@ func TestDialEmptyAddressOmitsAddrFromOpError(t *testing.T) {
 		t.Errorf("Dial(\"tcp\", \"\") error = %q, want %q", got, want)
 	}
 }
+
+// TestPeerNameFallsBackOnUnparseableName: peerName's callers (Partition,
+// Heal, Reset) treat an unparseable name as just another name nothing has
+// registered, so it must come back unchanged rather than as "".
+func TestPeerNameFallsBackOnUnparseableName(t *testing.T) {
+	for _, s := range []string{"[::1", "host:99999"} {
+		if got := peerName(s); got != s {
+			t.Fatalf("peerName(%q) = %q, want the input unchanged", s, got)
+		}
+	}
+}
+
+// TestMalformedAddressesFailListenAndDial: Listen and Dial surface
+// splitAddr's error for an unparseable address or an out-of-range port as
+// a *net.AddrError inside the usual *net.OpError, the shape the real net
+// package uses.
+func TestMalformedAddressesFailListenAndDial(t *testing.T) {
+	n := NewNetwork()
+	check := func(op string, err error) {
+		t.Helper()
+		var opErr *net.OpError
+		var addrErr *net.AddrError
+		if !errors.As(err, &opErr) || !errors.As(err, &addrErr) {
+			t.Fatalf("%s = %v (%T), want a *net.AddrError inside a *net.OpError", op, err, err)
+		}
+	}
+	// Only an address containing ':' is split into host and port; one
+	// without a colon ("server", "[bad") is a plain peer name by design.
+	_, err := n.Listen("tcp", "host:99999")
+	check(`Listen("host:99999")`, err)
+	_, err = n.Listen("tcp", "a:b:c")
+	check(`Listen("a:b:c")`, err)
+	_, err = n.Dial("tcp", "[::1")
+	check(`Dial("[::1")`, err)
+}

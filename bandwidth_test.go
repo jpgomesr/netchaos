@@ -289,3 +289,14 @@ func TestBandwidthConsumesNoDraws(t *testing.T) {
 		}
 	}
 }
+
+// TestSerializationDelayClampsAQuotientPastMaxDuration covers
+// serializationDelay's second clamp: the quotient fits in 64 bits (so
+// bits.Div64 does not panic) but exceeds math.MaxInt64 nanoseconds. 10^10
+// bytes at 1 byte/s is 10^19 ns -- above 2^63-1, below 2^64.
+func TestSerializationDelayClampsAQuotientPastMaxDuration(t *testing.T) {
+	size := intOrSkip(t, 10_000_000_000)
+	if got := serializationDelay(size, 1); got != time.Duration(math.MaxInt64) {
+		t.Fatalf("serializationDelay(%d, 1) = %v, want the clamped max Duration", size, got)
+	}
+}

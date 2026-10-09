@@ -2,6 +2,7 @@ package netchaos
 
 import (
 	"errors"
+	"io"
 	"net"
 	"testing"
 	"testing/synctest"
@@ -169,4 +170,41 @@ func dummyConn() *conn {
 
 func TestListenerSatisfiesNetListener(_ *testing.T) {
 	var _ net.Listener = (*listener)(nil)
+}
+
+// TestFillAfterCloseClosesTheConn covers the window between a dial's
+// reserve and its fill: if the listener closes in between, fill must not
+// queue the conn on a listener nobody will Accept from again; it closes
+// the conn instead, so the dialer's next Read/Write reports a closed
+// connection rather than waiting forever on a peer that never existed.
+func TestFillAfterCloseClosesTheConn(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		n := NewNetwork()
+		nl, err := n.Listen("tcp", "server")
+		if err != nil {
+			t.Fatal(err)
+		}
+		l := nl.(*listener)
+
+		if err := l.reserve(); err != nil {
+			t.Fatal(err)
+		}
+		if err := l.Close(); err != nil {
+			t.Fatal(err)
+		}
+
+		client, server := newTestConnPair()
+		defer func() { _ = client.Close() }()
+		l.fill(server)
+
+		if _, err := client.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
+			t.Fatalf("dialer Read after fill on a closed listener = %v, want io.EOF (the accept side was closed)", err)
+		}
+		if _, err := server.Write([]byte("x")); !errors.Is(err, net.ErrClosed) {
+			t.Fatalf("Write on the conn fill closed = %v, want net.ErrClosed", err)
+		}
+		if _, err := l.Accept(); !errors.Is(err, net.ErrClosed) {
+			t.Fatalf("Accept after Close = %v, want net.ErrClosed", err)
+		}
+	})
 }

@@ -237,3 +237,25 @@ func TestNoLatencyByDefault(t *testing.T) {
 		}
 	})
 }
+
+// TestReleaseDueLatencyAfterCloseDeliversNothing covers the latency
+// timer's callback racing Close: close stops the timer, but a callback
+// that already started waits for p.mu and then finds the pipe closed. It
+// must return without moving the discarded pending units onto readable.
+func TestReleaseDueLatencyAfterCloseDeliversNothing(t *testing.T) {
+	p := newPipe(defaultPipeBound)
+	p.mu.Lock()
+	p.pending = append(p.pending, pendingUnit{data: []byte("late"), releaseAt: time.Now().Add(-time.Second)})
+	p.mu.Unlock()
+	if err := p.close(); err != nil {
+		t.Fatal(err)
+	}
+
+	p.releaseDueLatency() // as if the timer fired just after close
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.readable) != 0 {
+		t.Fatalf("releaseDueLatency on a closed pipe delivered %d units, want 0", len(p.readable))
+	}
+}

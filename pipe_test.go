@@ -370,3 +370,32 @@ func TestPipeConcurrent(t *testing.T) {
 		t.Fatalf("totalRead = %d, want totalWritten %d", got, want)
 	}
 }
+
+// TestPipeWriteBlocksUntilRead: the raw pipe's blocking write parks until
+// a read frees room, then completes.
+func TestPipeWriteBlocksUntilRead(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		p := newPipe(4)
+		if _, err := p.write([]byte("full")); err != nil {
+			t.Fatal(err)
+		}
+		result := make(chan error, 1)
+		go func() {
+			_, err := p.write([]byte("x"))
+			result <- err
+		}()
+
+		synctest.Wait()
+		select {
+		case err := <-result:
+			t.Fatalf("write past the bound returned before any read: %v", err)
+		default:
+		}
+		if _, err := p.read(make([]byte, 4)); err != nil {
+			t.Fatal(err)
+		}
+		if err := <-result; err != nil {
+			t.Fatalf("write after a read freed room = %v, want nil", err)
+		}
+	})
+}
