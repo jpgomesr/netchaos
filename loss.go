@@ -15,9 +15,15 @@ import (
 // direction's own seeded stream. A dropped write is a silent gap: it is
 // discarded, the peer's Read never observes those bytes, and -- because
 // io.Writer forbids a short count without a non-nil error -- the call that
-// issued the write still reports n = len(p), nil. This mirrors what a real
-// socket does when a packet is lost downstream: the sender's kernel doesn't
-// know either.
+// issued the write still reports n = len(p), nil.
+//
+// This is a deliberate model of a transport that misbehaves, not an
+// emulation of TCP. Real TCP never shows the application a gap: the
+// sender's kernel keeps unacknowledged data and retransmits it, so a lost
+// segment surfaces as added delay and then delivery, or as a reset or
+// timeout once retries are exhausted. WithPacketLoss injects the gap anyway,
+// so a test can exercise what the application sees when delivery does not
+// happen.
 //
 // This sets the value a Network starts with. Network.SetPacketLoss changes
 // it mid-test, on connections that already exist as well as future ones.

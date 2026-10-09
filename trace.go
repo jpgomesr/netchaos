@@ -173,6 +173,20 @@ var (
 //     CorruptedBit at zero even though Corrupted is true -- reading either
 //     field as "byte 0, bit 0 was flipped" without first checking Size > 0
 //     and !Dropped is exactly the mistake this note exists to prevent.
+//
+// Reproducibility: not every field reproduces under the same conditions.
+// For a fixed seed and a fixed order of calls (see the package doc's
+// determinism contract):
+//
+//   - Fields derived from a seeded draw reproduce anywhere, inside or
+//     outside a testing/synctest bubble: Dropped, Duplicated, Corrupted,
+//     Delay, Size, CorruptedByte and CorruptedBit, along with Ordinal,
+//     Side, Seq and Partitioned.
+//   - Fields derived from time reproduce only inside a synctest bubble,
+//     where the clock is virtual: Serialization (the bandwidth clock counts
+//     the real time elapsed between writes) and Effective (the clamp
+//     against a unit already pending ahead of it depends on when that unit
+//     was released). Outside a bubble, compare only the draw-derived fields.
 type FaultEvent struct {
 	Ordinal uint64
 	Side    Side

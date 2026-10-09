@@ -328,8 +328,8 @@ func TestPartitionRace(t *testing.T) {
 
 // TestPartitionedWriteDiscardedSilently exercises the M0-3-consistent
 // silent-gap behaviour for partitioned traffic: a write into a partitioned
-// pair still reports success to the caller, matching what a real partition
-// looks like at the sending socket.
+// pair still reports success to the caller. That is the deliberate
+// silent-gap model, not TCP's retransmit-then-time-out behaviour.
 func TestPartitionedWriteDiscardedSilently(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		n := NewNetwork()

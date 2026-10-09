@@ -419,3 +419,50 @@ func TestTraceOrderUnderConcurrentDials(t *testing.T) {
 		_ = l.Close()
 	}
 }
+
+// TestTraceDrawnFieldsStableOutsideBubble pins the reproducibility split
+// the FaultEvent godoc and docs/04 declare (#116 NC-12): outside a synctest
+// bubble, real time passes between writes, so the time-derived fields
+// (Serialization, Effective) may differ between two runs of the same seed
+// and calls -- but every field derived from a seeded draw, plus the event's
+// identity, must not. The two runs pause differently between writes on
+// purpose, so the comparison cannot pass by the runs happening to share
+// timing.
+func TestTraceDrawnFieldsStableOutsideBubble(t *testing.T) {
+	run := func(pause time.Duration) []FaultEvent {
+		n := NewNetwork(
+			WithSeed(116),
+			WithLatency(time.Millisecond, 30*time.Millisecond),
+			WithPacketLoss(0.3),
+			WithBandwidth(64_000),
+			WithDuplication(0.3),
+			WithCorruption(0.3),
+		)
+		client, server := dialNamedPair(t, n)
+		for i := 0; i < 20; i++ {
+			payload := []byte{byte(i), 1, 2, 3, 4, 5, 6, 7}
+			if _, err := client.Write(payload); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := server.Write(payload); err != nil {
+				t.Fatal(err)
+			}
+			time.Sleep(pause)
+		}
+		return n.Trace()
+	}
+
+	a, b := run(0), run(2*time.Millisecond)
+	if len(a) != len(b) {
+		t.Fatalf("len(Trace()) = %d then %d, want equal", len(a), len(b))
+	}
+	drawn := func(e FaultEvent) FaultEvent {
+		e.Serialization, e.Effective = 0, 0
+		return e
+	}
+	for i := range a {
+		if drawn(a[i]) != drawn(b[i]) {
+			t.Fatalf("event %d differs in a draw-derived field:\n run A: %+v\n run B: %+v", i, a[i], b[i])
+		}
+	}
+}
