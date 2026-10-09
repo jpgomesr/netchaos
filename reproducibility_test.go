@@ -1036,7 +1036,7 @@ func TestGoldenTraceViaNetworkTrace(t *testing.T) {
 			thr = thr || l.serialized > 0
 			drawn = drawn || l.drawn > 0
 		}
-		if !(part && drop && dup && corrupt && thr && drawn) {
+		if !part || !drop || !dup || !corrupt || !thr || !drawn {
 			t.Fatalf("%s side does not exercise every fault: partitioned=%v dropped=%v duplicated=%v corrupted=%v throttled=%v delayed=%v",
 				sideName(side), part, drop, dup, corrupt, thr, drawn)
 		}
