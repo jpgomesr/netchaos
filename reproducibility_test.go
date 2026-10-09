@@ -909,3 +909,151 @@ func TestReplayFromReportedSeed(t *testing.T) {
 		t.Fatalf("replay with the reported seed produced a different trace:\n%s", first.diff(replay))
 	}
 }
+
+// echoAllFaults composes all six fault stages -- partition, loss,
+// bandwidth, latency, corruption and duplication -- over one named
+// connection, in both directions: each round writes once on the dialer
+// and once on the acceptor, strictly in that order, and a partition covers
+// rounds 10-15. Writing from a single goroutine is what makes the
+// partition's placement in each direction's sequence deterministic.
+// Nothing is read; the payloads stay far below the default pipe bound.
+func echoAllFaults(t *testing.T, seed int64) (*Network, []net.Conn) {
+	t.Helper()
+	n := NewNetwork(
+		WithSeed(seed),
+		WithLatency(time.Millisecond, 20*time.Millisecond),
+		WithPacketLoss(0.2),
+		WithBandwidth(64_000),
+		WithDuplication(0.2),
+		WithCorruption(0.2),
+	)
+	l, err := n.Listen("tcp", "server")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = l.Close() })
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		if c, err := l.Accept(); err == nil {
+			accepted <- c
+		}
+	}()
+	client, err := n.DialerFor("client")("tcp", "server")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := <-accepted
+	t.Cleanup(func() { _ = client.Close(); _ = server.Close() })
+
+	for round := 0; round < 32; round++ {
+		switch round {
+		case 10:
+			n.Partition("client", "server")
+		case 16:
+			n.Heal("client", "server")
+		}
+		payload := []byte(fmt.Sprintf("round-%02d", round))
+		if _, err := client.Write(payload); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := server.Write(append([]byte("echo:"), payload...)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return n, []net.Conn{client, server}
+}
+
+// fromFaultEvents converts the exported Network.Trace() back into the
+// harness's canonicalTrace, field by field, so a golden can be checked
+// through the path users actually read.
+func fromFaultEvents(evs []FaultEvent) canonicalTrace {
+	out := make(canonicalTrace, len(evs))
+	for i, ev := range evs {
+		out[i] = traceLine{
+			ordinal: ev.Ordinal,
+			side:    connSide(ev.Side),
+			faultEvent: faultEvent{
+				seq:         ev.Seq,
+				partitioned: ev.Partitioned,
+				dropped:     ev.Dropped,
+				duplicated:  ev.Duplicated,
+				corrupted:   ev.Corrupted,
+				drawn:       ev.Delay,
+				serialized:  ev.Serialization,
+				effective:   ev.Effective,
+				size:        ev.Size,
+				corruptByte: ev.CorruptedByte,
+				corruptBit:  ev.CorruptedBit,
+			},
+		}
+	}
+	return out
+}
+
+// TestGoldenTraceViaNetworkTrace is the one golden that (1) composes every
+// fault stage, (2) carries acceptor-side lines for every drawing fault, and
+// (3) is compared through the exported Network.Trace() rather than the
+// internal recorders. Changing the acceptor's stream derivation, or how
+// Trace maps a recorded event onto FaultEvent, fails it.
+func TestGoldenTraceViaNetworkTrace(t *testing.T) {
+	// seed 2027 is the first seed from 2026 up whose run exercises every
+	// fault on both sides (2026 drew duplication only on dropped dialer
+	// units); the coverage check below would catch a parameter change that
+	// lost that.
+	const (
+		name = "echo-all-faults"
+		seed = int64(2027)
+	)
+	fields := []string{"thr", "corrupt", "site", "dup"}
+
+	var exported, internal canonicalTrace
+	synctest.Test(t, func(t *testing.T) {
+		n, conns := echoAllFaults(t, seed)
+		exported = fromFaultEvents(n.Trace())
+		internal = captureTrace(conns)
+	})
+
+	// The exported path must agree with the recorders field for field, so
+	// a mapping slip in Trace (say, Delay and Effective swapped) fails here
+	// even if someone regenerates the golden from the broken output.
+	if !exported.equal(internal) {
+		t.Fatalf("Network.Trace() disagrees with the internal recorders:\n%s", exported.diff(internal))
+	}
+
+	// The golden is only as strong as the faults it actually exercises:
+	// require every stage to show up on both sides, so a parameter change
+	// cannot quietly reduce it to a trivial trace.
+	for _, side := range []connSide{sideDialer, sideAcceptor} {
+		var part, drop, dup, corrupt, thr, drawn bool
+		for _, l := range exported {
+			if l.side != side {
+				continue
+			}
+			part = part || l.partitioned
+			drop = drop || l.dropped
+			dup = dup || (l.duplicated && !l.dropped)
+			corrupt = corrupt || (l.corrupted && !l.dropped)
+			thr = thr || l.serialized > 0
+			drawn = drawn || l.drawn > 0
+		}
+		if !(part && drop && dup && corrupt && thr && drawn) {
+			t.Fatalf("%s side does not exercise every fault: partitioned=%v dropped=%v duplicated=%v corrupted=%v throttled=%v delayed=%v",
+				sideName(side), part, drop, dup, corrupt, thr, drawn)
+		}
+	}
+
+	path := filepath.Join("testdata", "traces", fmt.Sprintf("%s-seed%d.golden", name, seed))
+	if *updateGolden {
+		if err := writeGolden(path, name, seed, fields, exported); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	want, err := readGolden(path)
+	if err != nil {
+		t.Fatalf("reading golden file %s: %v (run with -update to generate it)", path, err)
+	}
+	if !exported.equal(want) {
+		t.Fatalf("Network.Trace() for %s seed %d does not match %s:\n%s", name, seed, path, exported.diff(want))
+	}
+}
