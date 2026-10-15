@@ -110,24 +110,32 @@ func (c *networkConfig) validate() {
 // seed 1.
 //
 // The determinism guarantee: for a fixed seed and a fixed order in which
-// Dial, Listen, Partition, Heal, SetLatency, and SetPacketLoss are called,
-// every resulting connection produces an identical sequence of injected
-// faults across runs and across machines. Each connection derives its own
-// RNG stream from the seed, its establishment order, and its direction, so
-// the guarantee holds regardless of how concurrently established
-// connections do I/O afterward.
+// Dial, Listen, Partition, Heal, SetLatency, SetPacketLoss, SetDuplication
+// and SetCorruption are called, every resulting connection produces an
+// identical sequence of injected faults across runs and across machines.
+// Each connection derives its own RNG stream from the seed, its
+// establishment order, and its direction, so concurrent I/O on different
+// established connections, and a read concurrent with a write, are fully
+// covered.
 //
 // The limit: the guarantee covers the order Network methods are called in,
-// not wall-clock concurrency around them. Two cases, one fix. If two
-// goroutines race to Dial, which one is assigned which connection ordinal —
-// and therefore which RNG stream — is decided by the Go scheduler, not the
-// seed. And if a test calls SetLatency or SetPacketLoss from one goroutine
-// while another is writing, which unit is the first to see the new value is
-// likewise the scheduler's choice, not the seed's: the contract fixes a
-// setter's order against other Network calls, not against in-flight I/O.
+// not wall-clock concurrency around them. In each of these cases the
+// scheduler, not the seed, decides the outcome:
+//
+//   - Two goroutines racing to Dial: which one gets which connection
+//     ordinal, and therefore which RNG stream.
+//   - A setter called while another goroutine is writing: which write is
+//     the first to see the new value.
+//   - Partition or Heal called while another goroutine is writing: which
+//     writes the partition catches. A partitioned write draws nothing, so
+//     this shifts every later draw on that direction, not only those writes.
+//   - Two goroutines writing the same direction of one connection: the
+//     sequence of decisions stays fixed, but which write receives which
+//     decision follows the order the writes arrive in.
+//
 // Sequence the calls a test depends on — dial before starting concurrent
-// I/O, and write, then set, then write — rather than expecting netchaos to
-// pick a boundary.
+// I/O; write, then set, partition or heal, then write; one writer per
+// direction — rather than expecting netchaos to pick a boundary.
 func WithSeed(seed int64) Option {
 	return func(c *networkConfig) {
 		c.seed = seed

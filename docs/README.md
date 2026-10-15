@@ -1,6 +1,6 @@
 # netchaos design docs
 
-> **Status: v1 implemented.** The core transport, all three v1 fault types (latency, packet loss, partition), and `testing/synctest` integration are built, tested, and documented. See [`CHANGELOG.md`](../CHANGELOG.md) for the release history.
+> **Status: v1 implemented.** The core transport, every fault type (latency, packet loss, bandwidth throttling, packet duplication, data corruption and partition, plus mid-stream connection reset), and `testing/synctest` integration are built, tested, and documented. See [`CHANGELOG.md`](../CHANGELOG.md) for the release history.
 
 This folder expands on the pitch made in the root [`README.md`](../README.md) into full design documentation, organized by topic:
 
@@ -9,8 +9,8 @@ This folder expands on the pitch made in the root [`README.md`](../README.md) in
 | [01 — Vision](01-vision.md) | What netchaos is, what it deliberately is not, who it's for, and the philosophy behind it |
 | [02 — Comparison](02-comparison.md) | Detailed comparison against Toxiproxy, gosim, Chaos Mesh/Litmus, and Antithesis |
 | [03 — Architecture](03-architecture.md) | How the in-process simulated network is structured conceptually |
-| [04 — API Design](04-api-design.md) | The frozen v1 Go API surface (interfaces, structs, functional options) — agreed and implemented |
-| [05 — Fault Injection](05-fault-injection.md) | Deep dive on each fault type: latency, packet loss, partition |
+| [04 — API Design](04-api-design.md) | The v1 Go API surface (interfaces, structs, functional options) — implemented; stable but not frozen until `v1.0.0` |
+| [05 — Fault Injection](05-fault-injection.md) | Deep dive on each fault type: latency, packet loss, bandwidth, duplication, corruption, partition, reset |
 | [06 — Scope & Roadmap](06-scope-and-roadmap.md) | v1 scope, why the boundaries exist, and what's deliberately deferred |
 | [07 — Contributing](07-contributing.md) | Project status and how to contribute at this stage |
 | [Task breakdown](tasks/README.md) | The v1 scope broken into executable tasks, grouped into milestones |

@@ -226,7 +226,7 @@ func validateNetwork(network string) error {
 }
 
 // peerNameCtxKey is the unexported context key a dialer's own peer identity
-// travels under. Dial's frozen signature — Dial(network, addr string) — has
+// travels under. Dial's fixed signature — Dial(network, addr string) — has
 // no parameter for "which peer am I dialing as," so the identity has to
 // ride through DialContext's context.Context instead, the one input that
 // signature already has room for.

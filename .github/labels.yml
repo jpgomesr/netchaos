@@ -4,7 +4,7 @@
 
 - name: design
   color: "5319e7"
-  description: Feedback on proposed API, architecture, or scope (design stage)
+  description: Feedback on the API, architecture, or scope
 
 - name: use-case
   color: "0e8a16"

@@ -8,8 +8,8 @@ import (
 	"testing/synctest"
 )
 
-// Compile-time assertions that the frozen v1 API surface (docs/04-api-design.md)
-// is honoured.
+// Compile-time assertions that the v1 API surface (docs/04-api-design.md) is
+// honoured.
 var _ net.Conn = (*conn)(nil)
 
 // TestDialAssignableAsDialFunc asserts Network.Dial has exactly the shape of

@@ -2,9 +2,9 @@
 
 ## Current project status
 
-netchaos v1 is implemented: the core transport, all three fault types (latency, packet loss, partition), and `testing/synctest` integration are built, tested, and documented. The [04 — API Design](04-api-design.md) surface frozen by [M0](tasks/m0-decisions-and-foundations.md) is fully built, plus one addition made during implementation (`WithPeerName`). See `CHANGELOG.md` for the tagged release state.
+netchaos v1 is implemented: the core transport, every fault type (latency, packet loss, bandwidth throttling, packet duplication, data corruption and partition, plus mid-stream connection reset), and `testing/synctest` integration are built, tested, and documented. The [04 — API Design](04-api-design.md) surface agreed in [M0](tasks/m0-decisions-and-foundations.md) is fully built, along with everything added since (`WithPeerName` during implementation, then the `v0.2.0` and `v0.3.0` additions). See `CHANGELOG.md` for the tagged release state.
 
-The latest tag is `v0.3.0`, not `v1.0.0` — deliberately. The surface has never had external users yet, and staying below `v1.0.0` leaves room to correct an ergonomics mistake or naming regret before committing to the stricter compatibility expectations a `v1.0.0` tag implies. Treat the API as stable but not frozen until `v1.0.0`: a breaking change is possible, but it needs a real justification, not routine churn.
+The latest tag is still below `v1.0.0` — deliberately. The surface has never had external users yet, and staying below `v1.0.0` leaves room to correct an ergonomics mistake or naming regret before committing to the stricter compatibility expectations a `v1.0.0` tag implies. Treat the API as stable but not frozen until `v1.0.0`: a breaking change is possible, but it needs a real justification, not routine churn.
 
 ## Go version support
 
@@ -32,7 +32,7 @@ With v1 shipped, implementation contributions are now the highest-value ones —
 
 ## Implementation contributions
 
-`net.Conn`/`net.Listener` simulation, the fault-injection layer, and the `Network` type are implemented, built against the frozen interfaces in [04 — API Design](04-api-design.md). See [Task breakdown](tasks/README.md) for how v1 was sequenced and built, as a reference for the working method below.
+`net.Conn`/`net.Listener` simulation, the fault-injection layer, and the `Network` type are implemented, built against the interfaces in [04 — API Design](04-api-design.md). See [Task breakdown](tasks/README.md) for how v1 was sequenced and built, as a reference for the working method below.
 
 ## Working method
 

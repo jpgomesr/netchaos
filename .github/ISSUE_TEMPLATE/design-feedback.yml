@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        v1 is implemented and released as `v0.1.0` — see
+        v1 is implemented and released (see [CHANGELOG.md](https://github.com/jpgomesr/netchaos/blob/main/CHANGELOG.md) for the latest tag) — see
         [docs/](https://github.com/jpgomesr/netchaos/blob/main/docs/README.md) for the design set that describes it.
         The API is stable but not frozen until `v1.0.0`, so naming and ergonomics feedback is most useful now, while
         there is still room to act on it.

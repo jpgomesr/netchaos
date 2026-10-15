@@ -6,7 +6,7 @@
 
 1. **In-process.** No external process, proxy, daemon, or OS-level network manipulation (no netem, no iptables). Everything happens inside the Go process running the test.
 2. **Interface-compatible.** Code under test must be able to use netchaos's simulated connections through the standard `net.Conn` / `net.Listener` interfaces, without knowing it's not talking to a real socket.
-3. **Deterministic.** Given the same seed and the same fixed order of `Dial`/`Listen`/`Partition`/`Heal` calls, netchaos produces the same sequence of faults on each connection, every time, on every machine — see the [determinism contract](04-api-design.md#determinism-contract) for the derivation model and its limits under concurrent, unordered calls.
+3. **Deterministic.** Given the same seed and the same fixed order of `Dial`/`Listen`/`Partition`/`Heal`/`SetLatency`/`SetPacketLoss`/`SetDuplication`/`SetCorruption` calls, netchaos produces the same sequence of faults on each connection, every time, on every machine — see the [determinism contract](04-api-design.md#determinism-contract) for the derivation model and its limits under concurrent, unordered calls.
 4. **Composable with virtual time.** When run inside `testing/synctest`, fault injection that involves delays (latency) should consume virtual time, not real wall-clock time.
 5. **Minimally invasive to adopt.** Swapping real dialing for simulated dialing should be a small, local change — typically replacing a `net.Dial` call (or whatever dependency-injection point the codebase already uses to obtain a `net.Conn`) with a call into netchaos.
 

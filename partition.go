@@ -21,8 +21,8 @@ func newPairKey(x, y string) pairKey {
 type partitionPair struct{ peerA, peerB string }
 
 // WithPartition marks the named peers as partitioned from Network
-// construction onward. Static for the Network's lifetime; see
-// Network.Partition / Network.Heal for dynamic control during a test.
+// construction onward, until Network.Heal removes the pair -- exactly like a
+// pair added by Network.Partition, which adds partitions during a test.
 //
 // peerA and peerB must be non-empty and distinct; NewNetwork panics
 // otherwise, naming WithPartition and the offending value.

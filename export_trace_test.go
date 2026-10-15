@@ -6,6 +6,7 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -463,6 +464,61 @@ func TestTraceDrawnFieldsStableOutsideBubble(t *testing.T) {
 	for i := range a {
 		if drawn(a[i]) != drawn(b[i]) {
 			t.Fatalf("event %d differs in a draw-derived field:\n run A: %+v\n run B: %+v", i, a[i], b[i])
+		}
+	}
+}
+
+// TestConcurrentWritersShareDecisionSequence pins the part of the
+// determinism contract that holds when two goroutines write the same
+// direction: the sequence of decisions on that direction is fixed by the
+// seed, whatever order the writes arrive in. Which payload receives which
+// decision is the scheduler's choice and is deliberately not compared.
+func TestConcurrentWritersShareDecisionSequence(t *testing.T) {
+	const writes = 40
+	opts := []Option{
+		WithSeed(25),
+		WithPacketLoss(0.5),
+		WithDuplication(0.3),
+		WithCorruption(0.3),
+		WithLatency(0, 10*time.Millisecond),
+	}
+	payload := []byte("abcdefgh")
+
+	decisions := func(writers int) []FaultEvent {
+		var got []FaultEvent
+		synctest.Test(t, func(t *testing.T) {
+			n := NewNetwork(opts...)
+			client, _ := dialNamedPair(t, n)
+			var wg sync.WaitGroup
+			for w := 0; w < writers; w++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					for i := 0; i < writes/writers; i++ {
+						if _, err := client.Write(payload); err != nil {
+							t.Error(err)
+							return
+						}
+					}
+				}()
+			}
+			wg.Wait()
+			got = n.Trace()
+		})
+		// Only draw-derived fields are part of the guarantee compared here.
+		for i := range got {
+			got[i].Serialization, got[i].Effective = 0, 0
+		}
+		return got
+	}
+
+	sequential, concurrent := decisions(1), decisions(2)
+	if len(sequential) != writes || len(concurrent) != writes {
+		t.Fatalf("len(Trace()) = %d and %d, want %d each", len(sequential), len(concurrent), writes)
+	}
+	for i := range sequential {
+		if sequential[i] != concurrent[i] {
+			t.Fatalf("event %d differs between one writer and two:\n one: %+v\n two: %+v", i, sequential[i], concurrent[i])
 		}
 	}
 }

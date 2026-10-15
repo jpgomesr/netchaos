@@ -14,7 +14,7 @@ linters:
   exclusions:
     rules:
       # min/max as parameter names (WithLatency, SetLatency,
-      # validateLatencyRange, uniformDuration) are frozen, documented public
+      # validateLatencyRange, uniformDuration) are stable, documented public
       # API and long-established internal convention -- not a defect, and
       # renaming WithLatency's parameters would be a breaking change to a
       # v1.0.0-compatibility surface. See docs/04-api-design.md.
