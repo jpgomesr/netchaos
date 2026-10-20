@@ -23,7 +23,7 @@ import (
 // the window is bounded because no lock is ever held across a blocking
 // operation.
 //
-// traces (trace.go, M7-10) is one resource that IS Network-scoped
+// With default recording, traces (trace.go, M7-10) is Network-scoped
 // rather than conn-scoped, growing for as long as n keeps dialing: unlike
 // resetTargets, an entry is deliberately never pruned when its conn
 // closes, since Network.Trace exists to be read after the connection that
@@ -31,7 +31,8 @@ import (
 // case). That still needs no Close, though — the "nothing to reap" claim
 // above was always about goroutines and timers, not about every field's
 // lifetime matching a conn's, and traces holds neither: only recorder
-// pointers whose memory is reclaimed with n itself. Revisit the "no Close"
+// pointers whose memory is reclaimed with n itself. WithTrace(false) avoids
+// this retention entirely. Revisit the "no Close"
 // design only if a future resource needs active cleanup, not merely a
 // lifetime wider than one conn's.
 //
@@ -43,7 +44,8 @@ import (
 //
 // A Network is safe for concurrent use by multiple goroutines.
 type Network struct {
-	seed int64
+	seed         int64
+	traceEnabled bool
 
 	// faultMu guards faults, which SetLatency, SetPacketLoss (M7-4),
 	// SetDuplication, and SetCorruption (M9-4) write and the per-unit
@@ -128,7 +130,7 @@ type Network struct {
 // random default, which would need an accessor to report the seed it
 // picked.
 func NewNetwork(opts ...Option) *Network {
-	cfg := networkConfig{seed: defaultSeed}
+	cfg := networkConfig{seed: defaultSeed, traceEnabled: true}
 	for i, opt := range opts {
 		if opt == nil {
 			panic(fmt.Sprintf("netchaos: NewNetwork: nil Option at index %d", i))
@@ -147,7 +149,8 @@ func NewNetwork(opts ...Option) *Network {
 	}
 
 	n := &Network{
-		seed: cfg.seed,
+		seed:         cfg.seed,
+		traceEnabled: cfg.traceEnabled,
 		faults: faultConfig{
 			lossEnabled:      cfg.lossEnabled,
 			lossRate:         cfg.lossRate,
@@ -533,7 +536,7 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 	local := &addr{network: network, peer: localName, port: ephemeralPort(ordinal), ip: localIP}
 	remote := &addr{network: network, peer: peer, port: l.addr.port, ip: l.addr.ip}
 
-	client, server := newConnPairWithSeed(local, remote, ordinal, network, n.pipeBound, n.seed)
+	client, server := newConnPairWithSeedAndTrace(local, remote, ordinal, network, n.pipeBound, n.seed, n.traceEnabled)
 
 	// A single composed evaluator per direction (M2-5) — the only place
 	// fault policy is evaluated per unit, in the fixed order documented on
@@ -562,8 +565,10 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 	// rather than trusting append order (#112). client.writePipe/
 	// server.writePipe are each direction's recorder (newConnPairWithSeed,
 	// conn.go).
-	n.registerTrace(ordinal, sideDialer, client.writePipe.trace)
-	n.registerTrace(ordinal, sideAcceptor, server.writePipe.trace)
+	if n.traceEnabled {
+		n.registerTrace(ordinal, sideDialer, client.writePipe.trace)
+		n.registerTrace(ordinal, sideAcceptor, server.writePipe.trace)
+	}
 
 	l.fill(server)
 	return client, nil

@@ -78,6 +78,7 @@ func (n *Network) Reset(peerA, peerB string)
 // every connection's trace, across the Network's whole lifetime -- see
 // Full fault trace export.
 func (n *Network) Trace() []FaultEvent
+func WithTrace(enabled bool) Option
 
 type FaultEvent struct{ /* Ordinal, Side, Seq, Partitioned, Dropped,
 	Duplicated, Corrupted, Delay, Serialization, Effective, Size,
@@ -385,7 +386,7 @@ type FaultEvent struct {
 }
 ```
 
-`Trace` ([M7-10](tasks/m7-v0.2.0-implementation.md#m7-10--export-the-full-fault-trace), issue [#51](https://github.com/jpgomesr/netchaos/issues/51), decided by [M6-14](tasks/m6-review-findings.md#m6-14--decide-whether-to-export-fault-observability)) closes the deferral `M2-1` recorded: the fault trace was always recorded, on every direction of every connection, and was never reachable from outside the package. A test exercising packet loss could observe the downstream consequence (a short read) but never assert the thing that actually happened — "exactly three writes were dropped." `Trace` returns that trace directly.
+`Trace` ([M7-10](tasks/m7-v0.2.0-implementation.md#m7-10--export-the-full-fault-trace), issue [#51](https://github.com/jpgomesr/netchaos/issues/51), decided by [M6-14](tasks/m6-review-findings.md#m6-14--decide-whether-to-export-fault-observability)) closes the deferral `M2-1` recorded: by default the fault trace is recorded on every direction of every connection. A test exercising packet loss can assert "exactly three writes were dropped" rather than infer it from a short read. `Trace` returns that trace directly.
 
 **The full trace, not counters — the more expensive commitment, chosen deliberately.** Counters would have been additive to widen later; retracting an exported event type is not. `FaultEvent` is therefore a compatibility surface at `v1.0.0`, on a trace format [M3-3](tasks/m3-synctest-and-reproducibility.md) already made high-friction to change internally.
 
@@ -401,9 +402,9 @@ type FaultEvent struct {
 
 **What `Trace` does not cover:** `Network.Reset` ([M7-7](tasks/m7-v0.2.0-implementation.md#m7-7--fault-kind-mid-stream-connection-reset)) is an imperative action, not a per-unit decision, and records no event — attributing a `Reset` call in the trace is deferred, [docs/06 § Explicitly out of scope for v1](06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1). A dial that never establishes — refused, blocked on a partition and then cancelled, or rejected for a full backlog — allocates no pipes and appears nowhere in the trace.
 
-**Retention.** A connection's trace is kept for `n`'s own lifetime, independent of whether the connection itself has since been closed — the accessor exists to be read after a test's `defer c.Close()` has already run, which would be the common case it fails to serve if closing pruned the trace the way `Network.Reset`'s registry (`M7-7`) deliberately does.
+**Retention.** With default recording, a connection's trace is kept for `n`'s own lifetime, independent of whether the connection itself has since been closed — the accessor exists to be read after a test's `defer c.Close()` has already run, which would be the common case it fails to serve if closing pruned the trace the way `Network.Reset`'s registry (`M7-7`) deliberately does.
 
-**Pre-v1 decision, not yet implemented (NC-08 in [#115](https://github.com/jpgomesr/netchaos/issues/115), [implementation #146](https://github.com/jpgomesr/netchaos/issues/146)).** Add `WithTrace(enabled bool)`, defaulting to `true`. `WithTrace(false)` disables event recording from construction onward, including on fault-free writes; `Trace()` then returns no events. The default preserves today's complete trace, including one event per write with no fault configured. This bounds trace memory for high-throughput tests without silently changing existing trace assertions. The option controls observability, not fault evaluation or random draws.
+**Optional retention (NC-08 in [#115](https://github.com/jpgomesr/netchaos/issues/115), [implementation #146](https://github.com/jpgomesr/netchaos/issues/146)).** `WithTrace(enabled bool)` defaults to `true`. `WithTrace(false)` disables recorder allocation and event recording from construction onward, including on fault-free writes; `Trace()` then returns no events. The default preserves the complete trace, including one event per write with no fault configured. The option controls observability, not fault evaluation or random draws.
 
 **Pre-v1 decision, not yet implemented (NC-19 in [#115](https://github.com/jpgomesr/netchaos/issues/115), [godoc and test #148](https://github.com/jpgomesr/netchaos/issues/148)).** Keep the three duration fields as they are: `Delay` is the latency draw, and `Serialization + Effective` is the total delay from `Write` to delivery for a delivered unit. No redundant `Total` field is added. `FaultEvent` is promised to remain comparable; future fields must therefore also be comparable. Pin that promise with a compile-time comparison of two `FaultEvent` values.
 
