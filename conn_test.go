@@ -6,6 +6,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -99,9 +100,51 @@ func TestConnCloseEOFsPeer(t *testing.T) {
 	}
 
 	// The peer's writes must also fail once this end is closed.
-	if _, err := server.Write([]byte("x")); !errors.Is(err, net.ErrClosed) {
-		t.Fatalf("server write after peer close = %v, want errors.Is(net.ErrClosed)", err)
+	if _, err := server.Write([]byte("x")); !errors.Is(err, errBrokenPipe) || errors.Is(err, net.ErrClosed) {
+		t.Fatalf("server write after peer close = %v, want broken pipe without net.ErrClosed", err)
 	}
+}
+
+func TestRemoteCloseWriteErrorAndLocalPrecedence(t *testing.T) {
+	client, server := newTestConnPair()
+	defer func() { _ = client.Close() }()
+	defer func() { _ = server.Close() }()
+	if err := server.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Write([]byte("x")); !errors.Is(err, errBrokenPipe) || errors.Is(err, net.ErrClosed) {
+		t.Fatalf("remote close Write = %v, want broken pipe only", err)
+	}
+	if err := client.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Write([]byte("x")); !errors.Is(err, net.ErrClosed) || errors.Is(err, errBrokenPipe) {
+		t.Fatalf("both ends closed Write = %v, want local net.ErrClosed only", err)
+	}
+}
+
+func TestBlockedWriteWakesWithRemoteCloseError(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		client, server := newConnPairWithBound(&addr{network: "tcp", peer: "client"}, &addr{network: "tcp", peer: "server"}, 0, "tcp", 1)
+		defer func() { _ = client.Close(); _ = server.Close() }()
+		if _, err := client.Write([]byte("a")); err != nil {
+			t.Fatal(err)
+		}
+		result := make(chan error, 1)
+		go func() { _, err := client.Write([]byte("b")); result <- err }()
+		synctest.Wait()
+		select {
+		case err := <-result:
+			t.Fatalf("Write returned before peer Close: %v", err)
+		default:
+		}
+		if err := server.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := <-result; !errors.Is(err, errBrokenPipe) || errors.Is(err, net.ErrClosed) {
+			t.Fatalf("blocked Write after remote Close = %v, want broken pipe only", err)
+		}
+	})
 }
 
 func TestConnWriteAfterClose(t *testing.T) {

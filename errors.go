@@ -19,9 +19,11 @@ import "errors"
 //   - Invalid Option values (e.g. a WithPacketLoss rate outside [0,1]):
 //     NewNetwork panics rather than returning an error, so there is no
 //     sentinel to match against.
-//   - Use of a closed conn or listener, and a Read/Write past its deadline:
-//     both reuse standard library errors (net.ErrClosed and
-//     os.ErrDeadlineExceeded respectively) rather than defining new ones,
+//   - Use of a locally closed conn or listener, and a Read/Write past its
+//     deadline: these reuse standard library errors (net.ErrClosed and
+//     os.ErrDeadlineExceeded respectively). Write after the peer closed its
+//     reading end instead matches syscall.EPIPE where available, with a
+//     plain "broken pipe" fallback on plan9, rather than defining new ones,
 //     since those are exactly what real net.Conn/net.Listener callers
 //     already check for.
 

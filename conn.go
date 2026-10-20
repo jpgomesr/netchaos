@@ -22,6 +22,8 @@ const (
 //
 // Close tears down both directions for this end; there is no CloseRead or
 // CloseWrite method. This end's subsequent Read and Write return net.ErrClosed.
+// The peer's subsequent Write returns a *net.OpError matching syscall.EPIPE
+// where available (a plain "broken pipe" error on plan9).
 // Already accepted writes still reach the peer after their latency or
 // bandwidth delay, and the peer reads them before io.EOF. The pipe this end
 // reads from is aborted: its unread data is discarded and the peer cannot
@@ -199,7 +201,9 @@ func (c *conn) Read(b []byte) (int, error) {
 // satisfying errors.Is(err, syscall.ECONNRESET), checked before any pipe
 // state, the same as Read -- and, the same as Read, a local Close takes
 // precedence over a reset (#111). The plan9 caveat on Read applies here
-// too (#113).
+// too (#113). After a remote Close, Write instead returns a *net.OpError
+// matching syscall.EPIPE where available; a local Close always wins over
+// that remote-close classification, including when both ends are closed.
 func (c *conn) Write(b []byte) (int, error) {
 	// io.Writer callers may reuse b once Write returns; the pipe retains
 	// queued data beyond this call, so it needs its own copy.
@@ -227,11 +231,19 @@ func (c *conn) Write(b []byte) (int, error) {
 		n, ch, err := c.writePipe.tryWrite(data)
 		if ch == nil {
 			if err != nil {
-				// The only error tryWrite reports is the pipe having been
-				// closed (by this end's own Close, or because it is the
-				// peer's read pipe and the peer closed). Either way, from
-				// this net.Conn's perspective that is "closed connection."
-				return 0, c.opError("write", net.ErrClosed)
+				// Local Close and Reset may race the pipe-state check. They
+				// take precedence over the peer's closed reading end.
+				select {
+				case <-c.closed:
+					return 0, c.opError("write", net.ErrClosed)
+				default:
+				}
+				select {
+				case <-c.resetCh:
+					return 0, c.opError("write", errConnReset)
+				default:
+				}
+				return 0, c.opError("write", errBrokenPipe)
 			}
 			return n, nil
 		}
