@@ -21,6 +21,8 @@ type pendingUnit struct {
 // Latency delays delivery; it never reorders. Units on one connection
 // direction are released in write order even when a later unit draws a
 // shorter delay.
+// A write accepted before Close still arrives after its delay, before the
+// peer sees io.EOF. Closing the reader or calling Network.Reset discards it.
 //
 // This sets the value a Network starts with. Network.SetLatency changes it
 // mid-test, on connections that already exist as well as future ones.
@@ -106,7 +108,7 @@ func (p *pipe) releaseDueLatency() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.closed {
+	if p.readClosed {
 		return
 	}
 

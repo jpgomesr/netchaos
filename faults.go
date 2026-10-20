@@ -123,6 +123,8 @@ func (fp faultPolicy) current() faultConfig {
 // that makes a fault trace diffable. Changing this discipline later is a
 // breaking change to the determinism contract, not a bug fix.
 func installFaultPolicy(p *pipe, fp faultPolicy) {
+	p.partitionNetwork = fp.network
+	p.partitionPair = fp.pair
 	p.deliver = func(p *pipe, data []byte) {
 		if fp.network != nil && fp.network.isPartitioned(fp.pair) {
 			p.bufBytes -= len(data)

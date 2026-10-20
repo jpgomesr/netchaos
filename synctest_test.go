@@ -321,7 +321,7 @@ func TestBubbleIdleOnPartitionDialWait(t *testing.T) {
 // back by a 1h latency, never read, with both ends closed immediately.
 // synctest.Test fails this test if any bubble goroutine is still running
 // when it returns, which proves no goroutine outlives the conn — but that
-// alone does *not* prove the pending delivery timer (pipe.go) was disarmed:
+// alone does *not* prove closing the reader disarmed the delivery timer:
 // an armed-but-unfired time.AfterFunc owns no goroutine, so it is invisible
 // to the bubble's exit check either way. assertPipeTimerDisarmed
 // (leak_test.go) is what proves the disarm directly; see M6-18, which found

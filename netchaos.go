@@ -15,11 +15,10 @@ import (
 //
 // Network intentionally has no Close method: netchaos spawns no goroutines
 // of its own. The only asynchronous work is two time.AfterFunc callbacks —
-// a deadline timer (deadline.go) and a per-pipe latency delivery timer
-// (latency.go) — and both are owned by a single conn and stopped by
-// conn.Close/pipe.close, so nothing outlives the conn that created it and
-// there is nothing for a Network-wide Close to reap in terms of goroutines
-// or timers (see leak_test.go and synctest_test.go). These callbacks are
+// a deadline timer (deadline.go) and a per-pipe delivery timer (latency.go).
+// Close stops the deadline timer. The delivery timer can outlive the writer's
+// Close until already accepted data reaches the reader; closing the reader
+// or resetting the connection stops it. These callbacks are
 // also the only place a netchaos-internal goroutine acquires a sync.Mutex;
 // the window is bounded because no lock is ever held across a blocking
 // operation.

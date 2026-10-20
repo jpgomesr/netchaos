@@ -191,19 +191,25 @@ func TestLatencyVsReadDeadline(t *testing.T) {
 
 func TestLatencyCloseInFlight(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		_, client, server := newLatencyTestNetwork(t, time.Hour, time.Hour)
+		const delay = 10 * time.Millisecond
+		_, client, server := newLatencyTestNetwork(t, delay, delay)
 
-		if _, err := client.Write([]byte("never arrives")); err != nil {
+		if _, err := client.Write([]byte("arrives")); err != nil {
 			t.Fatal(err)
 		}
 		if err := client.Close(); err != nil {
 			t.Fatal(err)
 		}
 
+		start := time.Now()
 		buf := make([]byte, 32)
 		n, err := server.Read(buf)
-		if n != 0 || !errors.Is(err, io.EOF) {
-			t.Fatalf("Read after peer close with an in-flight delayed write = (%d, %v), want (0, io.EOF): in-flight data is discarded on close, not delivered", n, err)
+		if err != nil || string(buf[:n]) != "arrives" || time.Since(start) != delay {
+			t.Fatalf("Read after peer close = (%q, %v) at %v, want arrives at %v", buf[:n], err, time.Since(start), delay)
+		}
+		n, err = server.Read(buf)
+		if n != 0 || !errors.Is(err, io.EOF) || time.Since(start) != delay {
+			t.Fatalf("Read after delivery = (%d, %v) at %v, want EOF at %v", n, err, time.Since(start), delay)
 		}
 	})
 }
@@ -238,11 +244,9 @@ func TestNoLatencyByDefault(t *testing.T) {
 	})
 }
 
-// TestReleaseDueLatencyAfterCloseDeliversNothing covers the latency
-// timer's callback racing Close: close stops the timer, but a callback
-// that already started waits for p.mu and then finds the pipe closed. It
-// must return without moving the discarded pending units onto readable.
-func TestReleaseDueLatencyAfterCloseDeliversNothing(t *testing.T) {
+// TestReleaseDueLatencyAfterCloseDeliversPending covers the delivery timer
+// firing after a graceful close: the pending write precedes EOF.
+func TestReleaseDueLatencyAfterCloseDeliversPending(t *testing.T) {
 	p := newPipe(defaultPipeBound)
 	p.mu.Lock()
 	p.pending = append(p.pending, pendingUnit{data: []byte("late"), releaseAt: time.Now().Add(-time.Second)})
@@ -253,9 +257,21 @@ func TestReleaseDueLatencyAfterCloseDeliversNothing(t *testing.T) {
 
 	p.releaseDueLatency() // as if the timer fired just after close
 
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if len(p.readable) != 0 {
-		t.Fatalf("releaseDueLatency on a closed pipe delivered %d units, want 0", len(p.readable))
+	buf := make([]byte, 4)
+	if n, err := p.read(buf); err != nil || n != 4 || string(buf) != "late" {
+		t.Fatalf("read after timer = (%q, %v), want late", buf[:n], err)
+	}
+	if n, err := p.read(buf); n != 0 || !errors.Is(err, io.EOF) {
+		t.Fatalf("read after draining = (%d, %v), want EOF", n, err)
+	}
+}
+
+func TestReleaseDueLatencyAfterAbortDeliversNothing(t *testing.T) {
+	p := newPipe(defaultPipeBound)
+	p.pending = append(p.pending, pendingUnit{data: []byte("late"), releaseAt: time.Now().Add(-time.Second)})
+	p.abort()
+	p.releaseDueLatency()
+	if len(p.readable) != 0 || len(p.pending) != 0 || p.timer != nil {
+		t.Fatal("timer callback retained data after abort")
 	}
 }
