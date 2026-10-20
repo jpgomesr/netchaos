@@ -99,8 +99,8 @@ func WithPipeBound(bound int) Option
 func WithListenerBacklog(backlog int) Option
 
 var ErrUnsupportedNetwork = errors.New("netchaos: unsupported network")
-var ErrConnectionRefused = errors.New("netchaos: connection refused")
-var ErrAddressInUse = errors.New("netchaos: address already in use")
+var ErrConnectionRefused error // "netchaos: connection refused"; matches ECONNREFUSED where available
+var ErrAddressInUse error       // "netchaos: address already in use"; matches EADDRINUSE where available
 var ErrBacklogFull = errors.New("netchaos: accept backlog full")
 ```
 
@@ -407,7 +407,7 @@ type FaultEvent struct {
 
 ## Pre-v1 address and error decisions
 
-The following contracts resolve NC-16, NC-17 and NC-18 in [#115](https://github.com/jpgomesr/netchaos/issues/115), with separate implementation work for [addresses #143](https://github.com/jpgomesr/netchaos/issues/143), [ports #144](https://github.com/jpgomesr/netchaos/issues/144) and [errnos #147](https://github.com/jpgomesr/netchaos/issues/147). Addresses and listener-by-port resolution are implemented by #143 and #144; errno matching remains pending. The tagged release still has the older address behaviour.
+The following contracts resolve NC-16, NC-17 and NC-18 in [#115](https://github.com/jpgomesr/netchaos/issues/115), with separate implementation work for [addresses #143](https://github.com/jpgomesr/netchaos/issues/143), [ports #144](https://github.com/jpgomesr/netchaos/issues/144) and [errnos #147](https://github.com/jpgomesr/netchaos/issues/147). All three are implemented in separate PRs. The tagged release still has the older behaviour.
 
 - **Names and IPs.** `Dial`, `Listen`, `WithPeerName`, `DialerFor`, `WithPartition`, `Partition`, `Heal` and `Reset` continue accepting peer names such as `api.internal`, as well as literal IPv4/IPv6 addresses. A `Network` resolves names only inside its own topology; it never queries system DNS. Each name gets a stable synthetic IP for each applicable address family during that `Network`'s lifetime. The name and its assigned IP identify the same peer: `Dial(listener.Addr().String())` and `Partition` using either representation reach the same connections. Synthetic allocation skips literal IPs already registered; a later literal IP that conflicts with an allocated synthetic IP is rejected instead of silently identifying another peer.
 - **Returned addresses.** TCP listener and connection addresses become `*net.TCPAddr` with parseable IP:port strings. Their `Network()` reports `"tcp"`, as Go's `*net.TCPAddr` does. `Addr().String()` for a named peer changes from name:port to synthetic-IP:port; this is explicitly a breaking change. Peer names stay usable as inputs and as topology identities, but cannot be recovered from `*net.TCPAddr.String()` alone.

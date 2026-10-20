@@ -32,15 +32,27 @@ import "errors"
 // v1 (see docs/06-scope-and-roadmap.md).
 var ErrUnsupportedNetwork = errors.New("netchaos: unsupported network")
 
+// setupError keeps the exported sentinel identity and message while also
+// matching a standard errno on platforms that define one.
+type setupError struct {
+	message string
+	errno   error
+}
+
+func (e *setupError) Error() string        { return e.message }
+func (e *setupError) Is(target error) bool { return e.errno != nil && errors.Is(e.errno, target) }
+
 // ErrConnectionRefused is returned by Network.Dial/DialContext when no
 // listener is registered for the target address, shaped like a real
 // connection-refused failure so code under test takes the same path it
-// would against a real closed port.
-var ErrConnectionRefused = errors.New("netchaos: connection refused")
+// would against a real closed port. It also matches syscall.ECONNREFUSED
+// with errors.Is where that errno exists.
+var ErrConnectionRefused error = &setupError{"netchaos: connection refused", errConnRefused}
 
 // ErrAddressInUse is returned by Network.Listen when the given address is
-// already registered by another, still-open listener.
-var ErrAddressInUse = errors.New("netchaos: address already in use")
+// already registered by another, still-open listener. It also matches
+// syscall.EADDRINUSE with errors.Is where that errno exists.
+var ErrAddressInUse error = &setupError{"netchaos: address already in use", errAddrInUse}
 
 // ErrBacklogFull is returned by Network.Dial when the target listener's
 // accept queue is full. It is distinct from ErrConnectionRefused so a test
