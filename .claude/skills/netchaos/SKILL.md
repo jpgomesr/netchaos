@@ -37,11 +37,11 @@ wrong from the type signatures alone.
 ## Adding it to a project
 
 ```
-go get github.com/jpgomesr/netchaos@v0.3.1
+go get github.com/jpgomesr/netchaos@v0.4.0
 ```
 
-Requires Go 1.25+ (`testing/synctest`). No other setup — no daemon, no
-config file, no network access needed at test time.
+Requires Go 1.25+ (`testing/synctest`). The library module has no third-party
+requirements. No daemon, config file, or network access is needed at test time.
 
 ## Quick orientation
 
@@ -78,15 +78,16 @@ config file, no network access needed at test time.
   (`DialerFor`, or `DialContext` with `WithPeerName`) blocks against a
   partitioned peer until `Heal` — pass `netchaos.WithDialTimeout(d)` (or a
   context deadline) to bound that wait.
-- Addresses have a real host:port shape — `net.SplitHostPort` works on
-  `RemoteAddr().String()` — but peer **identity** (what `Partition`/`Heal`/
-  `Reset` name) is the host half only; nothing resolves on port.
-- `Network.Trace() []FaultEvent` exports the full fault decision log for
-  every connection the `Network` has ever dialed — use it to assert an
+- Returned addresses are `*net.TCPAddr` values. The input host names a peer,
+  and an explicit input port selects one of that peer's listeners. Peer
+  identity for `Partition`/`Heal`/`Reset` spans all ports. Names resolve
+  to stable IP aliases within the `Network`, without system DNS.
+- `Network.Trace() []FaultEvent` exports the retained fault decision log
+  across connections — use it to assert an
   exact count ("exactly 3 writes dropped") instead of only the downstream
   symptom. Each event also carries `Size`, `CorruptedByte`, and
   `CorruptedBit`, so a corruption failure can be diagnosed directly from
-  the trace.
+  the trace. `WithTrace(false)` disables retention without changing faults.
 - Always pair with `testing/synctest` so injected latency/timeouts don't
   cost real wall-clock time in the test suite.
 - Always set `WithSeed(n)` for a specific reproducible fault sequence
