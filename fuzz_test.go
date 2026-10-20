@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/big"
 	"net"
+	"net/netip"
 	"strings"
 	"sync"
 	"testing"
@@ -202,18 +203,23 @@ func checkBufBytesLocked(t *testing.T, p *pipe) (nonEmpty int) {
 
 // FuzzSplitAddr checks the one function that takes an address string apart
 // (splitAddr) and the two built on it (peerName, errAddr) against
-// net.SplitHostPort, for arbitrary input: no panic, a no-colon string is a
-// plain peer name, a successful split agrees with the standard library and
+// net.SplitHostPort or netip.ParseAddr, for arbitrary input: no panic, a
+// no-colon string is a plain peer name, a bare literal IP has no port, and
+// a successful host:port split agrees with the standard library and
 // keeps the port in range, and every failure is a *net.AddrError naming
 // the input.
 func FuzzSplitAddr(f *testing.F) {
-	for _, s := range []string{"", "server", "server:8080", ":0", ":8080", "[::1]:80", "[::1", "a:b:c", "h:99999", "h:-1", "h:00", "h:+5"} {
+	for _, s := range []string{"", "server", "server:8080", ":0", ":8080", "::", "2001:db8::1", "[::1]:80", "[::1", "a:b:c", "h:99999", "h:-1", "h:00", "h:+5"} {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, s string) {
 		host, port, explicit, err := splitAddr(s)
 
-		if !strings.Contains(s, ":") {
+		if _, literalErr := netip.ParseAddr(s); literalErr == nil {
+			if err != nil || host != s || port != 0 || explicit {
+				t.Fatalf("splitAddr(%q) = (%q, %d, %v, %v), want a bare literal IP with no port", s, host, port, explicit, err)
+			}
+		} else if !strings.Contains(s, ":") {
 			if err != nil || host != s || port != 0 || explicit {
 				t.Fatalf("splitAddr(%q) = (%q, %d, %v, %v), want the input back as a plain peer name", s, host, port, explicit, err)
 			}
