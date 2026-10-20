@@ -36,11 +36,11 @@ const (
 // An address has two halves and they do different jobs. The host half is
 // the identity: it is what Dial and Listen resolve against, what
 // Network.Partition and Network.Heal name, and the only half peerName
-// returns. The port half is presentation: it exists so that a netchaos
-// address is shaped like a real one, and so code under test can call
+// returns. The port half selects a listener when Dial names it explicitly;
+// it also gives a netchaos address a real TCP shape, so code can call
 // net.SplitHostPort on RemoteAddr().String() and take the same path it
-// takes against the real stack (M7-1, issue #49). Nothing in netchaos
-// resolves, matches, or partitions on a port. Public addresses are
+// takes against the real stack (M7-1, issue #49). Partitions and resets
+// still identify peers across all their ports. Public addresses are
 // *net.TCPAddr values built from the IP allocated for this peer.
 //
 // That split is why "server" and "server:8080" name the same peer:
@@ -72,7 +72,7 @@ const (
 type addr struct {
 	network string // "tcp", "tcp4", or "tcp6", stored verbatim
 	peer    string // the host half: the peer's identity
-	port    int    // the port half: presentation only
+	port    int    // the destination port selects a listener; peer identity excludes it
 	ip      net.IP // assigned within the owning Network; nil only in internal test addresses
 }
 
@@ -164,9 +164,9 @@ func peerName(dialAddr string) string {
 // ephemeralPort maps a connection ordinal onto the ephemeral port range. It
 // wraps rather than overflowing, so a Network that establishes more
 // connections than the range has ports reuses a port instead of producing an
-// address that cannot be parsed. Ports are presentation (see addr), so a
-// collision there costs nothing: identity is the host half, and that stays
-// unique per ordinal.
+// address that cannot be parsed. A local ephemeral port may be reused after
+// enough connections, as with
+// the real stack; listener lookup still uses the destination port.
 func ephemeralPort(ordinal uint64) int {
 	span := uint64(maxPort + 1 - ephemeralPortBase)
 	return ephemeralPortBase + int(ordinal%span)

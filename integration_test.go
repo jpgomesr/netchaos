@@ -33,7 +33,7 @@ func TestHTTPFaultIntegration(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				synctest.Test(t, func(t *testing.T) {
 					n := netchaos.NewNetwork(integrationOptions(fault)...)
-					l, err := n.Listen("tcp", "server")
+					l, err := n.Listen("tcp", "server:80")
 					if err != nil {
 						t.Fatal(err)
 					}

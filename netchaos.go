@@ -61,8 +61,9 @@ type Network struct {
 	// listeners is keyed by peerName(addr) for a normally-named listener, or
 	// by the synthesized wildcardPeerName for one whose address named no
 	// host (issue #73) — either way, the key is the peer's canonical identity, not
-	// necessarily the string originally passed to Listen.
-	listeners   map[string]*listener
+	// necessarily the string originally passed to Listen. The nested key is
+	// the listening port; each peer may have several open listeners.
+	listeners   map[string]map[int]*listener
 	nextOrdinal uint64
 	ipOwners    map[string]string
 	peerIPs     map[string]map[int]net.IP
@@ -162,7 +163,7 @@ func NewNetwork(opts ...Option) *Network {
 		},
 		partitions:      make(map[pairKey]struct{}, len(cfg.staticPartitions)),
 		partNotify:      make(chan struct{}),
-		listeners:       make(map[string]*listener),
+		listeners:       make(map[string]map[int]*listener),
 		ipOwners:        make(map[string]string),
 		peerIPs:         make(map[string]map[int]net.IP),
 		nextListenPort:  listenPortBase,
@@ -190,10 +191,9 @@ func NewNetwork(opts ...Option) *Network {
 // "server". A malformed address is rejected with a *net.AddrError, matching
 // what net.Listen produces for the same input.
 //
-// Addresses that name the same host collide regardless of port: a second
-// Listen on "server:9090" while "server:8080" is open returns
-// ErrAddressInUse. One peer, one listener — see the addr type for why
-// identity deliberately stops at the host half.
+// A peer may have listeners on several ports. A second Listen on the same
+// peer and port returns ErrAddressInUse. Port 0 and omitted ports allocate
+// an unused port for that peer, including when the counter wraps.
 //
 // laddr with no host at all (":0", ":8080", "") is a wildcard bind: Listen
 // synthesizes a fresh identity for it, the way a real net.Listen(":0") on a
@@ -233,25 +233,27 @@ func (n *Network) Listen(network, laddr string) (net.Listener, error) {
 		}
 	}
 	peer = n.canonicalPeerLocked(peer)
-	if _, ok := n.listeners[peer]; ok {
+	if !explicit {
+		for attempts := 0; attempts <= maxPort-listenPortBase; attempts++ {
+			port = n.nextListenPort
+			n.nextListenPort++
+			if n.nextListenPort > maxPort {
+				n.nextListenPort = listenPortBase
+			}
+			if n.listeners[peer][port] == nil {
+				break
+			}
+		}
+		if n.listeners[peer][port] != nil {
+			return nil, n.listenOpError(network, laddr, ErrAddressInUse)
+		}
+	}
+	if n.listeners[peer][port] != nil {
 		return nil, n.listenOpError(network, laddr, ErrAddressInUse)
 	}
 	ip, err := n.peerIPLocked(peer, addressFamily(network, peer))
 	if err != nil {
 		return nil, n.listenOpError(network, laddr, err)
-	}
-	if !explicit {
-		port = n.nextListenPort
-		n.nextListenPort++
-		if n.nextListenPort > maxPort {
-			// Wrap back into the synthesized range rather than climbing
-			// past it, mirroring ephemeralPort's modulo (addr.go) -- ports
-			// are presentation only (n.listeners is keyed by peer name, not
-			// host:port), so a wrapped port colliding with an
-			// already-assigned one costs nothing beyond looking odd in test
-			// output (issue #81).
-			n.nextListenPort = listenPortBase
-		}
 	}
 
 	l := &listener{
@@ -260,7 +262,10 @@ func (n *Network) Listen(network, laddr string) (net.Listener, error) {
 		incoming: make(chan *conn, n.listenerBacklog),
 		closedCh: make(chan struct{}),
 	}
-	n.listeners[peer] = l
+	if n.listeners[peer] == nil {
+		n.listeners[peer] = make(map[int]*listener)
+	}
+	n.listeners[peer][port] = l
 	return l, nil
 }
 
@@ -270,7 +275,10 @@ func (n *Network) Listen(network, laddr string) (net.Listener, error) {
 func (n *Network) deregister(a *addr) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	delete(n.listeners, a.peer)
+	delete(n.listeners[a.peer], a.port)
+	if len(n.listeners[a.peer]) == 0 {
+		delete(n.listeners, a.peer)
+	}
 }
 
 // Dial creates a simulated connection from the calling peer to addr within
@@ -410,6 +418,10 @@ func (n *Network) DialerFor(name string, opts ...DialerOption) func(network, add
 // guess (issue #73).
 // Named hosts resolve only inside this Network, without system DNS. A
 // returned *net.TCPAddr IP can be dialed as an alias for its peer name.
+// An explicit destination port selects exactly that listener; a wrong port
+// returns ErrConnectionRefused. Without a port, the dial reaches the sole
+// listener matching its address family, or is refused if none or several
+// match. tcp4 and tcp6 require their respective family; tcp accepts either.
 func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (net.Conn, error) {
 	// Checked once, up front, rather than folded into the enqueue select
 	// below: with a ready default case present, Go picks pseudo-randomly
@@ -424,13 +436,14 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 	if err := validateNetwork(network); err != nil {
 		return nil, n.dialOpError(network, dialAddr, err)
 	}
-	peer, _, _, err := splitAddr(dialAddr)
+	peer, requestedPort, explicitPort, err := splitAddr(dialAddr)
 	if err != nil {
 		return nil, n.dialOpError(network, dialAddr, err)
 	}
 	if peer == "" {
 		return nil, n.dialOpError(network, dialAddr, &net.AddrError{Err: "missing host", Addr: dialAddr})
 	}
+	targetIP, literalTarget := parseLiteralIP(peer)
 	peer = n.canonicalPeer(peer)
 
 	localName, named := peerNameFromContext(ctx)
@@ -448,9 +461,35 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 	}
 
 	n.mu.Lock()
-	l, ok := n.listeners[peer]
-	if ok && network != "tcp" && addressFamily(network, peer) != addressFamily(l.addr.network, l.addr.peer) {
-		ok = false
+	var l *listener
+	matches := func(candidate *listener) bool {
+		if candidate == nil {
+			return false
+		}
+		if network != "tcp" && addressFamily(network, peer) != addressFamily(candidate.addr.network, candidate.addr.peer) {
+			return false
+		}
+		if literalTarget && !candidate.addr.ip.Equal(net.IP(targetIP.AsSlice())) {
+			return false
+		}
+		return true
+	}
+	if explicitPort {
+		candidate := n.listeners[peer][requestedPort]
+		if matches(candidate) {
+			l = candidate
+		}
+	} else {
+		for _, candidate := range n.listeners[peer] {
+			if !matches(candidate) {
+				continue
+			}
+			if l != nil {
+				l = nil
+				break
+			}
+			l = candidate
+		}
 	}
 	// Unlocked here, and deliberately not deferred: l.reserve below takes
 	// l.mu, while listener.Close takes l.mu and then n.mu through
@@ -458,7 +497,7 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 	// thing that would close that into a lock cycle. n.mu is taken again
 	// below, on its own, for the ordinal.
 	n.mu.Unlock()
-	if !ok {
+	if l == nil {
 		return nil, n.dialOpError(network, dialAddr, ErrConnectionRefused)
 	}
 
