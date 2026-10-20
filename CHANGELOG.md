@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Decisions pending implementation
+
+- **Pre-v1 contract review (#115):** decided to return `*net.TCPAddr` with synthetic IPs for named peers and to resolve listeners by peer and port. This will change `Addr().String()` from name:port to IP:port and change `Dial`/`Listen` outcomes for wrong or ambiguous ports. It is a **breaking change**, planned before `v1.0.0`; the current release and code still use the documented host-only listener model. Names such as `api.internal` will remain valid inputs and will resolve only within their `Network`, without system DNS. Separate work will add `WithTrace(false)`, errno matching and a remote-close `EPIPE`, and document `FaultEvent` comparability. See [docs/04](docs/04-api-design.md#pre-v1-address-and-error-decisions-pending-implementation).
+
 ### Fixed
 
 - **The test package now compiles and passes on 32-bit platforms** (closes #127). Three `serializationDelay` overflow tests passed integer constants above 2³¹ where an `int` is expected, so `go vet`/`go test` failed to compile with `GOARCH=386` (and arm, mips) since `v0.3.0`; the library itself always built. They now skip on platforms where `int` is 32 bits — no `Write` can be that large there, so the overflow path they guard cannot occur — and still run unchanged on 64-bit. CI gains a `GOARCH=386` vet-and-test step.
