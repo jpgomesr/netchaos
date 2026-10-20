@@ -15,8 +15,9 @@ import (
 // self-terminates once it fires or is stopped (see Network's godoc) — this
 // test is the audit that backs that claim for the deadline timer.
 // TestCloseWithInFlightWorkInBubble (synctest_test.go) is the equivalent,
-// bubble-based proof for the latency timer: a still-pending delivery timer
-// never outlives its conn's Close. (A wall-clock NumGoroutine poll for the
+// bubble-based proof for the latency timer: closing the reader stops its
+// pending delivery timer. A writer's Close can leave that timer running until
+// the last accepted write arrives. (A wall-clock NumGoroutine poll for the
 // latency timer, TestNoLatencyTimerLeaks, was removed in M11-6: it could
 // not observe an armed time.AfterFunc at all, which is exactly the case
 // assertPipeTimerDisarmed covers.)
@@ -39,7 +40,7 @@ import (
 //     leaves this test green if the bubble is the only assertion. The same
 //     is true of the delivery timer (latency, M2-2, or bandwidth, M7-5) and
 //     TestCloseWithInFlightWorkInBubble — see M6-18, which found that gap
-//     and closed it with assertPipeTimerDisarmed.
+//     and closed it with assertPipeTimerDisarmed after both ends close.
 func TestNoGoroutineLeaks(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		n := NewNetwork()

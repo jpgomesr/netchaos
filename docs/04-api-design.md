@@ -170,7 +170,7 @@ func WithLatency(min, max time.Duration) Option
 // seed.
 func WithPacketLoss(rate float64) Option
 
-// WithPartition marks all traffic between the named peers as dropped,
+// WithPartition drops writes admitted between the named peers,
 // starting immediately when the Network is constructed. A pair
 // configured this way stays partitioned until Network.Heal removes it,
 // exactly like one added by Network.Partition.
@@ -286,12 +286,18 @@ So `Partition("server")` reaches a connection dialed to `"server:8080"`, and eve
 
 **Ports are synthesized in `Listen`/`Dial` order**, which the [determinism contract](#determinism-contract) already fixes, so nothing about the contract widens here. It does inherit the contract's stated limit unchanged, and that is worth naming because it is newly *visible*: two goroutines racing to `Listen` get their ports in whichever order the scheduler picks, and unlike a connection ordinal, a port shows up in `RemoteAddr().String()` and therefore in test failure output. The fix is the same one the contract already prescribes — establish connections in a fixed order before starting concurrent I/O. The same holds for the synthesized `wildcard-N` host: it advances in `Listen` order too, and unlike a connection ordinal it is visible in `Addr().String()`.
 
+## Connection close and EOF
+
+`Close` stops this end's `Read` and `Write` immediately with `net.ErrClosed` and rejects new writes into its outgoing pipe. Writes already accepted remain scheduled: the peer reads their bytes after the configured bandwidth and latency, then receives `io.EOF`. Closing the peer's reading end discards unread and pending data instead. `Network.Reset` is abortive and discards pending data on both directions; it does not wait for a graceful EOF.
+
+The close signal follows partition state. If the pair is partitioned when EOF would become visible, the peer's read waits until `Heal` (or its deadline). Writes admitted *before* `Partition` still arrive at their scheduled time; writes admitted while partitioned are discarded. Once a peer has observed EOF, a later `Partition` cannot retract it. This changes the M2-2 close decision before `v1.0.0` ([#107](https://github.com/jpgomesr/netchaos/issues/107)); connection establishment still pays no configured latency (NC-20 in [#115](https://github.com/jpgomesr/netchaos/issues/115)).
+
 ## Dynamic partition control
 
 For scenarios that need to partition and heal a link *during* a test (not just at construction time):
 
 ```go
-// Partition drops all subsequent traffic between the named peers until
+// Partition drops subsequent writes between the named peers until
 // Heal is called for the same pair.
 func (n *Network) Partition(peerA, peerB string)
 

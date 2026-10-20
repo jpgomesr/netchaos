@@ -20,15 +20,12 @@ const (
 // one per direction, wrapped with addresses, a closed flag, and (from M1-3
 // onward) deadlines.
 //
-// Close semantics: closing one end of a connection tears down both
-// directions for that end — there is no half-close (no CloseRead/CloseWrite,
-// matching net.Pipe). Concretely, Close (1) marks this end closed, which
-// makes this end's own subsequent Read/Write fail immediately with an error
-// satisfying errors.Is(err, net.ErrClosed); (2) closes the pipe this end
-// writes to (the peer's read pipe), so the peer's already-buffered data
-// still drains normally and its Read only returns io.EOF once that data is
-// exhausted; (3) closes the pipe this end reads from (the peer's write
-// pipe), so the peer's subsequent writes fail the same way this end's do.
+// Close tears down both directions for this end; there is no CloseRead or
+// CloseWrite method. This end's subsequent Read and Write return net.ErrClosed.
+// Already accepted writes still reach the peer after their latency or
+// bandwidth delay, and the peer reads them before io.EOF. The pipe this end
+// reads from is aborted: its unread data is discarded and the peer cannot
+// write more. Reset aborts both directions instead of draining them.
 //
 // A conn is safe for concurrent use by multiple goroutines, as net.Conn
 // requires.
@@ -141,6 +138,8 @@ func newConnPairWithSeed(clientAddr, serverAddr *addr, ordinal uint64, network s
 func (c *conn) triggerReset() {
 	c.resetOnce.Do(func() {
 		close(c.resetCh)
+		c.writePipe.abort()
+		c.readPipe.abort()
 	})
 }
 
@@ -249,7 +248,9 @@ func (c *conn) Write(b []byte) (int, error) {
 	}
 }
 
-// Close implements net.Conn. It is idempotent and always returns nil.
+// Close implements net.Conn. It is idempotent and always returns nil. Writes
+// accepted before Close remain scheduled for delivery; the peer receives
+// io.EOF after reading them. A partition holds that EOF until Heal.
 func (c *conn) Close() error {
 	c.closeOnce.Do(func() {
 		close(c.closed)
@@ -257,7 +258,7 @@ func (c *conn) Close() error {
 			c.nw.deregisterReset(c.pair, c)
 		}
 		_ = c.writePipe.close()
-		_ = c.readPipe.close()
+		c.readPipe.abort()
 		c.rd.stop()
 		c.wd.stop()
 	})

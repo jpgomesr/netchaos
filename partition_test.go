@@ -406,12 +406,22 @@ func TestPartitionedWriteDiscardedSilently(t *testing.T) {
 		if err := client.Close(); err != nil {
 			t.Fatal(err)
 		}
-		// Draining after close: the partitioned write must not appear, but
-		// io.EOF must still follow (no error surfaces from a partition).
+		// The partitioned write never appears. The FIN waits for Heal.
 		buf := make([]byte, 32)
+		if err := server.SetReadDeadline(time.Now().Add(time.Millisecond)); err != nil {
+			t.Fatal(err)
+		}
 		n2, err := server.Read(buf)
+		if n2 != 0 || !errors.Is(err, os.ErrDeadlineExceeded) {
+			t.Fatalf("server read before Heal = (%d, %v), want deadline", n2, err)
+		}
+		n.Heal("client", "server")
+		if err := server.SetReadDeadline(time.Time{}); err != nil {
+			t.Fatal(err)
+		}
+		n2, err = server.Read(buf)
 		if n2 != 0 || !errors.Is(err, io.EOF) {
-			t.Fatalf("server drain read = (%d, %v), want (0, io.EOF)", n2, err)
+			t.Fatalf("server drain read after Heal = (%d, %v), want EOF", n2, err)
 		}
 	})
 }

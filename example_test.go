@@ -653,7 +653,9 @@ func TestReadmeUsageSnippet(t *testing.T) {
 		}
 		defer func() { _ = l.Close() }()
 
+		serverDone := make(chan struct{})
 		go func() {
+			defer close(serverDone)
 			server, err := l.Accept()
 			if err != nil {
 				return
@@ -685,6 +687,8 @@ func TestReadmeUsageSnippet(t *testing.T) {
 		if string(got) != "resource-id" {
 			t.Fatalf("got %q, want %q", got, "resource-id")
 		}
+		_ = client.Close()
+		<-serverDone
 	})
 }
 

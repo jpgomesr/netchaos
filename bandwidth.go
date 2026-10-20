@@ -27,6 +27,9 @@ import (
 // the configured rate each way, and dialing many connections dials many
 // independently-throttled links, mirroring how latency and loss are already
 // evaluated per direction.
+// A write accepted before Close still arrives after serialization finishes,
+// before the peer sees io.EOF. Closing the reader or calling Network.Reset
+// discards it.
 //
 // This is a construction-time setting; there is no runtime setter. Unlike
 // SetLatency, SetPacketLoss (M7-4), SetDuplication, and SetCorruption

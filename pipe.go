@@ -67,13 +67,19 @@ func passThroughDeliver(p *pipe, data []byte) {
 //
 // A pipe is safe for concurrent use by multiple goroutines.
 type pipe struct {
-	mu       sync.Mutex
-	readable [][]byte // queue of not-yet-fully-consumed write payloads
-	bufBytes int      // bytes currently accounted against bound
-	closed   bool
-	notify   chan struct{} // closed and replaced on every state change
-	bound    int
-	deliver  deliverFunc
+	mu         sync.Mutex
+	readable   [][]byte      // queue of not-yet-fully-consumed write payloads
+	bufBytes   int           // bytes currently accounted against bound
+	closed     bool          // producer has closed; pending data may still be delivered
+	readClosed bool          // consumer has closed; queued data and its timer are discarded
+	eofSeen    bool          // once observed, EOF cannot be hidden by a later partition
+	notify     chan struct{} // closed and replaced on every state change
+	bound      int
+	deliver    deliverFunc
+	// A graceful end-of-stream signal waits for Heal when this pair is
+	// partitioned. Raw pipes have no Network and expose EOF immediately.
+	partitionNetwork *Network
+	partitionPair    pairKey
 
 	// loss, latency, duplicate, and corrupt are this pipe's per-fault-kind
 	// draw streams (M0-4), derived once at creation from the owning
@@ -143,6 +149,10 @@ func (p *pipe) tryRead(b []byte) (n int, ch <-chan struct{}, err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	if p.readClosed {
+		return 0, nil, io.EOF
+	}
+
 	if len(p.readable) > 0 {
 		for len(p.readable) > 0 && n < len(b) {
 			chunk := p.readable[0]
@@ -170,10 +180,18 @@ func (p *pipe) tryRead(b []byte) (n int, ch <-chan struct{}, err error) {
 		}
 	}
 
-	if p.closed {
+	if p.closed && len(p.pending) == 0 {
+		if p.eofSeen {
+			return 0, nil, io.EOF
+		}
+		if p.partitionNetwork != nil {
+			if partitioned, partCh := p.partitionNetwork.checkPartition(p.partitionPair); partitioned {
+				return 0, partCh, nil
+			}
+		}
+		p.eofSeen = true
 		return 0, nil, io.EOF
 	}
-
 	return 0, p.notify, nil
 }
 
@@ -188,7 +206,7 @@ func (p *pipe) tryWrite(data []byte) (n int, ch <-chan struct{}, err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.closed {
+	if p.closed || p.readClosed {
 		return 0, nil, io.ErrClosedPipe
 	}
 
@@ -228,14 +246,9 @@ func (p *pipe) write(data []byte) (int, error) {
 	}
 }
 
-// close closes the pipe. It is idempotent and never returns a non-nil error;
-// subsequent reads drain any already-queued data and then return io.EOF,
-// and subsequent writes return io.ErrClosedPipe.
-//
-// Any units still held back by latency (pending, unreleased) are discarded,
-// not delivered: they model bytes still in flight on the wire, not bytes
-// already in the peer's receive buffer, so M1's "already-buffered data
-// still drains" guarantee is unaffected.
+// close finishes the producer's side of the pipe. Already admitted units
+// remain pending until their scheduled delivery, then the reader sees EOF.
+// The consumer's close and Reset use abort instead.
 func (p *pipe) close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -244,11 +257,27 @@ func (p *pipe) close() error {
 		return nil
 	}
 	p.closed = true
+	p.broadcastLocked()
+	return nil
+}
+
+// abort closes the consumer's side and discards everything it can no longer
+// read. It also stops the timer and unblocks writers. Reset calls it on both
+// directions of the connection.
+func (p *pipe) abort() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.readClosed {
+		return
+	}
+	p.readClosed = true
+	p.closed = true
 	if p.timer != nil {
 		p.timer.Stop()
 		p.timer = nil
 	}
 	p.pending = nil
+	p.readable = nil
+	p.bufBytes = 0
 	p.broadcastLocked()
-	return nil
 }
