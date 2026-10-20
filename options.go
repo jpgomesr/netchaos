@@ -9,7 +9,8 @@ const defaultSeed = 1
 // networkConfig accumulates the settings Options mutate before NewNetwork
 // builds a Network from them.
 type networkConfig struct {
-	seed int64
+	seed         int64
+	traceEnabled bool
 
 	// latencyEnabled distinguishes "WithLatency was never given" (no timer,
 	// no draw, byte-identical to M1's pass-through delivery) from
@@ -72,6 +73,14 @@ type networkConfig struct {
 // kind: passing WithPacketLoss(-1) followed by WithPacketLoss(0.5) does not
 // panic, because only the final packet-loss rate is checked.
 type Option func(*networkConfig)
+
+// WithTrace controls retention of Network.Trace events from construction
+// onward. Recording is enabled by default. WithTrace(false) leaves fault
+// evaluation and every seeded draw unchanged, but allocates no per-direction
+// recorder and retains no per-Write events; Trace then returns no events.
+func WithTrace(enabled bool) Option {
+	return func(c *networkConfig) { c.traceEnabled = enabled }
+}
 
 // validate panics, naming the offending option and value, if any option
 // applied to c is invalid. It runs once, in NewNetwork, after every Option

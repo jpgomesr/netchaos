@@ -253,7 +253,13 @@ func (n *Network) registerTrace(ordinal uint64, side connSide, rec *traceRecorde
 // See FaultEvent's own godoc for what is and is not recorded — notably,
 // Network.Reset produces no event, and a dial that never establishes
 // allocates no pipes to trace at all.
+// WithTrace(false) disables recorder allocation and event retention from
+// construction; Trace then returns no events. WithTrace(true) and the
+// default preserve the complete trace, including fault-free writes.
 func (n *Network) Trace() []FaultEvent {
+	if !n.traceEnabled {
+		return nil
+	}
 	n.traceMu.Lock()
 	defer n.traceMu.Unlock()
 

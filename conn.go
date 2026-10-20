@@ -87,6 +87,10 @@ func newConnPairWithBound(clientAddr, serverAddr *addr, ordinal uint64, network 
 // used by Network.DialContext to derive each pipe's fault streams (M0-4)
 // from the Network's own configured seed instead of the default.
 func newConnPairWithSeed(clientAddr, serverAddr *addr, ordinal uint64, network string, bound int, seed int64) (client, server *conn) {
+	return newConnPairWithSeedAndTrace(clientAddr, serverAddr, ordinal, network, bound, seed, true)
+}
+
+func newConnPairWithSeedAndTrace(clientAddr, serverAddr *addr, ordinal uint64, network string, bound int, seed int64, traceEnabled bool) (client, server *conn) {
 	clientToServer := newPipe(bound)
 	serverToClient := newPipe(bound)
 
@@ -94,13 +98,17 @@ func newConnPairWithSeed(clientAddr, serverAddr *addr, ordinal uint64, network s
 	clientToServer.latency = deriveStream(seed, ordinal, sideDialer, kindLatency)
 	clientToServer.duplicate = deriveStream(seed, ordinal, sideDialer, kindDuplicate)
 	clientToServer.corrupt = deriveStream(seed, ordinal, sideDialer, kindCorrupt)
-	clientToServer.trace = &traceRecorder{}
+	if traceEnabled {
+		clientToServer.trace = &traceRecorder{}
+	}
 
 	serverToClient.loss = deriveStream(seed, ordinal, sideAcceptor, kindLoss)
 	serverToClient.latency = deriveStream(seed, ordinal, sideAcceptor, kindLatency)
 	serverToClient.duplicate = deriveStream(seed, ordinal, sideAcceptor, kindDuplicate)
 	serverToClient.corrupt = deriveStream(seed, ordinal, sideAcceptor, kindCorrupt)
-	serverToClient.trace = &traceRecorder{}
+	if traceEnabled {
+		serverToClient.trace = &traceRecorder{}
+	}
 
 	client = &conn{
 		local:     clientAddr,
