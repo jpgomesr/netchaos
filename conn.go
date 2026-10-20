@@ -265,8 +265,8 @@ func (c *conn) Close() error {
 	return nil
 }
 
-func (c *conn) LocalAddr() net.Addr  { return c.local }
-func (c *conn) RemoteAddr() net.Addr { return c.remote }
+func (c *conn) LocalAddr() net.Addr  { return c.local.tcpAddr() }
+func (c *conn) RemoteAddr() net.Addr { return c.remote.tcpAddr() }
 
 // SetDeadline sets both the read and write deadlines. SetReadDeadline and
 // SetWriteDeadline set only their own direction. A zero time.Time clears a

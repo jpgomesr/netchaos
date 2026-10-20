@@ -152,7 +152,7 @@ func (l *listener) Close() error {
 }
 
 // Addr implements net.Listener.
-func (l *listener) Addr() net.Addr { return l.addr }
+func (l *listener) Addr() net.Addr { return l.addr.tcpAddr() }
 
 func (l *listener) opError(op string, err error) error {
 	return &net.OpError{Op: op, Net: l.addr.network, Addr: l.addr, Err: err}

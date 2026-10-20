@@ -122,8 +122,8 @@ func TestSplitHostPortOnRemoteAddr(t *testing.T) {
 		addr     net.Addr
 		wantHost string
 	}{
-		{"client.RemoteAddr", client.RemoteAddr(), "server"},
-		{"server.LocalAddr", server.LocalAddr(), "server"},
+		{"client.RemoteAddr", client.RemoteAddr(), "198.18.0.0"},
+		{"server.LocalAddr", server.LocalAddr(), "198.18.0.0"},
 	} {
 		host, port, err := net.SplitHostPort(tt.addr.String())
 		if err != nil {
@@ -154,7 +154,7 @@ func TestListenHonoursExplicitPort(t *testing.T) {
 	}
 	defer func() { _ = l.Close() }()
 
-	if got, want := l.Addr().String(), "server:8080"; got != want {
+	if got, want := l.Addr().String(), "198.18.0.0:8080"; got != want {
 		t.Fatalf("Addr() = %q, want %q", got, want)
 	}
 }

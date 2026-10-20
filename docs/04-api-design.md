@@ -257,8 +257,8 @@ The intent is for `Network.Dial` (and `Network.DialContext`) to be usable anywhe
 
 Decided by [M6-10](tasks/m6-review-findings.md#m6-10--decide-whether-addresses-should-have-a-hostport-shape) and implemented in [M7-1](tasks/m7-v0.2.0-implementation.md#m7-1--addresses-gain-a-synthesized-hostport-shape). **A netchaos address has a host and a port, and the two halves do different jobs:**
 
-- **The host half is the identity.** It is what `Dial` and `Listen` resolve against, what `Partition` and `Heal` name, and the only half the internal `peerName` returns.
-- **The port half is presentation.** It exists so a netchaos address is shaped like a real one — `net.SplitHostPort(conn.RemoteAddr().String())` succeeds, and code under test that logs, labels a metric, or allow-lists on the host half takes the same path it takes against the real stack. **Nothing in netchaos resolves, matches, or partitions on a port.**
+- **The host half names a peer.** Names such as `api.internal` resolve only in their `Network`, without system DNS. A named peer receives a stable synthetic IP in each used family; its name and returned IP address are aliases for dialing and partition controls. Literal IPs retain their values. A later literal bind cannot claim an IP already assigned synthetically.
+- **The port half is currently presentation.** `net.SplitHostPort(conn.RemoteAddr().String())` succeeds. Listener resolution by port is tracked separately in #144; the current code still allows one listener per peer. Partition, Heal and Reset identify the peer across ports.
 
 Before this, the address *was* the peer name verbatim, so `RemoteAddr().String()` returned `"server"` and `SplitHostPort` failed against netchaos where it worked against `net`. That cost was paid by code the adopter did not want to change, which is the specific friction [01 — Vision](01-vision.md) says netchaos exists to remove.
 
@@ -266,15 +266,15 @@ What the split buys, concretely, is that addresses could gain structure without 
 
 | Written | Peer identity | `Addr().String()` |
 |---|---|---|
-| `Listen("tcp", "server")` | `server` | `server:8000` (synthesized) |
-| `Listen("tcp", "server:0")` | `server` | `server:8001` (synthesized — the `:0` form) |
-| `Listen("tcp", "server:8080")` | `server` | `server:8080` (honoured) |
-| `Listen("tcp", ":0")` | `wildcard-0` (synthesized) | `wildcard-0:8002` |
-| `Listen("tcp", ":8080")` | `wildcard-1` (synthesized) | `wildcard-1:8080` (port honoured) |
-| `Dial("tcp", "server:8080")` | dials peer `server` | local `ephemeral-0:32768` |
+| `Listen("tcp", "server")` | `server` | synthetic IPv4 and synthesized port |
+| `Listen("tcp6", "server:0")` | `server` | synthetic IPv6 and synthesized port |
+| `Listen("tcp", "server:8080")` | `server` | synthetic IPv4 at port 8080 |
+| `Listen("tcp", ":0")` | `wildcard-0` (synthesized) | synthetic IPv4 and synthesized port |
+| `Listen("tcp", ":8080")` | `wildcard-1` (synthesized) | synthetic IPv4 at port 8080 |
+| `Dial("tcp", "server:8080")` | dials peer `server` | synthetic local IP at ephemeral port |
 | `Dial("tcp", "")` | rejected: `*net.AddrError` | — |
 
-So `Partition("server")` reaches a connection dialed to `"server:8080"`, and every `Partition` call written before addresses had ports keeps working. Two listeners whose addresses name the same host collide regardless of port — one peer, one listener — and a malformed address is rejected with a `*net.AddrError`, which is what `net.Listen` and `net.Dial` produce for the same input.
+The returned listener and connection addresses are `*net.TCPAddr` values. Their `Network()` is `"tcp"`, even when the call used `tcp4` or `tcp6`. `Addr().String()` changes from name:port to IP:port; names cannot be recovered from that string alone. `Partition("server", "client")` and the same call using either peer's returned IP identify the same pair. Two listeners whose addresses name the same host still collide regardless of port until #144. A malformed address is rejected with a `*net.AddrError`.
 
 **An address with no host at all (`":0"`, `":8080"`, `""`) names no peer** ([issue #73](https://github.com/jpgomesr/netchaos/issues/73)). `Listen` and `Dial` diverge on it deliberately, and each says why at its own call site:
 
@@ -405,9 +405,9 @@ type FaultEvent struct {
 
 **Pre-v1 decision, not yet implemented (NC-19 in [#115](https://github.com/jpgomesr/netchaos/issues/115), [godoc and test #148](https://github.com/jpgomesr/netchaos/issues/148)).** Keep the three duration fields as they are: `Delay` is the latency draw, and `Serialization + Effective` is the total delay from `Write` to delivery for a delivered unit. No redundant `Total` field is added. `FaultEvent` is promised to remain comparable; future fields must therefore also be comparable. Pin that promise with a compile-time comparison of two `FaultEvent` values.
 
-## Pre-v1 address and error decisions (pending implementation)
+## Pre-v1 address and error decisions
 
-The following contracts resolve NC-16, NC-17 and NC-18 in [#115](https://github.com/jpgomesr/netchaos/issues/115), with separate implementation work for [addresses #143](https://github.com/jpgomesr/netchaos/issues/143), [ports #144](https://github.com/jpgomesr/netchaos/issues/144) and [errnos #147](https://github.com/jpgomesr/netchaos/issues/147). They are **decisions for a breaking pre-v1 change, not a description of the current release or current code**. Until that work lands, the current host-only listener map, custom `addr` type and sentinel matching described above remain the shipped behaviour.
+The following contracts resolve NC-16, NC-17 and NC-18 in [#115](https://github.com/jpgomesr/netchaos/issues/115), with separate implementation work for [addresses #143](https://github.com/jpgomesr/netchaos/issues/143), [ports #144](https://github.com/jpgomesr/netchaos/issues/144) and [errnos #147](https://github.com/jpgomesr/netchaos/issues/147). Addresses are implemented by #143; listener-by-port resolution and errno matching remain pending. The tagged release still has the older address behaviour.
 
 - **Names and IPs.** `Dial`, `Listen`, `WithPeerName`, `DialerFor`, `WithPartition`, `Partition`, `Heal` and `Reset` continue accepting peer names such as `api.internal`, as well as literal IPv4/IPv6 addresses. A `Network` resolves names only inside its own topology; it never queries system DNS. Each name gets a stable synthetic IP for each applicable address family during that `Network`'s lifetime. The name and its assigned IP identify the same peer: `Dial(listener.Addr().String())` and `Partition` using either representation reach the same connections. Synthetic allocation skips literal IPs already registered; a later literal IP that conflicts with an allocated synthetic IP is rejected instead of silently identifying another peer.
 - **Returned addresses.** TCP listener and connection addresses become `*net.TCPAddr` with parseable IP:port strings. Their `Network()` reports `"tcp"`, as Go's `*net.TCPAddr` does. `Addr().String()` for a named peer changes from name:port to synthetic-IP:port; this is explicitly a breaking change. Peer names stay usable as inputs and as topology identities, but cannot be recovered from `*net.TCPAddr.String()` alone.
