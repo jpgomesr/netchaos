@@ -223,7 +223,7 @@ func TestBacklogFullOrdinalAccounting(t *testing.T) {
 			"(the failed dial must not consume one, or every later connection draws from a shifted RNG stream)", got, want)
 	}
 	// The same fact, in the form a user can actually see.
-	if got, want := c.LocalAddr().String(), (&addr{peer: ephemeralPeerName(listenerBacklog), port: ephemeralPort(listenerBacklog)}).String(); got != want {
+	if got, want := c.LocalAddr().(*net.TCPAddr).Port, ephemeralPort(listenerBacklog); got != want {
 		t.Errorf("LocalAddr() after a dial that failed with ErrBacklogFull = %q, want %q", got, want)
 	}
 }

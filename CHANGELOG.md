@@ -9,7 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Decisions pending implementation
 
-- **Pre-v1 contract review (#115):** decided to return `*net.TCPAddr` with synthetic IPs for named peers and to resolve listeners by peer and port. This will change `Addr().String()` from name:port to IP:port and change `Dial`/`Listen` outcomes for wrong or ambiguous ports. It is a **breaking change**, planned before `v1.0.0`; the current release and code still use the documented host-only listener model. Names such as `api.internal` will remain valid inputs and will resolve only within their `Network`, without system DNS. Separate work will add `WithTrace(false)`, errno matching and a remote-close `EPIPE`, and document `FaultEvent` comparability. See [docs/04](docs/04-api-design.md#pre-v1-address-and-error-decisions-pending-implementation).
+- **Pre-v1 contract review (#115):** listener-by-port resolution, `WithTrace(false)`, errno matching, remote-close `EPIPE` and `FaultEvent` comparability remain separate work. See [docs/04](docs/04-api-design.md#pre-v1-address-and-error-decisions).
+
+### Added
+
+- **Names now resolve to stable, Network-local synthetic IPs** (#143). Names such as `api.internal` remain valid without system DNS; a returned IP aliases the same peer for Dial and partition controls. Literal IPs retain their values and cannot claim an already assigned synthetic address.
+
+### Breaking changes
+
+- **Listener and connection addresses are now `*net.TCPAddr`** (#143). `Addr().String()` changes from name:port to IP:port and `Network()` is `"tcp"` for `tcp`, `tcp4` and `tcp6`. Tests asserting literal address strings or type-asserting the previous private address representation must migrate. Names remain valid inputs but cannot be recovered from the returned IP alone.
 
 ### Fixed
 

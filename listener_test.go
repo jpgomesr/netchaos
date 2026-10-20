@@ -20,7 +20,7 @@ func TestListenRegistersAddr(t *testing.T) {
 	if err != nil {
 		t.Fatalf("net.SplitHostPort(%q): %v", l.Addr(), err)
 	}
-	if got, want := host, "server"; got != want {
+	if got, want := host, "198.18.0.0"; got != want {
 		t.Fatalf("host of Addr() = %q, want %q", got, want)
 	}
 	if port == "" || port == "0" {

@@ -50,9 +50,10 @@ package netchaos
 // peerA and peerB must be non-empty and distinct, the same requirement
 // WithPartition/Partition/Heal already enforce; Reset panics otherwise,
 // naming Reset and the offending value (M9-1, issue #83).
+// A returned TCP address's IP aliases the peer name across all ports.
 func (n *Network) Reset(peerA, peerB string) {
 	validatePartitionPair("Reset", partitionPair{peerA, peerB})
-	k := newPairKey(peerName(peerA), peerName(peerB))
+	k := newPairKey(n.canonicalPeer(peerName(peerA)), n.canonicalPeer(peerName(peerB)))
 
 	n.resetMu.Lock()
 	targets := n.resetTargets[k]

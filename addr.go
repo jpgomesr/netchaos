@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 )
@@ -30,7 +31,7 @@ const (
 	maxPort = 65535
 )
 
-// addr identifies a simulated peer within a Network.
+// addr keeps a Network's peer identity alongside its returned TCP address.
 //
 // An address has two halves and they do different jobs. The host half is
 // the identity: it is what Dial and Listen resolve against, what
@@ -39,7 +40,8 @@ const (
 // address is shaped like a real one, and so code under test can call
 // net.SplitHostPort on RemoteAddr().String() and take the same path it
 // takes against the real stack (M7-1, issue #49). Nothing in netchaos
-// resolves, matches, or partitions on a port.
+// resolves, matches, or partitions on a port. Public addresses are
+// *net.TCPAddr values built from the IP allocated for this peer.
 //
 // That split is why "server" and "server:8080" name the same peer:
 // Partition("server") reaches a connection dialed to "server:8080", which is
@@ -71,6 +73,7 @@ type addr struct {
 	network string // "tcp", "tcp4", or "tcp6", stored verbatim
 	peer    string // the host half: the peer's identity
 	port    int    // the port half: presentation only
+	ip      net.IP // assigned within the owning Network; nil only in internal test addresses
 }
 
 // Network returns the network name the address was created with.
@@ -79,7 +82,26 @@ func (a *addr) Network() string { return a.network }
 // String returns the address in host:port form. It is stable, parses with
 // net.SplitHostPort, and is intended to be useful verbatim in test failure
 // output.
-func (a *addr) String() string { return net.JoinHostPort(a.peer, strconv.Itoa(a.port)) }
+func (a *addr) String() string {
+	if a.ip != nil {
+		return (&net.TCPAddr{IP: a.ip, Port: a.port}).String()
+	}
+	return net.JoinHostPort(a.peer, strconv.Itoa(a.port))
+}
+
+func (a *addr) tcpAddr() *net.TCPAddr {
+	return &net.TCPAddr{IP: append(net.IP(nil), a.ip...), Port: a.port}
+}
+
+// parseLiteralIP accepts only an IP literal. Names never leave this Network
+// for system DNS resolution.
+func parseLiteralIP(host string) (netip.Addr, bool) {
+	ip, err := netip.ParseAddr(host)
+	if err != nil {
+		return netip.Addr{}, false
+	}
+	return ip.Unmap(), true
+}
 
 // splitAddr takes a dial/listen address string apart into the peer it names
 // and, when the caller wrote one, the port it asked for.
@@ -99,6 +121,9 @@ func (a *addr) String() string { return net.JoinHostPort(a.peer, strconv.Itoa(a.
 // is introduced for it: the standard library already has the right error
 // here, and adding one would grow the exported surface for nothing.
 func splitAddr(s string) (host string, port int, explicit bool, err error) {
+	if _, literal := parseLiteralIP(s); literal {
+		return s, 0, false, nil
+	}
 	if !strings.Contains(s, ":") {
 		return s, 0, false, nil
 	}
@@ -257,6 +282,8 @@ type peerNameCtxKey struct{}
 //
 // The name is a peer identity, not an address: a port written into it is
 // stripped, exactly as it is on the addresses passed to Dial and Listen.
+// Names and literal IPs are accepted. A returned synthetic IP names the
+// same peer as the name that received it, within that Network only.
 //
 // Use this when the dial needs a context anyway — to bound how long it waits
 // on a partition, for instance. Network.DialerFor is the same capability for

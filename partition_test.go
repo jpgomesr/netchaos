@@ -495,7 +495,7 @@ func TestDialerForIsPartitionTargetable(t *testing.T) {
 		server := <-accepted
 		defer func() { _ = server.Close() }()
 
-		if got, want := peerName(client.LocalAddr().String()), "client"; got != want {
+		if got, want := n.canonicalPeer(peerName(client.LocalAddr().String())), "client"; got != want {
 			t.Fatalf("dialer identity = %q, want %q", got, want)
 		}
 

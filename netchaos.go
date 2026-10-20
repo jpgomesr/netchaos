@@ -23,7 +23,7 @@ import (
 // the window is bounded because no lock is ever held across a blocking
 // operation.
 //
-// traces (trace.go, M7-10) is the one resource that IS Network-scoped
+// traces (trace.go, M7-10) is one resource that IS Network-scoped
 // rather than conn-scoped, growing for as long as n keeps dialing: unlike
 // resetTargets, an entry is deliberately never pruned when its conn
 // closes, since Network.Trace exists to be read after the connection that
@@ -60,10 +60,14 @@ type Network struct {
 	mu sync.Mutex
 	// listeners is keyed by peerName(addr) for a normally-named listener, or
 	// by the synthesized wildcardPeerName for one whose address named no
-	// host (issue #73) — either way, the key is the peer's identity, not
+	// host (issue #73) — either way, the key is the peer's canonical identity, not
 	// necessarily the string originally passed to Listen.
 	listeners   map[string]*listener
 	nextOrdinal uint64
+	ipOwners    map[string]string
+	peerIPs     map[string]map[int]net.IP
+	nextIPv4    uint32
+	nextIPv6    uint64
 
 	// nextListenPort is the port the next listener that named none will be
 	// given (M7-1). It advances in Listen order, which the determinism
@@ -159,13 +163,15 @@ func NewNetwork(opts ...Option) *Network {
 		partitions:      make(map[pairKey]struct{}, len(cfg.staticPartitions)),
 		partNotify:      make(chan struct{}),
 		listeners:       make(map[string]*listener),
+		ipOwners:        make(map[string]string),
+		peerIPs:         make(map[string]map[int]net.IP),
 		nextListenPort:  listenPortBase,
 		pipeBound:       pipeBound,
 		listenerBacklog: backlog,
 		resetTargets:    make(map[pairKey][]*conn),
 	}
 	for _, p := range cfg.staticPartitions {
-		n.partitions[newPairKey(peerName(p.peerA), peerName(p.peerB))] = struct{}{}
+		n.partitions[newPairKey(n.canonicalPeer(peerName(p.peerA)), n.canonicalPeer(peerName(p.peerB)))] = struct{}{}
 	}
 	return n
 }
@@ -202,7 +208,9 @@ func NewNetwork(opts ...Option) *Network {
 // what Partition, Heal and Reset target — is the host half of the returned
 // Listener's Addr(), never the string originally passed to Listen (which
 // named no host, and so names no peer at all). Read it back with
-// net.SplitHostPort(l.Addr().String()) before calling Partition.
+// net.SplitHostPort(l.Addr().String()) before calling Partition. Returned
+// addresses are *net.TCPAddr values with a Network-local synthetic IP for
+// names; the IP and original name resolve to the same peer.
 func (n *Network) Listen(network, laddr string) (net.Listener, error) {
 	if err := validateNetwork(network); err != nil {
 		return nil, n.listenOpError(network, laddr, err)
@@ -219,8 +227,18 @@ func (n *Network) Listen(network, laddr string) (net.Listener, error) {
 		peer = wildcardPeerName(n.nextWildcard)
 		n.nextWildcard++
 	}
+	if literal, ok := parseLiteralIP(peer); ok {
+		if owner, exists := n.ipOwners[literal.String()]; exists && owner != literal.String() {
+			return nil, n.listenOpError(network, laddr, ErrAddressInUse)
+		}
+	}
+	peer = n.canonicalPeerLocked(peer)
 	if _, ok := n.listeners[peer]; ok {
 		return nil, n.listenOpError(network, laddr, ErrAddressInUse)
+	}
+	ip, err := n.peerIPLocked(peer, addressFamily(network, peer))
+	if err != nil {
+		return nil, n.listenOpError(network, laddr, err)
 	}
 	if !explicit {
 		port = n.nextListenPort
@@ -238,7 +256,7 @@ func (n *Network) Listen(network, laddr string) (net.Listener, error) {
 
 	l := &listener{
 		n:        n,
-		addr:     &addr{network: network, peer: peer, port: port},
+		addr:     &addr{network: network, peer: peer, port: port, ip: ip},
 		incoming: make(chan *conn, n.listenerBacklog),
 		closedCh: make(chan struct{}),
 	}
@@ -306,6 +324,8 @@ func WithDialTimeout(d time.Duration) DialerOption {
 // DialerFor returns a dial function that names itself as name, so the
 // connections it creates are targetable by Network.Partition and
 // Network.Heal.
+// name may be a peer name or literal IP; a returned synthetic IP aliases
+// its assigned name within this Network.
 //
 // It exists because Dial cannot be. A dialer's identity travels on a
 // context.Context (see WithPeerName), and Dial's net.Dial-shaped signature
@@ -388,6 +408,8 @@ func (n *Network) DialerFor(name string, opts ...DialerOption) func(network, add
 // wildcard bind, there is no localhost in a netchaos topology for a
 // hostless dial to mean, so resolving one to some peer would always be a
 // guess (issue #73).
+// Named hosts resolve only inside this Network, without system DNS. A
+// returned *net.TCPAddr IP can be dialed as an alias for its peer name.
 func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (net.Conn, error) {
 	// Checked once, up front, rather than folded into the enqueue select
 	// below: with a ready default case present, Go picks pseudo-randomly
@@ -409,6 +431,7 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 	if peer == "" {
 		return nil, n.dialOpError(network, dialAddr, &net.AddrError{Err: "missing host", Addr: dialAddr})
 	}
+	peer = n.canonicalPeer(peer)
 
 	localName, named := peerNameFromContext(ctx)
 	if named {
@@ -416,7 +439,7 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 		// the same strings for both. Strip a port here so
 		// WithPeerName(ctx, "client:1234") targets the same peer
 		// Partition("client") does.
-		localName = peerName(localName)
+		localName = n.canonicalPeer(peerName(localName))
 	}
 	if named && localName != "" {
 		if err := n.waitUnpartitioned(ctx, newPairKey(localName, peer)); err != nil {
@@ -426,6 +449,9 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 
 	n.mu.Lock()
 	l, ok := n.listeners[peer]
+	if ok && network != "tcp" && addressFamily(network, peer) != addressFamily(l.addr.network, l.addr.peer) {
+		ok = false
+	}
 	// Unlocked here, and deliberately not deferred: l.reserve below takes
 	// l.mu, while listener.Close takes l.mu and then n.mu through
 	// n.deregister. Holding n.mu across a call that acquires l.mu is the one
@@ -455,12 +481,18 @@ func (n *Network) DialContext(ctx context.Context, network, dialAddr string) (ne
 	if !named || localName == "" {
 		localName = ephemeralPeerName(ordinal)
 	}
+	n.mu.Lock()
+	localIP, ipErr := n.peerIPLocked(localName, addressFamily(l.addr.network, l.addr.peer))
+	n.mu.Unlock()
+	if ipErr != nil {
+		return nil, n.dialOpError(network, dialAddr, ipErr)
+	}
 
 	// The remote address takes the listener's port rather than re-deriving
 	// one: the two ends must agree on what the server's address is, and the
 	// listener is the only thing that knows which port it was given.
-	local := &addr{network: network, peer: localName, port: ephemeralPort(ordinal)}
-	remote := &addr{network: network, peer: peer, port: l.addr.port}
+	local := &addr{network: network, peer: localName, port: ephemeralPort(ordinal), ip: localIP}
+	remote := &addr{network: network, peer: peer, port: l.addr.port, ip: l.addr.ip}
 
 	client, server := newConnPairWithSeed(local, remote, ordinal, network, n.pipeBound, n.seed)
 

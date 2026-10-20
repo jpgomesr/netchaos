@@ -26,6 +26,7 @@ type partitionPair struct{ peerA, peerB string }
 //
 // peerA and peerB must be non-empty and distinct; NewNetwork panics
 // otherwise, naming WithPartition and the offending value.
+// Names and literal IPs identify peers within the constructed Network.
 //
 // Partition is evaluated first in fault composition: a partitioned unit is
 // discarded before packet loss or latency is evaluated, and consumes no
@@ -87,9 +88,10 @@ func validatePartitionPair(caller string, p partitionPair) {
 // peerA and peerB must be non-empty and distinct, the same requirement
 // WithPartition already enforces; Partition panics otherwise, naming
 // Partition and the offending value (M9-1, issue #83).
+// A returned TCP address's IP aliases the peer name across all ports.
 func (n *Network) Partition(peerA, peerB string) {
 	validatePartitionPair("Partition", partitionPair{peerA, peerB})
-	k := newPairKey(peerName(peerA), peerName(peerB))
+	k := newPairKey(n.canonicalPeer(peerName(peerA)), n.canonicalPeer(peerName(peerB)))
 
 	n.partMu.Lock()
 	defer n.partMu.Unlock()
@@ -114,9 +116,10 @@ func (n *Network) Partition(peerA, peerB string) {
 // peerA and peerB must be non-empty and distinct, the same requirement
 // WithPartition already enforces; Heal panics otherwise, naming Heal and
 // the offending value (M9-1, issue #83).
+// A returned TCP address's IP aliases the peer name across all ports.
 func (n *Network) Heal(peerA, peerB string) {
 	validatePartitionPair("Heal", partitionPair{peerA, peerB})
-	k := newPairKey(peerName(peerA), peerName(peerB))
+	k := newPairKey(n.canonicalPeer(peerName(peerA)), n.canonicalPeer(peerName(peerB)))
 
 	n.partMu.Lock()
 	defer n.partMu.Unlock()
