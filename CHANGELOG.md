@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Decisions pending implementation
 
-- **Pre-v1 contract review (#115):** `WithTrace(false)`, remote-close `EPIPE` and `FaultEvent` comparability remain separate work. See [docs/04](docs/04-api-design.md#pre-v1-address-and-error-decisions).
+- **Pre-v1 contract review (#115):** `WithTrace(false)` and `FaultEvent` comparability remain separate work. See [docs/04](docs/04-api-design.md#pre-v1-address-and-error-decisions).
 
 ### Added
 
@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Write after remote Close now matches `EPIPE`** (#145). It remains wrapped in `*net.OpError`; a local Close, even after both ends close, still matches `net.ErrClosed`. Blocked writes wake with the same classification. plan9 uses a plain "broken pipe" fallback.
 - **Graceful `Close` now delivers accepted writes before EOF** ([#107](https://github.com/jpgomesr/netchaos/issues/107), planned for `v0.4.0`). Under latency or bandwidth, bytes written just before `Close` reach the peer at their scheduled time; `io.EOF` follows the last byte. A partition holds the close signal until `Heal`, while writes admitted before the partition still arrive. Closing the reading end or calling `Network.Reset` discards pending data. This reverses the M2-2 close contract; tests that expected an immediate EOF after a delayed write need updating.
 - **The library module now has no requirements** (closes #110). `golang.org/x/net` was the module's only dependency and was used only by the `nettest` conformance test; that test now lives in a nested module, `internal/conformance`, so x/net (and its transitive `x/crypto`, `x/sys`, `x/term`, `x/text`) no longer appears in a consumer's module graph, and x/net updates can resume there without raising the library's Go floor. The Go version policy is now written down in [`docs/07` § Go version support](docs/07-contributing.md#go-version-support): the floor stays at Go 1.25. CI sets `GOTOOLCHAIN: local` explicitly so the 1.25 leg keeps catching a raised `go` line, and Dependabot watches the nested module.
 - **CI now runs on macOS and Windows and on a weekly schedule** (part of #117, NC-33). A `test-os` job builds, vets and tests on `macos-latest` and `windows-latest` with stable Go; the cross-build step adds `freebsd/amd64`; and the CI workflow also runs every Monday, so a new Go release or runner-image change that breaks the build surfaces between pushes.
