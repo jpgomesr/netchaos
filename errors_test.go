@@ -37,12 +37,12 @@ func TestErrorSentinels(t *testing.T) {
 			name: "address in use",
 			err: func() error {
 				n := NewNetwork()
-				l, err := n.Listen("tcp", "server")
+				l, err := n.Listen("tcp", "server:8080")
 				if err != nil {
 					return err
 				}
 				defer func() { _ = l.Close() }()
-				_, err = n.Listen("tcp", "server")
+				_, err = n.Listen("tcp", "server:8080")
 				return err
 			}(),
 			want: ErrAddressInUse,
@@ -191,10 +191,10 @@ func TestErrorsAreUniformlyOpError(t *testing.T) {
 		{
 			name: "Listen on an address already in use",
 			call: func(n *Network) error {
-				if _, err := n.Listen("tcp", "taken"); err != nil {
+				if _, err := n.Listen("tcp", "taken:8080"); err != nil {
 					return err
 				}
-				_, err := n.Listen("tcp", "taken")
+				_, err := n.Listen("tcp", "taken:8080")
 				return err
 			},
 			wantOp:  "listen",

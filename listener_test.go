@@ -30,13 +30,13 @@ func TestListenRegistersAddr(t *testing.T) {
 
 func TestListenDuplicateAddr(t *testing.T) {
 	n := NewNetwork()
-	l, err := n.Listen("tcp", "server")
+	l, err := n.Listen("tcp", "server:8080")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = l.Close() }()
 
-	_, err = n.Listen("tcp", "server")
+	_, err = n.Listen("tcp", "server:8080")
 	if !errors.Is(err, ErrAddressInUse) {
 		t.Fatalf("second Listen on the same addr = %v, want errors.Is(ErrAddressInUse)", err)
 	}

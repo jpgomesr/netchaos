@@ -245,7 +245,7 @@ func TestClosedListenerDialOrdinalAccounting(t *testing.T) {
 	}
 
 	n.mu.Lock()
-	n.listeners["server"] = stale.(*listener)
+	n.listeners["server"] = map[int]*listener{stale.(*listener).addr.port: stale.(*listener)}
 	n.mu.Unlock()
 
 	if _, err := n.Dial("tcp", "server"); !errors.Is(err, ErrConnectionRefused) {

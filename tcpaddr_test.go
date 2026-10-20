@@ -33,7 +33,7 @@ func TestTCPAddressesAndNameAliases(t *testing.T) {
 		}
 		_ = c.Close()
 	}
-	if again, err := n.Listen("tcp", "api.internal"); !errors.Is(err, ErrAddressInUse) {
+	if again, err := n.Listen("tcp", "api.internal:8080"); !errors.Is(err, ErrAddressInUse) {
 		if err == nil {
 			_ = again.Close()
 		}

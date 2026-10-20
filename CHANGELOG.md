@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Decisions pending implementation
 
-- **Pre-v1 contract review (#115):** listener-by-port resolution, `WithTrace(false)`, errno matching, remote-close `EPIPE` and `FaultEvent` comparability remain separate work. See [docs/04](docs/04-api-design.md#pre-v1-address-and-error-decisions).
+- **Pre-v1 contract review (#115):** `WithTrace(false)`, errno matching, remote-close `EPIPE` and `FaultEvent` comparability remain separate work. See [docs/04](docs/04-api-design.md#pre-v1-address-and-error-decisions).
 
 ### Added
 
@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking changes
 
+- **Listeners are resolved by peer and port** (#144). Several ports can serve one peer. Explicit-port Dial chooses only that port and refuses a wrong one; a portless Dial is refused when the peer has zero or multiple matching listeners. Port 0 and omitted ports allocate an unused port for that peer. HTTP integrations using an implicit port must listen on that port explicitly.
 - **Listener and connection addresses are now `*net.TCPAddr`** (#143). `Addr().String()` changes from name:port to IP:port and `Network()` is `"tcp"` for `tcp`, `tcp4` and `tcp6`. Tests asserting literal address strings or type-asserting the previous private address representation must migrate. Names remain valid inputs but cannot be recovered from the returned IP alone.
 
 ### Fixed
