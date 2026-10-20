@@ -84,22 +84,22 @@ func TestRetryOnPacketLoss(t *testing.T) {
 
 For a full, standalone project wired up with netchaos — not just an inline snippet — see [jpgomesr/netchaos-example](https://github.com/jpgomesr/netchaos-example).
 
-## Scope for v1 (deliberately minimal)
+## `v0.1.0` foundation (the deliberately minimal v1 core)
 
-To avoid the trap of "framework covering everything" — the same trap that turned a previous project into an unfinishable moving target — v1 is scoped tightly:
+To avoid the trap of "framework covering everything" — the same trap that turned a previous project into an unfinishable moving target — v1 is scoped tightly. The first release, `v0.1.0`, shipped this core:
 
-- [x] Simulated `net.Conn` / `net.Listener` (TCP-shaped) with pluggable fault injection
-- [x] Latency injection (fixed and ranged)
-- [x] Packet loss (probabilistic, seeded/deterministic)
-- [x] Network partition (drop all traffic between two simulated peers)
-- [x] Seeded randomness for reproducible failure scenarios
-- [x] Integration with `testing/synctest` for virtual time
+- Simulated TCP-shaped `net.Conn` / `net.Listener` through `Network`, `NewNetwork`, `Dial` / `DialContext`, and `Listen`, with deadlines and named peers (`WithPeerName`).
+- Latency injection (`WithLatency`), fixed or ranged, and probabilistic packet loss (`WithPacketLoss`).
+- Network partition (`WithPartition`, `Network.Partition` / `Heal`), which blocks dials and drops traffic between named peers until healed.
+- Seeded randomness (`WithSeed`) for reproducible fault scenarios, with partition, loss, and latency evaluated in a fixed order.
+- Integration with `testing/synctest` for virtual time.
+- Sentinel errors `ErrUnsupportedNetwork`, `ErrConnectionRefused`, `ErrAddressInUse`, and `ErrBacklogFull`, matchable with `errors.Is`.
 
 Explicitly out of scope for v1: reordering, disk fault injection, full syscall simulation, UDP support, protocol-level fault injection above the connection layer, and per-peer-pair scoping of latency/loss. Reordering and per-pair scoping are genuinely open for post-v1 consideration; the rest are excluded on a design principle, not sequencing — see [docs/06 — Scope & Roadmap](docs/06-scope-and-roadmap.md#explicitly-out-of-scope-for-v1) for which is which.
 
 ## `v0.2.0` additions
 
-Everything above shipped as `v0.1.0`. `v0.2.0` adds, on top of it:
+The `v0.2.0` release builds on the `v0.1.0` foundation above and adds:
 
 - **Bandwidth throttling, packet duplication, and data corruption** — three further fault kinds, composed into the same fixed evaluation order as latency and packet loss.
 - **Mid-stream connection reset** (`Network.Reset`) — an abrupt `ECONNRESET` on an already-established connection, closing the one gap `Partition`'s silent-black-hole model deliberately leaves.
