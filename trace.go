@@ -107,6 +107,8 @@ var (
 // Network.Trace (M7-10, issue #51). It is faultEvent plus the (Ordinal,
 // Side) identity needed to attribute an event to a connection direction
 // once it has left traceRecorder's per-direction scope.
+// FaultEvent remains comparable: callers may compare two values with ==
+// or use one as a map key. Future fields must preserve this property.
 //
 // Ordinal and Side identify the connection direction this event belongs
 // to: Ordinal is the connection's dial-order ordinal (the determinism
@@ -136,8 +138,8 @@ var (
 //   - Effective is the delay actually applied, measured from when
 //     serialization finished (not from when the unit was written), after
 //     any clamping against an already-pending unit ahead of it (M2-2). A
-//     unit's total delay from Write to delivery is Serialization +
-//     Effective.
+//     delivered unit's total Write-to-delivery delay is Serialization +
+//     Effective. Delay remains the latency draw alone.
 //
 // On a Dropped event, Delay/Serialization/Effective describe what was
 // drawn or computed before loss discarded the unit, not a delivery that

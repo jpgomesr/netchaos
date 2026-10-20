@@ -10,6 +10,34 @@ import (
 	"time"
 )
 
+// This instantiation stops compiling if FaultEvent gains a noncomparable field.
+func requireComparable[T comparable]() {}
+
+var _ = requireComparable[FaultEvent]
+
+func TestFaultEventDurationsSumToDeliveryDelay(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		n := NewNetwork(WithBandwidth(1000), WithLatency(10*time.Millisecond, 10*time.Millisecond))
+		client, server := dialPair(t, n)
+		start := time.Now()
+		if _, err := client.Write([]byte("x")); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := server.Read(make([]byte, 1)); err != nil {
+			t.Fatal(err)
+		}
+		got := time.Since(start)
+		events := n.Trace()
+		if len(events) != 1 {
+			t.Fatalf("Trace() has %d events, want 1", len(events))
+		}
+		e := events[0]
+		if e.Dropped || got != e.Serialization+e.Effective || e.Delay != 10*time.Millisecond {
+			t.Fatalf("delivery took %v; event = %+v; want Serialization + Effective and 10ms latency draw", got, e)
+		}
+	})
+}
+
 // TestNetworkTraceReportsDroppedWrites is #51's own use case: a user
 // outside the package writes a test exercising packet loss and asserts an
 // exact drop count, which was impossible before this task -- only the

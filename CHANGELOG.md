@@ -7,13 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Decisions pending implementation
-
-- **Pre-v1 contract review (#115):** `FaultEvent` comparability remains separate work. See [docs/04](docs/04-api-design.md#pre-v1-address-and-error-decisions).
-
 ### Added
 
 - **`WithTrace(enabled bool)` controls retained fault history** (#146). Recording remains on by default; `WithTrace(false)` allocates no recorders and retains no events even over a million fault-free writes. `Trace()` then returns no events without changing fault outcomes or random draws.
+- **`FaultEvent` remains comparable** (#148). Godoc promises `==` and map-key use, backed by a compile-time assertion. The duration contract now says explicitly that `Serialization + Effective` is a delivered unit's total Write-to-delivery delay; the trace format and fields are unchanged.
 - **Setup-error sentinels also match standard errnos** (#147). `ErrConnectionRefused` and `ErrAddressInUse` keep their names, messages and `errors.Is` identities, while matching `syscall.ECONNREFUSED` and `syscall.EADDRINUSE` on platforms that define them. They remain wrapped in `*net.OpError`; plan9 keeps the sentinel-only fallback.
 - **Names now resolve to stable, Network-local synthetic IPs** (#143). Names such as `api.internal` remain valid without system DNS; a returned IP aliases the same peer for Dial and partition controls. Literal IPs retain their values and cannot claim an already assigned synthetic address.
 
