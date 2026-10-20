@@ -175,11 +175,13 @@ func TestErrorsAreUniformlyOpError(t *testing.T) {
 	cancel()
 
 	tests := []struct {
-		name    string
-		call    func(n *Network) error
-		wantOp  string
-		wantIs  error
-		wantNet string
+		name        string
+		call        func(n *Network) error
+		wantOp      string
+		wantIs      error
+		wantErrno   error
+		rejectErrno error
+		wantNet     string
 	}{
 		{
 			name:    "Listen with an unsupported network",
@@ -197,9 +199,11 @@ func TestErrorsAreUniformlyOpError(t *testing.T) {
 				_, err := n.Listen("tcp", "taken:8080")
 				return err
 			},
-			wantOp:  "listen",
-			wantIs:  ErrAddressInUse,
-			wantNet: "tcp",
+			wantOp:      "listen",
+			wantIs:      ErrAddressInUse,
+			wantErrno:   errAddrInUse,
+			rejectErrno: errConnRefused,
+			wantNet:     "tcp",
 		},
 		{
 			name:    "Dial with an unsupported network",
@@ -209,11 +213,13 @@ func TestErrorsAreUniformlyOpError(t *testing.T) {
 			wantNet: "udp",
 		},
 		{
-			name:    "Dial an address nobody listens on",
-			call:    func(n *Network) error { _, err := n.Dial("tcp", "nobody"); return err },
-			wantOp:  "dial",
-			wantIs:  ErrConnectionRefused,
-			wantNet: "tcp",
+			name:        "Dial an address nobody listens on",
+			call:        func(n *Network) error { _, err := n.Dial("tcp", "nobody"); return err },
+			wantOp:      "dial",
+			wantIs:      ErrConnectionRefused,
+			wantErrno:   errConnRefused,
+			rejectErrno: errAddrInUse,
+			wantNet:     "tcp",
 		},
 		{
 			name: "DialContext with an already-cancelled context",
@@ -249,6 +255,12 @@ func TestErrorsAreUniformlyOpError(t *testing.T) {
 			}
 			if !errors.Is(err, tt.wantIs) {
 				t.Errorf("errors.Is(err, %v) = false; wrapping must not break sentinel matching", tt.wantIs)
+			}
+			if tt.wantErrno != nil && !errors.Is(err, tt.wantErrno) {
+				t.Errorf("errors.Is(err, %v) = false; standard errno must match", tt.wantErrno)
+			}
+			if tt.rejectErrno != nil && errors.Is(err, tt.rejectErrno) {
+				t.Errorf("errors.Is(err, %v) = true; unrelated errno must not match", tt.rejectErrno)
 			}
 		})
 	}

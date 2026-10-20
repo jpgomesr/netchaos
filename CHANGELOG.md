@@ -9,10 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Decisions pending implementation
 
-- **Pre-v1 contract review (#115):** `WithTrace(false)`, errno matching, remote-close `EPIPE` and `FaultEvent` comparability remain separate work. See [docs/04](docs/04-api-design.md#pre-v1-address-and-error-decisions).
+- **Pre-v1 contract review (#115):** `WithTrace(false)`, remote-close `EPIPE` and `FaultEvent` comparability remain separate work. See [docs/04](docs/04-api-design.md#pre-v1-address-and-error-decisions).
 
 ### Added
 
+- **Setup-error sentinels also match standard errnos** (#147). `ErrConnectionRefused` and `ErrAddressInUse` keep their names, messages and `errors.Is` identities, while matching `syscall.ECONNREFUSED` and `syscall.EADDRINUSE` on platforms that define them. They remain wrapped in `*net.OpError`; plan9 keeps the sentinel-only fallback.
 - **Names now resolve to stable, Network-local synthetic IPs** (#143). Names such as `api.internal` remain valid without system DNS; a returned IP aliases the same peer for Dial and partition controls. Literal IPs retain their values and cannot claim an already assigned synthetic address.
 
 ### Breaking changes
