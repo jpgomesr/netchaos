@@ -82,6 +82,9 @@ requirements. No daemon, config file, or network access is needed at test time.
   and an explicit input port selects one of that peer's listeners. Peer
   identity for `Partition`/`Heal`/`Reset` spans all ports. Names resolve
   to stable IP aliases within the `Network`, without system DNS.
+- The simulation has deliberate differences from real TCP. Check the
+  [differences reference](https://github.com/jpgomesr/netchaos/blob/main/docs/05-fault-injection.md#differences-from-a-real-tcp-connection)
+  before using a unit test as evidence of TCP behavior.
 - `Network.Trace() []FaultEvent` exports the retained fault decision log
   across connections — use it to assert an
   exact count ("exactly 3 writes dropped") instead of only the downstream

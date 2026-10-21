@@ -1,6 +1,6 @@
 # Task breakdown — netchaos v1 and beyond
 
-> **Status: M0–M10 are closed; `v0.3.1` is the latest tag and `v0.4.0` is being prepared.** M11 collects CI, test-suite, Go-version-policy and documentation hardening. Its original `v0.3.2` plan was overtaken by separately merged API and behaviour changes; gorelease now suggests `v0.4.0`. M11-13, M11-14 and the close-out are still open. The milestone table below records the earlier work and its links.
+> **Status: M0–M11 are closed; `v0.3.1` is the latest tag and `v0.4.0` is a release candidate.** M11 collected CI, test-suite, Go-version-policy and documentation hardening. Its original `v0.3.2` plan was overtaken by separately merged API and behaviour changes; gorelease suggests `v0.4.0`. Tagging remains the maintainer's call. The milestone table below records the work and its links.
 
 ## What this is
 
@@ -23,7 +23,7 @@
 | [M8 — v1.0.0 readiness](m8-v1-readiness.md) | *(none — post-v1)* | Closed. Four independent bug fixes, two tooling additions, and the `v0.2.0` surface's own `M5-2`-style ergonomics review (`M8-7`) — the review recommended, per [07 — Contributing](../07-contributing.md)'s issue-first rule, rather than deciding; the maintainer's five decisions are recorded in `M8-7`'s "Review outcome". Did not itself schedule the `v1.0.0` tag. |
 | [M9 — v1.0.0 surface additions](m9-v1-surface-additions.md) | *(none — post-v1)* | Closed. Implemented what `M8-7` recommended and the maintainer accepted: `#83`, `#86`, `#78` (partial), `#85` (partial) — one task and one PR per item, following the `M6`→`M7` precedent, plus its own close-out task (`M9-5`) syncing `README.md` and the skill to the `v0.3.0` surface. Did not itself schedule the `v1.0.0` tag. |
 | [M10 — v0.3.1 patch](m10-v0.3.1-patch.md) | *(none — post-v1)* | Closed. The five `v0.3.0` defects that change neither the exported surface nor documented behaviour (`#111`, `#113`, `#112`, `#114`, `#108`), one task and one PR each, plus a close-out. Behaviour changes wait for `v0.4.0`. |
-| [M11 — hardening for v0.4.0](m11-v0.3.2-hardening.md) | *(none — post-v1)* | Open. CI, test-suite, Go-version-policy and docs work: `#127`, `#110`, `#117`, `#118`, and `#116` except NC-13. Originally planned for `v0.3.2`; the next release is `v0.4.0` after separately merged API and behaviour changes. M11-13, M11-14 and the close-out remain. |
+| [M11 — hardening for v0.4.0](m11-v0.3.2-hardening.md) | *(none — post-v1)* | Closed. CI, test-suite, Go-version-policy and docs work: `#127`, `#110`, `#117`, `#118`, and `#116`. Originally planned for `v0.3.2`; the next release is `v0.4.0` after separately merged API and behaviour changes. |
 
 All six checklist lines from [06 — Scope & Roadmap](../06-scope-and-roadmap.md) appear exactly once in the table above; `M5` through `M11` cover no checklist line, since v1's checklist is closed.
 
