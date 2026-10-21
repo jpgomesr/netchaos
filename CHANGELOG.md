@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.4.0] — 2026-10-20
+
+A minor release after `v0.3.1`: the M11 hardening work, the pre-v1 address and error decisions in #115, and the graceful-close fix in #107. Listener lookup by peer and port and TCP address values require consumers that depend on the old address shape or implicit port matching to update their tests. The Go floor remains 1.25, and the library module has no third-party requirements.
+
 ### Added
 
 - **`WithTrace(enabled bool)` controls retained fault history** (#146). Recording remains on by default; `WithTrace(false)` allocates no recorders and retains no events even over a million fault-free writes. `Trace()` then returns no events without changing fault outcomes or random draws.
@@ -445,7 +449,8 @@ to the stricter compatibility expectations a `v1.0.0` tag implies. The API
 is stable but not frozen until `v1.0.0` — see
 [docs/07 — Contributing](docs/07-contributing.md).
 
-[Unreleased]: https://github.com/jpgomesr/netchaos/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/jpgomesr/netchaos/compare/v0.4.0...HEAD
+[v0.4.0]: https://github.com/jpgomesr/netchaos/compare/v0.3.1...v0.4.0
 [v0.3.1]: https://github.com/jpgomesr/netchaos/compare/v0.3.0...v0.3.1
 [v0.3.0]: https://github.com/jpgomesr/netchaos/compare/v0.2.0...v0.3.0
 [v0.2.0]: https://github.com/jpgomesr/netchaos/compare/v0.1.0...v0.2.0

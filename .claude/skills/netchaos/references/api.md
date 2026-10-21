@@ -2,14 +2,14 @@
 
 `import "github.com/jpgomesr/netchaos"` — single flat package, no
 subpackages. Requires Go 1.25+ (uses `testing/synctest`). Add it with
-`go get github.com/jpgomesr/netchaos@v0.3.1` (or the latest tag — check
+`go get github.com/jpgomesr/netchaos@v0.4.0` (or the latest tag — check
 `go list -m -versions github.com/jpgomesr/netchaos` if unsure).
 
 This reference is self-contained: everything needed to use the library
 correctly from an external project/API lives here, without needing the
 netchaos repo's own `docs/` checked out.
 
-## Full surface (v0.3.1)
+## Full surface (v0.4.0)
 
 ```go
 type Network struct{ /* unexported */ }
@@ -27,6 +27,7 @@ func WithDuplication(rate float64) Option
 func WithCorruption(rate float64) Option
 func WithPipeBound(bound int) Option
 func WithListenerBacklog(backlog int) Option
+func WithTrace(enabled bool) Option
 
 func (n *Network) Dial(network, addr string) (net.Conn, error)
 func (n *Network) DialContext(ctx context.Context, network, addr string) (net.Conn, error)
@@ -144,8 +145,8 @@ below. All are **global** except `WithPartition`, which is pair-scoped.
   draws the decision but has no bit to flip. Runtime setter:
   `Network.SetCorruption(rate)`.
 - **`WithPartition(peerA, peerB)`** — marks traffic between two named
-  peers as dropped from construction onward. Static for the `Network`'s
-  lifetime; use `Network.Partition`/`Network.Heal` to change it mid-test.
+  peers as dropped from construction onward until `Network.Heal` removes
+  the pair. Use `Network.Partition`/`Network.Heal` to change it mid-test.
   **Pair-scoped**, not global. Draws **nothing** — partition is
   deterministic by nature, so partitioning one pair can never perturb any
   other connection's fault sequence. `peerA`/`peerB` must be non-empty
@@ -219,15 +220,16 @@ whole, never split.
   keeps its original unbounded-wait behaviour, so no existing call site
   needs to change. Reach for `DialContext` + `WithPeerName` instead if
   the call site can hold a `context.Context` directly.
-- **`Listen(network, addr)`** registers a listener; `Dial`s to `addr` from
-  elsewhere in the same `Network` are delivered to its `Accept`.
+- **`Listen(network, addr)`** registers a listener by peer and port;
+  `Dial`s to that address from the same `Network` reach its `Accept`.
   `addr` may be written with or without a port — see
   [Address shape](#address-shape).
 - Dialing an address nothing has `Listen`ed on returns an error shaped
   like `*net.OpError` wrapping `ErrConnectionRefused` — same failure shape
   code would hit against a real closed port.
-- A full accept backlog returns `ErrBacklogFull`; a second `Listen` on an
-  address already registered (same host, any port) returns `ErrAddressInUse`.
+- A full accept backlog returns `ErrBacklogFull`; a second `Listen` on the
+  same peer and port returns `ErrAddressInUse`. Different ports on one peer
+  can serve different listeners.
 
 **Naming a dialer for partition/reset targeting** — two equivalent ways:
 
@@ -250,29 +252,30 @@ un-targetable. `WithPeerName(ctx, name)` strips a `:port` suffix from
 
 ## Address shape
 
-A netchaos address has a host and a port, and the two do different jobs:
+A dial or listen input has a host and an optional port. Returned listener
+and connection addresses are `*net.TCPAddr` values with `Network() == "tcp"`
+for `tcp`, `tcp4` and `tcp6`:
 
-- **Host = identity.** What `Dial`/`Listen` resolve against and what
-  `Partition`/`Heal`/`Reset` name.
-- **Port = presentation.** Exists so `net.SplitHostPort(conn.RemoteAddr().String())`
-  succeeds, matching a real `net.Conn`. **Nothing resolves, matches, or
-  partitions on a port** — `Partition("server")` reaches a connection
-  dialed to `"server:8080"`.
+- **Host = peer identity.** `Dial`/`Listen` resolve it locally; no system
+  DNS lookup occurs. Names receive stable synthetic IP aliases within the
+  `Network`, and those IPs can be used to dial or target a partition.
+- **Port = listener selection.** An explicit port must match a listener on
+  that peer and port. A portless dial succeeds only when exactly one
+  listener matches that peer. Partition and reset target the peer across
+  all its ports.
 
-| Written | Peer identity | `Addr().String()` |
+| Written | Peer identity | Port |
 |---|---|---|
-| `Listen("tcp", "server")` | `server` | `server:8000` (synthesized) |
-| `Listen("tcp", "server:0")` | `server` | `server:8001` (synthesized, `:0` form) |
-| `Listen("tcp", "server:8080")` | `server` | `server:8080` (honoured) |
-| `Dial("tcp", "server:8080")` | dials peer `server` | local `ephemeral-0:32768` |
+| `Listen("tcp", "server")` | `server` | first available synthesized port, starting at 8000 |
+| `Listen("tcp", "server:0")` | `server` | an unused synthesized port |
+| `Listen("tcp", "server:8080")` | `server` | 8080 |
+| `Dial("tcp", "server:8080")` | `server` | connects only to its listener on 8080 |
 
-Two listeners naming the same host collide regardless of port (one peer,
-one listener). A malformed address returns `*net.AddrError`, matching
-`net.Listen`/`net.Dial`. Ports are synthesized in `Listen`/`Dial` order —
-the same order the determinism contract already fixes — so two goroutines
-racing to `Listen` concurrently get ports in whichever order the scheduler
-picks; that's a pre-existing nondeterminism made newly *visible* (a port
-shows up in `RemoteAddr().String()`, unlike a bare connection ordinal).
+Two listeners on different ports of the same peer can coexist. A malformed
+address returns `*net.AddrError`, matching `net.Listen`/`net.Dial`.
+`Addr().String()` uses the assigned IP and port, so a peer name cannot be
+recovered from the returned address alone. Literal IPs retain their values
+and cannot claim an IP already assigned to another peer.
 
 ## Dynamic partition control
 
@@ -429,8 +432,8 @@ type FaultEvent struct {
 }
 ```
 
-`Trace()` returns **every** fault decision recorded across every
-connection `n` has ever dialed, in `(Ordinal, Side, Seq)` order. This is
+`Trace()` returns **every retained** fault decision across the connections
+`n` has dialed, in `(Ordinal, Side, Seq)` order. This is
 what makes assertions like *"exactly three writes were dropped"* possible
 from outside the package — previously only the downstream consequence (a
 short read) was observable. The returned slice is a copy; mutating it, or
@@ -468,18 +471,27 @@ a later `Trace()` call, never affects the other.
   `Corrupted` also has a zero site, since `Dropped` short-circuits the
   evaluator before that draw. Don't read either field as "byte 0, bit 0
   was flipped" without checking `Size > 0` and `!Dropped` first.
+- **Reproducibility:** `Partitioned`, `Dropped`, `Duplicated`, `Corrupted`,
+  `Delay`, `Size`, `CorruptedByte` and `CorruptedBit` are draw-derived and
+  reproduce with the same seed and ordered calls. `Serialization` and
+  `Effective` depend on elapsed time and reproduce only inside a
+  `testing/synctest` bubble.
 
 **What `Trace()` does NOT cover:**
 - `Network.Reset` — an imperative action, not a per-unit decision. No event.
 - A dial that never established (refused, blocked-then-cancelled, full
   backlog) — no pipes were ever created, so nothing is traced.
 
-**Retention:** a connection's trace stays in `Trace()`'s output for the
-`Network`'s own lifetime, **even after the connection has been closed** —
+**Retention:** by default, a connection's trace stays in `Trace()`'s output
+for the `Network`'s own lifetime, **even after the connection has been closed** —
 the common `defer c.Close()` case. This is unlike `Reset`'s internal
 target registry, which is pruned on `Close`; `Trace()` deliberately isn't,
 because reading a trace after the connection producing it has already
 closed is the ordinary case, not an edge case.
+`WithTrace(false)` disables recorder allocation and retention from
+construction; `Trace()` then returns no events. It does not change fault
+outcomes or random draws. `FaultEvent` values remain comparable with `==`
+and usable as map keys.
 
 ## Determinism contract
 
@@ -554,16 +566,21 @@ place.
 |---|---|---|
 | `ErrUnsupportedNetwork` | `Dial`/`DialContext`/`DialerFor`/`Listen` | `network` arg isn't `"tcp"`/`"tcp4"`/`"tcp6"` |
 | `ErrConnectionRefused` | `Dial`/`DialContext`/`DialerFor` | no `Listen`er registered for `addr` |
-| `ErrAddressInUse` | `Listen` | `addr` already has an open listener (same host, any port) |
+| `ErrAddressInUse` | `Listen` | peer and port already have an open listener |
 | `ErrBacklogFull` | `Dial`/`DialContext`/`DialerFor` | target listener's accept queue is full |
 
 Every error is a `*net.OpError` (uniform shape across `Listen`/`Dial`/
 `DialContext`) — `errors.As` for the wrapper, `errors.Is` for the
-sentinel; don't compare with `==`. Closed-conn/listener use and
+sentinel; don't compare with `==`. `ErrConnectionRefused` also matches
+`syscall.ECONNREFUSED`, and `ErrAddressInUse` matches `syscall.EADDRINUSE`
+where the platform defines them. Closed-conn/listener use and
 deadline-exceeded reuse stdlib errors (`net.ErrClosed`,
 `os.ErrDeadlineExceeded`) rather than netchaos sentinels — check for
 those the same way you would against a real `net.Conn`. A reset
 connection's errors satisfy `errors.Is(err, syscall.ECONNRESET)`.
+Writing after the remote side closes matches `syscall.EPIPE`; a local
+close still matches `net.ErrClosed`. Graceful `Close` delivers writes
+already accepted at their scheduled time before the peer observes EOF.
 
 ## Common mistakes to avoid
 
@@ -602,5 +619,5 @@ connection's errors satisfy `errors.Is(err, syscall.ECONNRESET)`.
   decisions and produce no trace event.
 - Expecting a `WithLatency`/`WithPacketLoss`/`WithBandwidth`/
   `WithDuplication`/`WithCorruption` variant scoped to one peer pair — it
-  doesn't exist as of `v0.3.1`; only `WithPartition` is pair-scoped, and
+  doesn't exist as of `v0.4.0`; only `WithPartition` is pair-scoped, and
   all five other faults are global to the `Network`.

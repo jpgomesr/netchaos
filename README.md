@@ -8,7 +8,7 @@
 [![golangci-lint](https://github.com/jpgomesr/netchaos/actions/workflows/golangci-lint.yml/badge.svg)](https://github.com/jpgomesr/netchaos/actions/workflows/golangci-lint.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> **Status: `v0.3.1` released.** v1's simulated transport and its three core faults are implemented, tested, and documented; `v0.2.0` added bandwidth throttling, packet duplication, data corruption, mid-stream connection reset, live mutation of latency/loss on established connections, and an exported fault trace; `v0.3.0` adds runtime validation on `Partition`/`Heal`/`Reset`, a bounded wait on `DialerFor` via `WithDialTimeout`, payload size and corruption site on `FaultEvent`, and live mutation of duplication and corruption rates; `v0.3.1` is a bug-fix patch on top of it (see below). The API is stable but not frozen until `v1.0.0` — see [docs/07 — Contributing](docs/07-contributing.md). Requires Go 1.25+ (`testing/synctest`).
+> **Status: `v0.4.0` release candidate.** The library implements the six fault stages and mid-stream reset. This release adds optional trace retention, TCP addresses with network-local IPs, listener lookup by peer and port, standard errno matching for setup errors, and delivery of accepted writes before graceful EOF. The API is stable but not frozen until `v1.0.0` — see [docs/07 — Contributing](docs/07-contributing.md). Requires Go 1.25+ (`testing/synctest`); the library module has no third-party requirements.
 
 **Full design documentation:** [`docs/`](docs/README.md)
 
@@ -120,7 +120,7 @@ Everything above shipped as `v0.2.0`. `v0.3.0` adds, on top of it:
 - **`FaultEvent` gains payload size and corruption site** — `Size`, `CorruptedByte`, and `CorruptedBit` let a corruption or duplication failure be diagnosed, or an exact byte reproduced, directly from `Network.Trace()`.
 - **`Network.SetDuplication` and `Network.SetCorruption`** — live mutation of the duplication and corruption rates, the same "already-established connections, not just future dials" semantics `SetLatency`/`SetPacketLoss` already have.
 
-Full detail on each: [`CHANGELOG.md`](CHANGELOG.md) for what shipped and why, [docs/04 — API Design](docs/04-api-design.md) for the exact signatures and semantics. The Claude Code skill at [`.claude/skills/netchaos/`](.claude/skills/netchaos/) is a self-contained reference covering the whole `v0.3.x` surface, usable from any project that adds netchaos as a dependency.
+Full detail on each: [`CHANGELOG.md`](CHANGELOG.md) for what shipped and why, [docs/04 — API Design](docs/04-api-design.md) for the exact signatures and semantics. The Claude Code skill at [`.claude/skills/netchaos/`](.claude/skills/netchaos/) is a self-contained reference covering the whole `v0.4.0` surface, usable from any project that adds netchaos as a dependency.
 
 ## `v0.3.1` fixes
 
@@ -132,12 +132,22 @@ A patch release — no API change, nothing to update in calling code:
 - **The package builds on plan9 again**; CI now cross-builds for plan9, windows, darwin, js/wasm and wasip1.
 - **The skill's dialer guidance is corrected**: a plain, unnamed `Dial` ignores partitions and never blocks — only a named dial (`DialerFor`, `WithPeerName`) waits; only `DialContext` fits `http.Transport.DialContext`, and gRPC's `WithContextDialer` needs a one-line adapter.
 
+## `v0.4.0` changes
+
+- **Addresses are `*net.TCPAddr` values.** Names resolve to stable IP aliases within each `Network`; address strings now show IPs, not peer names.
+- **Listeners are matched by peer and port.** A peer can listen on several ports. An explicit-port dial must match that port; a portless dial needs exactly one matching listener. Tests that relied on the old implicit port matching need to specify the listener's port.
+- **`WithTrace(false)` disables retained fault history** without changing fault decisions. Tracing remains enabled by default; `FaultEvent` remains comparable and `Serialization + Effective` is a delivered unit's total delay.
+- **Graceful `Close` delivers accepted writes before EOF** at their scheduled time. Writes after remote close match `EPIPE`; setup-error sentinels also match standard connection-refused and address-in-use errnos where available.
+- **Hardening:** the Go 1.25 floor is checked in CI, the library has no third-party module requirements, and CI covers more platforms, conformance, vulnerability checks, fuzzing and benchmarks.
+
+See [CHANGELOG.md](CHANGELOG.md) for full detail and migration notes.
+
 ## Installation
 
 Requires **Go 1.25 or later** — `testing/synctest`, which netchaos's virtual-time integration depends on, was introduced in Go 1.25 and cannot be used on an older toolchain.
 
 ```
-go get github.com/jpgomesr/netchaos@v0.3.1
+go get github.com/jpgomesr/netchaos@v0.4.0
 ```
 
 ## Contributing
