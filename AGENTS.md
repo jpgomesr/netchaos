@@ -35,6 +35,7 @@ golangci-lint run # config: .golangci.yml
 ## Git workflow
 
 - Conventional Commits (`type: summary` or `type(scope): summary`), matching existing `git log` history.
+- For an AI-assisted commit, use one `Co-authored-by` trailer naming the AI that actually made the change: `Co-authored-by: Codex <noreply@openai.com>` when working with Codex, or `Co-authored-by: Claude <noreply@anthropic.com>` when working with Claude. Never credit a different AI.
 - Stage files explicitly (`git add <path>`) — never `-A` or `.`.
 - **Never commit or push directly to `main`.** Branch protection requires 1 approving review, blocks force-push, and dismisses stale approvals on new commits — always work on a branch and open a PR.
 - Never use `--no-verify`, and never amend a commit that's already been pushed/reviewed.

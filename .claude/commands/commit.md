@@ -26,13 +26,13 @@ Analyze all staged and unstaged changes in the repository, then propose a set of
 5. **On confirmation**
    - For each proposed commit (in order):
      - Stage only the relevant files explicitly: `git add <file1> <file2> ...`
-     - Commit using a heredoc to preserve formatting, with `Co-Authored-By: Claude <noreply@anthropic.com>` as the only trailer:
+     - Commit using a heredoc to preserve formatting. For Codex-authored commits, use `Co-authored-by: Codex <noreply@openai.com>` as the only trailer; for Claude-authored commits, use `Co-Authored-By: Claude <noreply@anthropic.com>` instead. For example, with Codex:
 
        ```
        git commit -F - <<'EOF'
        docs: add contributing guide
 
-       Co-Authored-By: Claude <noreply@anthropic.com>
+       Co-authored-by: Codex <noreply@openai.com>
        EOF
        ```
 
