@@ -18,12 +18,10 @@ const defaultPipeBound = 64 * 1024
 // every connection n handles, in place of the default (defaultPipeBound, 64
 // KiB). The bound is what decides when a Write blocks on back-pressure: once
 // a direction's buffered-but-unread bytes would exceed it, the next Write
-// blocks until a Read frees enough room (M6-17, #52) — the same mechanism
-// newConnPairWithBound (conn.go) already varied from in-package tests, now
-// reachable from outside the package.
+// blocks until a Read frees enough room.
 //
 // One write is always admitted whole even if it exceeds the bound: a fault
-// unit is a whole Write (M0-3), never split, so a payload larger than the
+// unit is a whole Write, never split, so a payload larger than the
 // bound is accepted only into a direction currently holding no buffered
 // bytes, and that single write's bytes may then sit above the configured
 // bound until read. Nothing else can be admitted alongside it until the

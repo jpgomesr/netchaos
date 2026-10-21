@@ -87,7 +87,7 @@ func validatePartitionPair(caller string, p partitionPair) {
 //
 // peerA and peerB must be non-empty and distinct, the same requirement
 // WithPartition already enforces; Partition panics otherwise, naming
-// Partition and the offending value (M9-1, issue #83).
+// Partition and the offending value.
 // A returned TCP address's IP aliases the peer name across all ports.
 func (n *Network) Partition(peerA, peerB string) {
 	validatePartitionPair("Partition", partitionPair{peerA, peerB})
@@ -115,7 +115,7 @@ func (n *Network) Partition(peerA, peerB string) {
 //
 // peerA and peerB must be non-empty and distinct, the same requirement
 // WithPartition already enforces; Heal panics otherwise, naming Heal and
-// the offending value (M9-1, issue #83).
+// the offending value.
 // A returned TCP address's IP aliases the peer name across all ports.
 func (n *Network) Heal(peerA, peerB string) {
 	validatePartitionPair("Heal", partitionPair{peerA, peerB})

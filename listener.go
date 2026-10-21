@@ -16,7 +16,7 @@ const listenerBacklog = 128
 // WithListenerBacklog sets the accept-queue bound for every listener n
 // creates, in place of the default (listenerBacklog, 128). A Dial that finds
 // a listener's queue already at this bound fails immediately with
-// ErrBacklogFull rather than blocking for room (M6-17, #52) — see
+// ErrBacklogFull rather than blocking for room — see
 // Network.DialContext.
 //
 // backlog must be positive; NewNetwork panics otherwise, naming

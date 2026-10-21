@@ -64,17 +64,10 @@ func (r *traceRecorder) snapshot() []faultEvent {
 	return out
 }
 
-// Side identifies which end of a connection a FaultEvent belongs to. It
-// mirrors connSide (conn.go) as an exported value.
-//
-// The two enums must agree value-for-value: the assertion below fails the
-// build if either const block is ever reordered, rather than silently
-// mislabeling every exported event's side — the same "exactly one place"
-// caution addr.go's type comment carries for peer identity, applied here.
+// Side identifies which end of a connection a FaultEvent belongs to.
 type Side int
 
-// The two Side values, dialer and acceptor -- see the Side doc comment
-// above for what each means and the ordering guarantee they must keep.
+// The two Side values identify the dialer and acceptor ends.
 const (
 	SideDialer Side = iota
 	SideAcceptor
@@ -103,16 +96,12 @@ var (
 )
 
 // FaultEvent is one fault-injection decision recorded for a single Write
-// unit (M0-3's fault unit) on one direction of one connection, exported by
-// Network.Trace (M7-10, issue #51). It is faultEvent plus the (Ordinal,
-// Side) identity needed to attribute an event to a connection direction
-// once it has left traceRecorder's per-direction scope.
+// on one direction of one connection, returned by Network.Trace.
 // FaultEvent remains comparable: callers may compare two values with ==
 // or use one as a map key. Future fields must preserve this property.
 //
 // Ordinal and Side identify the connection direction this event belongs
-// to: Ordinal is the connection's dial-order ordinal (the determinism
-// contract, docs/04, already fixes this order), and Side is which end
+// to: Ordinal is the connection's dial-order ordinal, and Side is which end
 // produced the event. Seq is this event's position within that direction's
 // own trace, starting at 0.
 //
@@ -137,20 +126,18 @@ var (
 //     WithBandwidth; zero whenever bandwidth isn't configured.
 //   - Effective is the delay actually applied, measured from when
 //     serialization finished (not from when the unit was written), after
-//     any clamping against an already-pending unit ahead of it (M2-2). A
+//     any clamping against an already-pending unit ahead of it. A
 //     delivered unit's total Write-to-delivery delay is Serialization +
 //     Effective. Delay remains the latency draw alone.
 //
 // On a Dropped event, Delay/Serialization/Effective describe what was
 // drawn or computed before loss discarded the unit, not a delivery that
 // happened: Delay may be non-zero for a unit that was never sent, and
-// Serialization and Effective are always zero, since loss short-circuits
-// installFaultPolicy's evaluator before either is computed (faults.go).
+// Serialization and Effective are always zero, since a dropped unit is not
+// transmitted or delivered.
 //
-// Size, CorruptedByte and CorruptedBit (M9-3, issue #78 -- payload size and
-// corruption site; Reset attribution stays deferred, see docs/06) let a
-// corruption or duplication failure be diagnosed, or an exact byte
-// reproduced, without re-deriving the corruption stream by hand:
+// Size, CorruptedByte and CorruptedBit let a corruption or duplication
+// failure be diagnosed, or an exact byte reproduced:
 //
 //   - Size is the unit's payload length, in bytes, at the point it was
 //     evaluated. Always zero on a Partitioned event, since a partitioned
@@ -162,19 +149,9 @@ var (
 //     including a Dropped one, since a unit's size is known and meaningful
 //     even when it was discarded.
 //   - CorruptedByte and CorruptedBit are the byte index and bit index
-//     (within that byte) corruptionSite drew, meaningful only when
-//     Corrupted && Size > 0 && !Dropped. corruptionSite is never called
-//     unless a unit survives both drops: dropped fires before mutation is
-//     even attempted (installFaultPolicy, faults.go), so a unit that is
-//     both Dropped and Corrupted still has a zero corruption site -- the
-//     Bernoulli trial was drawn, but the byte/bit draw it would have
-//     conditioned never ran. A zero-length write is the other case with no
-//     site: the corruption decision is still drawn (per the draw
-//     discipline), but there is no byte to flip, so corruptionSite is
-//     never called for it either. Both cases leave CorruptedByte/
-//     CorruptedBit at zero even though Corrupted is true -- reading either
-//     field as "byte 0, bit 0 was flipped" without first checking Size > 0
-//     and !Dropped is exactly the mistake this note exists to prevent.
+//     (within that byte) selected for corruption, meaningful only when
+//     Corrupted && Size > 0 && !Dropped. A dropped or zero-length unit has
+//     no corruption site, even if Corrupted is true; both fields stay zero.
 //
 // Reproducibility: not every field reproduces under the same conditions.
 // For a fixed seed and a fixed order of calls (see the package doc's
@@ -238,19 +215,11 @@ func (n *Network) registerTrace(ordinal uint64, side connSide, rec *traceRecorde
 }
 
 // Trace returns every fault-injection decision recorded across every
-// connection n has ever dialed, in (Ordinal, Side, Seq) order — the same
-// canonical order the reproducibility harness (M3-3, reproducibility_test.go)
-// compares golden traces in. The order holds however dials interleave,
-// including connections dialed concurrently from many goroutines (#112).
-// This closes the deferral M2-1 recorded when
-// the trace was first built: always recorded, never exported, until M6-14
-// decided the full trace (not counters) belonged in v0.2.0's scope.
+// connection n has ever dialed, in (Ordinal, Side, Seq) order. The order
+// holds even when connections are dialed concurrently.
 //
-// The returned slice is a copy: mutating it, or a later call to Trace,
-// never affects the other. Reused from traceRecorder.snapshot, which
-// already establishes this per direction (TestTraceSnapshotIsACopy);
-// Trace copies no events of its own beyond concatenating those (it only
-// sorts a copy of its per-direction handles).
+// The returned slice is a copy: mutating it never changes retained events
+// or the result of a later call to Trace.
 //
 // See FaultEvent's own godoc for what is and is not recorded — notably,
 // Network.Reset produces no event, and a dial that never establishes

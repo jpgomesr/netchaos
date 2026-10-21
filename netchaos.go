@@ -13,28 +13,10 @@ import (
 // fault policy (latency, packet loss, bandwidth throttling, packet
 // duplication, data corruption, partition, and mid-stream reset).
 //
-// Network intentionally has no Close method: netchaos spawns no goroutines
-// of its own. The only asynchronous work is two time.AfterFunc callbacks —
-// a deadline timer (deadline.go) and a per-pipe delivery timer (latency.go).
-// Close stops the deadline timer. The delivery timer can outlive the writer's
-// Close until already accepted data reaches the reader; closing the reader
-// or resetting the connection stops it. These callbacks are
-// also the only place a netchaos-internal goroutine acquires a sync.Mutex;
-// the window is bounded because no lock is ever held across a blocking
-// operation.
-//
-// With default recording, traces (trace.go, M7-10) is Network-scoped
-// rather than conn-scoped, growing for as long as n keeps dialing: unlike
-// resetTargets, an entry is deliberately never pruned when its conn
-// closes, since Network.Trace exists to be read after the connection that
-// produced it typically already has been (the common defer c.Close()
-// case). That still needs no Close, though — the "nothing to reap" claim
-// above was always about goroutines and timers, not about every field's
-// lifetime matching a conn's, and traces holds neither: only recorder
-// pointers whose memory is reclaimed with n itself. WithTrace(false) avoids
-// this retention entirely. Revisit the "no Close"
-// design only if a future resource needs active cleanup, not merely a
-// lifetime wider than one conn's.
+// Network has no Close method. Close individual connections and listeners
+// when the test is done. With default recording, fault events remain
+// available through Trace after their connections close; WithTrace(false)
+// disables that retention.
 //
 // A Network must be constructed inside the testing/synctest bubble that
 // will use it: synctest panics if a channel or timer created inside a
@@ -120,7 +102,7 @@ type Network struct {
 // earlier one. Every Option is validated once, after all of them have been
 // applied — see Option and WithSeed for what that means for invalid values
 // and for the determinism contract. A nil Option panics with a message
-// naming its index (#114), like any other invalid option.
+// naming its index, like any other invalid option.
 //
 // If WithSeed is not given, NewNetwork uses the fixed default seed 1 rather
 // than a random one: netchaos's whole premise is that a test run is
@@ -200,7 +182,7 @@ func NewNetwork(opts ...Option) *Network {
 //
 // laddr with no host at all (":0", ":8080", "") is a wildcard bind: Listen
 // synthesizes a fresh identity for it, the way a real net.Listen(":0") on a
-// separate machine would never collide with another (issue #73). Two such
+// separate machine would never collide with another. Two such
 // calls therefore never return ErrAddressInUse against each other, even with
 // the same explicit port — the one place this diverges from a real
 // single-process net.Listen, which would fail the second call with
@@ -294,7 +276,7 @@ func (n *Network) Dial(network, addr string) (net.Conn, error) {
 }
 
 // DialerOption configures a dialer returned by Network.DialerFor. See
-// WithDialTimeout, the only DialerOption v1 ships (M9-2, issue #86).
+// WithDialTimeout for a per-call timeout.
 type DialerOption func(*dialerConfig)
 
 // dialerConfig accumulates the settings DialerOptions mutate before
@@ -310,15 +292,12 @@ type dialerConfig struct {
 // WithDialTimeout bounds every dial made through the returned DialerFor
 // closure to d: a dial that would otherwise block on a partitioned peer (see
 // Network.Partition) instead fails once d elapses, with an error satisfying
-// errors.Is(err, context.DeadlineExceeded), wrapped in a *net.OpError (M6-2's
-// uniform shape) whose Timeout() reports true.
+// errors.Is(err, context.DeadlineExceeded), wrapped in a *net.OpError whose
+// Timeout() reports true.
 //
 // d must be positive; WithDialTimeout panics otherwise, naming itself and
-// the offending value, following the existing panic-on-invalid convention
-// (validateLatencyRange et al.). Unlike an Option passed to NewNetwork, this
-// validates immediately when called rather than being deferred to a later
-// validation pass -- there is no NewNetwork call downstream of a
-// DialerOption to defer it to.
+// the offending value. Validation happens when WithDialTimeout is called,
+// before the option is passed to DialerFor.
 //
 // The timeout is scoped to each dial call, not to the DialerFor closure as a
 // whole: a call that times out does not affect a later call from the same
@@ -338,17 +317,8 @@ func WithDialTimeout(d time.Duration) DialerOption {
 // name may be a peer name or literal IP; a returned synthetic IP aliases
 // its assigned name within this Network.
 //
-// It exists because Dial cannot be. A dialer's identity travels on a
-// context.Context (see WithPeerName), and Dial's net.Dial-shaped signature
-// has no context parameter — so a Dial call could never carry a peer name,
-// was never partition-targetable, and never blocked on a partition. That put
-// partition, a headline feature, out of reach of the drop-in entry point the
-// library's no-rewrite adoption claim rests on: a user who wanted both had to
-// abandon the drop-in and rewrite their client to take a DialContext instead
-// (issue #36, M5-2 finding F2).
-//
-// What DialerFor returns is still exactly net.Dial's shape, which is the
-// point — it goes wherever Dial went:
+// The returned function has net.Dial's shape, so it can be passed wherever
+// a dial function with that signature is accepted:
 //
 //	client := myservice.NewClient(n.DialerFor("client"))
 //	n.Partition("client", "server") // now actually affects that client
@@ -363,10 +333,9 @@ func WithDialTimeout(d time.Duration) DialerOption {
 // A partition drops the SYN, so that is what a real dial does too. Without
 // opts, there remains no way to bound that wait — use WithDialTimeout(d) to
 // fail after d instead of hanging until Heal, or reach for DialContext with
-// WithPeerName and your own context deadline instead (M9-2, issue #86).
+// WithPeerName and your own context deadline instead.
 //
-// A nil DialerOption in opts panics when DialerFor is called, naming its
-// index (#114).
+// A nil DialerOption in opts panics when DialerFor is called, naming its index.
 func (n *Network) DialerFor(name string, opts ...DialerOption) func(network, addr string) (net.Conn, error) {
 	var cfg dialerConfig
 	for i, opt := range opts {
@@ -418,7 +387,7 @@ func (n *Network) DialerFor(name string, opts ...DialerOption) func(network, add
 // *net.AddrError: unlike Listen, which treats a hostless address as a
 // wildcard bind, there is no localhost in a netchaos topology for a
 // hostless dial to mean, so resolving one to some peer would always be a
-// guess (issue #73).
+// guess.
 // Named hosts resolve only inside this Network, without system DNS. A
 // returned *net.TCPAddr IP can be dialed as an alias for its peer name.
 // An explicit destination port selects exactly that listener; a wrong port
@@ -639,7 +608,7 @@ func (n *Network) SetPacketLoss(rate float64) {
 
 // SetDuplication changes the duplication rate applied to every connection in
 // n, including connections already established — the same live semantics
-// SetLatency and SetPacketLoss have (M9-4, issue #85 partial).
+// SetLatency and SetPacketLoss have.
 //
 // rate means exactly what WithDuplication's does and is validated the same
 // way: outside [0.0, 1.0], including NaN and ±Inf, panics naming the
@@ -664,7 +633,7 @@ func (n *Network) SetDuplication(rate float64) {
 
 // SetCorruption changes the corruption rate applied to every connection in
 // n, including connections already established — the same live semantics
-// SetLatency and SetPacketLoss have (M9-4, issue #85 partial).
+// SetLatency and SetPacketLoss have.
 //
 // rate means exactly what WithCorruption's does and is validated the same
 // way: outside [0.0, 1.0], including NaN and ±Inf, panics naming the

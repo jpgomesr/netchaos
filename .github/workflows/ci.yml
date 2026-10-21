@@ -55,6 +55,16 @@ jobs:
             exit 1
           fi
 
+      # Keep consumer-facing godoc free of task history and implementation
+      # details. Design rationale belongs in docs/tasks and the changelog.
+      - name: Public godoc check
+        if: matrix.go-version == 'stable'
+        run: |
+          if go doc -all . | grep -En 'M[0-9]+-[0-9]+|issue #[0-9]+|#[0-9]{2,}|[[:alnum:]_]+(_test)?\.go|resetTargets|traceRecorder|installFaultPolicy|validateLatencyRange|corruptionSite|connSide|newConnPairWithBound'; then
+            echo 'Public godoc contains project history or internal identifiers.'
+            exit 1
+          fi
+
       - name: Test
         run: go test -race ./...
 
