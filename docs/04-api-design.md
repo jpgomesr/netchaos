@@ -295,7 +295,7 @@ After a peer closes its reading end, `Write` returns a `*net.OpError` matching `
 
 The close signal follows partition state. If the pair is partitioned when EOF would become visible, the peer's read waits until `Heal` (or its deadline). Writes admitted *before* `Partition` still arrive at their scheduled time; writes admitted while partitioned are discarded. Once a peer has observed EOF, a later `Partition` cannot retract it. This changes the M2-2 close decision before `v1.0.0` ([#107](https://github.com/jpgomesr/netchaos/issues/107)); connection establishment still pays no configured latency (NC-20 in [#115](https://github.com/jpgomesr/netchaos/issues/115)).
 
-The remaining close-related change from [#115](https://github.com/jpgomesr/netchaos/issues/115), NC-15 ([implementation #145](https://github.com/jpgomesr/netchaos/issues/145)), is **decided but not implemented**: a `Write` after the *remote* end closes will return a `*net.OpError` whose cause matches `syscall.EPIPE` where that errno exists. Only a *local* `Close` matches `net.ErrClosed`. Platforms without `EPIPE` need a fallback error with the same meaning. This is a pre-v1 behaviour change; the current implementation still returns `net.ErrClosed` for both cases.
+The remote-close error behavior above was implemented by [#145](https://github.com/jpgomesr/netchaos/issues/145), after the decision in [#115](https://github.com/jpgomesr/netchaos/issues/115). See [05 — Differences from a real TCP connection](05-fault-injection.md#differences-from-a-real-tcp-connection) for the remaining differences that matter when interpreting a test.
 
 ## Dynamic partition control
 
