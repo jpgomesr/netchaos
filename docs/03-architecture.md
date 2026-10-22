@@ -56,6 +56,23 @@ When more than one fault is configured on the same connection direction, there i
 
 Mid-stream connection reset ([M7-7](tasks/m7-v0.2.0-implementation.md#m7-7--fault-kind-mid-stream-connection-reset), v0.2.0, `Network.Reset`) is not part of this per-unit evaluator at all: unlike the six faults above, it is not a drawn, per-`Write` decision but a one-shot imperative action against whichever connections currently exist for a named peer pair, mirroring `Partition`/`Heal`'s shape rather than an `Option`. It takes no random draws and cannot perturb any connection's fault sequence.
 
+### Concurrency model
+
+`Network`, its connections and its listeners support concurrent callers. The lock order is acyclic:
+
+| Held first | May acquire | Why |
+|---|---|---|
+| `listener.mu` | `Network.mu` | `listener.Close` deregisters its address. `DialContext` releases `Network.mu` before calling `listener.reserve`, then takes `Network.mu` again on its own to assign an ordinal. |
+| `pipe.mu` | `Network.partMu`, `Network.faultMu`, `traceRecorder.mu` | A read checks partition state before returning EOF; the write evaluator reads live fault settings and records a decision while admitting a unit. |
+| `Network.traceMu` | `traceRecorder.mu` | `Trace` snapshots each direction's recorder while holding the registry lock. |
+| `conn.closeOnce` | `Network.resetMu`, `pipe.mu`, `deadline.mu` | `Close` deregisters the connection, closes its outgoing pipe, aborts its incoming pipe, then stops its deadlines. `closeOnce` serializes this sequence; it is not a mutex. |
+
+`Network.resetMu` does not remain held while `Reset` aborts pipes, and `Network.mu` does not remain held while reserving a listener slot. No lock is held across a channel receive, a wait for a deadline or partition heal, or another blocking operation. `Accept`, `Read`, `Write` and a partitioned dial wait on channels after releasing their locks, so they can be woken by another goroutine and can become durably blocked inside `testing/synctest`.
+
+Three generation channels provide wake-ups: `pipe.notify` for readable data, buffer room and close; `Network.partNotify` for partition changes; and `deadline.gen` for deadline changes or timer firing. Under the channel's lock, a state change closes the current channel and replaces it. Pipe and partition waiters snapshot the channel with their state check under one lock; deadline waiters snapshot the channel before checking expiry. After waking, all re-check state. The signal means “re-check”, so an old or concurrent signal cannot by itself imply that a deadline expired or a partition healed.
+
+Each deadline owns at most one `time.AfterFunc` timer. Setting a new deadline stops the old timer, replaces the generation channel and arms a new timer when needed; `conn.Close` stops both deadline timers. A callback only wakes waiters, which check the stored deadline against `time.Now`, so a callback racing a reset deadline cannot impose an obsolete expiry. Each pipe owns at most one delivery timer for the earliest pending unit. Appending behind that unit leaves the timer armed; delivery re-arms it for the next unit. Closing the writer keeps accepted units and their timer until delivery and EOF. Closing the reader or calling `Reset` aborts the pipe, stops its timer and discards pending units. A delivery callback that runs after abort checks the closed state under `pipe.mu` and returns without releasing data.
+
 ### Composing with `testing/synctest`
 
 `testing/synctest` already virtualizes time within a goroutine bubble: `time.Sleep`, timers, and context deadlines advance instantly as far as wall-clock time is concerned, while still behaving correctly relative to each other. netchaos's latency injection is designed to ride on top of this rather than duplicate it — when a simulated write needs to be delayed, netchaos uses the standard time APIs (e.g., timers) that `testing/synctest` already knows how to virtualize, rather than inventing its own clock abstraction.

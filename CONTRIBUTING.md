@@ -15,6 +15,8 @@ gofmt -l .   # should print nothing
 
 CI runs the same checks (`.github/workflows/ci.yml`) plus `golangci-lint` (`.github/workflows/golangci-lint.yml`) on every push and pull request.
 
+Transport changes should follow the [concurrency model](docs/03-architecture.md#concurrency-model), including its lock order, channel wake-ups and timer ownership.
+
 ## Commit messages
 
 This repo follows [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, `chore:`, etc.), matching the existing commit history.

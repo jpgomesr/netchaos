@@ -14,6 +14,8 @@ The [`docs/`](docs/README.md) set (`01-vision.md` through `07-contributing.md`) 
 - The three open design questions gating implementation (reordering scope, fault scoping, fault granularity/determinism) were resolved as [M0](docs/tasks/m0-decisions-and-foundations.md) and recorded in `docs/03-06`. Reordering is **out of v1**; don't resolve it differently or reopen it without the maintainer.
 - Use `/architecture` (`.claude/commands/architecture.md`) to check a change against these docs before assuming consistency.
 
+For changes to locking, wake-ups or timers, read the [concurrency model](docs/03-architecture.md#concurrency-model) before editing the transport.
+
 ## Test-first (red → green)
 
 Every code task follows a strict test-first cycle: write the test before the production code it drives, run it and confirm it fails (red) — a compile error because the identifier doesn't exist yet counts — then write the smallest change that makes it pass (green). A commit that adds production code must contain the test that motivated it; the test must never land in a later commit. Never skip observing the red — a test only ever seen green may be asserting nothing, and that defect is invisible afterwards.
