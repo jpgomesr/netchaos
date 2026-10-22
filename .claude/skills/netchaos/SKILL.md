@@ -46,7 +46,7 @@ requirements. No daemon, config file, or network access is needed at test time.
 ## Quick orientation
 
 - Package: `netchaos`, import path `github.com/jpgomesr/netchaos`.
-- One type: `*Network`, built once per test scenario via `NewNetwork(opts...)`.
+- Main type: `*Network`, built once per test scenario via `NewNetwork(opts...)`.
 - **Six per-unit fault stages, one composed evaluator, fixed order**
   (partition → loss → bandwidth → latency → corruption → duplication):
   - `WithLatency`, `WithPacketLoss`, `WithBandwidth`, `WithDuplication`,
