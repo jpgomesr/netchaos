@@ -519,14 +519,26 @@ shared `rand.Rand`. Each connection direction's RNG stream derives from
 across runs and machines. This is what makes a failing seed reproducible.
 
 **Limit:** the guarantee covers *call order*, not wall-clock concurrency.
-Two goroutines racing to `Dial` concurrently get ordinals in whichever
-order the scheduler picks — dial sequentially before starting concurrent
-I/O if a test needs reproducible per-connection fault assignment.
-Concurrent I/O on already-established connections is fully deterministic
-per-connection regardless. A setter (`SetLatency`/`SetPacketLoss`/
-`SetDuplication`/`SetCorruption`) racing in-flight I/O on another
-goroutine has the same limit — see
-[Runtime fault mutation](#runtime-fault-mutation).
+In each of these cases, the scheduler, not the seed, decides the outcome:
+
+- Two goroutines racing to `Dial` get connection ordinals in whichever
+  order their dials establish. Dial sequentially if fault assignment to
+  each connection must reproduce.
+- A setter (`SetLatency`/`SetPacketLoss`/`SetDuplication`/
+  `SetCorruption`) racing a write leaves which unit first sees the new
+  value up to the scheduler — see
+  [Runtime fault mutation](#runtime-fault-mutation).
+- `Partition` or `Heal` racing a write leaves which writes are discarded
+  up to the scheduler. A partitioned write draws nothing, so the race can
+  shift every later draw on that direction. Sequence write, then partition
+  or heal, then write when the boundary matters.
+- Two goroutines writing in the same direction receive a fixed sequence of
+  fault decisions, but the scheduler decides which payload receives each
+  decision. Use one writer per direction, or serialize the writes, when
+  payload-level outcomes must reproduce.
+
+Concurrent I/O on different established connections, and a read concurrent
+with a write, are covered by the guarantee.
 
 ### Fault composition and draw discipline
 
@@ -612,6 +624,9 @@ already accepted at their scheduled time before the peer observes EOF.
 - Running latency/timeout/reset-heavy netchaos tests outside
   `synctest.Test` — they'll work, but burn real wall-clock time instead
   of virtual time.
+- Constructing a `Network` outside the `synctest.Test` bubble that uses it
+  — create it inside the bubble, as in the skill's examples, so its
+  channels and timers belong to the same bubble as the test's I/O.
 - Reading `FaultEvent.Delay == 0` as "latency wasn't configured" — it
   isn't; see [Full fault trace export](#full-fault-trace-export).
 - Reading `FaultEvent.CorruptedByte`/`CorruptedBit` as a flipped byte

@@ -46,7 +46,7 @@ requirements. No daemon, config file, or network access is needed at test time.
 ## Quick orientation
 
 - Package: `netchaos`, import path `github.com/jpgomesr/netchaos`.
-- One type: `*Network`, built once per test scenario via `NewNetwork(opts...)`.
+- Main type: `*Network`, built once per test scenario via `NewNetwork(opts...)`.
 - **Six per-unit fault stages, one composed evaluator, fixed order**
   (partition → loss → bandwidth → latency → corruption → duplication):
   - `WithLatency`, `WithPacketLoss`, `WithBandwidth`, `WithDuplication`,
@@ -91,8 +91,9 @@ requirements. No daemon, config file, or network access is needed at test time.
   symptom. Each event also carries `Size`, `CorruptedByte`, and
   `CorruptedBit`, so a corruption failure can be diagnosed directly from
   the trace. `WithTrace(false)` disables retention without changing faults.
-- Always pair with `testing/synctest` so injected latency/timeouts don't
-  cost real wall-clock time in the test suite.
+- Pair with `testing/synctest` so injected latency/timeouts don't cost real
+  wall-clock time. Construct the `Network` inside the `synctest.Test` bubble
+  that will use it.
 - Always set `WithSeed(n)` for a specific reproducible fault sequence
   (there's a fixed default seed if omitted, so tests still run — but
   picking your own seed is what lets you reproduce a *particular* failing
@@ -161,8 +162,11 @@ func TestFailoverOnPartition(t *testing.T) {
   `SetDuplication`/`SetCorruption` — only `WithBandwidth` is
   construction-time-only) and the ordering limit a setter has against
   concurrent in-flight I/O.
-- The determinism contract's limit: concurrent, *unordered* `Dial` calls
-  race for connection ordinals — dial sequentially before starting
-  concurrent I/O if a test needs reproducible fault assignment.
+- The determinism contract's scheduling limits: concurrent, *unordered*
+  `Dial` calls race for connection ordinals; a setter or `Partition`/`Heal`
+  racing a write leaves the affected unit up to the scheduler; two writers
+  in one direction get a fixed decision sequence, but the scheduler decides
+  which payload receives each decision. Sequence these operations when a
+  test needs reproducible fault assignment.
 - What `Network.Trace()` does **not** cover (a `Reset` call, or a dial
   that never established) before treating it as a complete fault log.
