@@ -25,6 +25,7 @@ A minor release after `v0.3.1`: the M11 hardening work, the pre-v1 address and e
 
 ### Fixed
 
+- **A blocked `Read` now reports `ECONNRESET` consistently after `Network.Reset`.** Reset signals both connection ends before aborting either pipe, so one end cannot observe an abortive `EOF` before receiving its own reset notification. A race test repeats the in-flight read scenario 500 times.
 - **The test package now compiles and passes on 32-bit platforms** (closes #127). Three `serializationDelay` overflow tests passed integer constants above 2³¹ where an `int` is expected, so `go vet`/`go test` failed to compile with `GOARCH=386` (and arm, mips) since `v0.3.0`; the library itself always built. They now skip on platforms where `int` is 32 bits — no `Write` can be that large there, so the overflow path they guard cannot occur — and still run unchanged on 64-bit. CI gains a `GOARCH=386` vet-and-test step.
 
 ### Changed

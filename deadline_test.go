@@ -337,7 +337,7 @@ func TestBlockedWriteWakesOnCloseOrReset(t *testing.T) {
 		want error
 	}{
 		{"close", func(c *conn) { _ = c.Close() }, net.ErrClosed},
-		{"reset", func(c *conn) { c.triggerReset() }, errConnReset},
+		{"reset", func(c *conn) { c.signalReset(); c.abortReset() }, errConnReset},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
