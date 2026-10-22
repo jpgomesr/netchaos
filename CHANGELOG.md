@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [v0.4.0] — 2026-10-20
+## [v0.4.0] — 2026-10-22
 
 A minor release after `v0.3.1`: the M11 hardening work, the pre-v1 address and error decisions in #115, and the graceful-close fix in #107. Listener lookup by peer and port and TCP address values require consumers that depend on the old address shape or implicit port matching to update their tests. The Go floor remains 1.25, and the library module has no third-party requirements.
 
@@ -63,6 +63,9 @@ A patch release: the five `v0.3.0` defects that need no change to the exported s
 
 ### Documentation
 
+- **Public godoc now describes behavior without project history or internals** (part of #116, NC-26). A CI check of `go doc -all .` keeps milestone IDs, issue numbers, test-file names and internal identifiers out of consumer-facing comments.
+- **The transport concurrency model is documented** (part of #116, NC-27). `docs/03` records lock order, generation-channel wake-ups and timer ownership, with links from AGENTS.md and CONTRIBUTING.md.
+- **A reference now lists differences from real TCP** (part of #116, NC-13). `docs/05` explains the fault model, connection setup, EOF, zero-length reads, address resolution, backlog and buffer-window behavior, with tests for each row. README and the consumer skill link to it.
 - **The netchaos skill and `docs/04` no longer misstate how dialers behave** (closes #108). The skill said a plain `Dial` "hangs forever" against a partitioned peer and that `Dial`, `DialContext` and `DialerFor` all have `net.Dial`'s shape and fit both `http.Transport.DialContext` and gRPC's `WithContextDialer`. In fact an unnamed `Dial` is never partition-targetable and never blocks; only a *named* dial (`DialerFor`, `WithPeerName`) waits, until `WithDialTimeout` or a context deadline ends it. Only `DialContext` fits `http.Transport.DialContext`, and gRPC needs a two-argument adapter. The skill is corrected outside a milestone close-out because these statements were already wrong for `v0.3.0`. `api_test.go` now pins each dialer shape and the plain-`Dial`-ignores-partition behaviour.
 
 ## [v0.3.0] — 2026-09-16

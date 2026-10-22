@@ -252,6 +252,8 @@ un-targetable. `WithPeerName(ctx, name)` strips a `:port` suffix from
 
 ## Address shape
 
+For the transport's deliberate limits, see [Differences from a real TCP connection](https://github.com/jpgomesr/netchaos/blob/main/docs/05-fault-injection.md#differences-from-a-real-tcp-connection).
+
 A dial or listen input has a host and an optional port. Returned listener
 and connection addresses are `*net.TCPAddr` values with `Network() == "tcp"`
 for `tcp`, `tcp4` and `tcp6`:

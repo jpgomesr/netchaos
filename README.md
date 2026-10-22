@@ -142,6 +142,8 @@ A patch release — no API change, nothing to update in calling code:
 
 See [CHANGELOG.md](CHANGELOG.md) for full detail and migration notes.
 
+For the limits of the simulation, see [Differences from a real TCP connection](docs/05-fault-injection.md#differences-from-a-real-tcp-connection).
+
 ## Installation
 
 Requires **Go 1.25 or later** — `testing/synctest`, which netchaos's virtual-time integration depends on, was introduced in Go 1.25 and cannot be used on an older toolchain.
