@@ -61,8 +61,14 @@ func (n *Network) Reset(peerA, peerB string) {
 	delete(n.resetTargets, k)
 	n.resetMu.Unlock()
 
+	// Signal both ends before aborting either pipe. Otherwise aborting the
+	// first end's write pipe can wake the peer's Read with EOF before that
+	// peer sees its own reset notification.
 	for _, c := range targets {
-		c.triggerReset()
+		c.signalReset()
+	}
+	for _, c := range targets {
+		c.abortReset()
 	}
 }
 

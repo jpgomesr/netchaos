@@ -62,37 +62,41 @@ func TestResetSurfacesECONNRESETToWriter(t *testing.T) {
 // Reset fires -- a wall-clock sleep here would be a timing assumption a
 // slow or -race-instrumented CI runner could violate.
 func TestResetUnblocksInFlightRead(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		n := NewNetwork()
-		_, server := dialNamedPair(t, n)
+	// Repeat the narrow window between Read's reset check and its pipe
+	// result. A single run can miss an EOF that races the reset notification.
+	for i := range 500 {
+		synctest.Test(t, func(t *testing.T) {
+			n := NewNetwork()
+			_, server := dialNamedPair(t, n)
 
-		if err := server.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
-			t.Fatal(err)
-		}
-
-		result := make(chan error, 1)
-		go func() {
-			buf := make([]byte, 1)
-			_, err := server.Read(buf)
-			result <- err
-		}()
-
-		// Blocks until every other goroutine in the bubble is durably
-		// blocked, which for the goroutine above means it has reached the
-		// select inside Read -- deterministic, unlike a real sleep.
-		synctest.Wait()
-
-		n.Reset("client", "server")
-
-		select {
-		case err := <-result:
-			if !errors.Is(err, syscall.ECONNRESET) {
-				t.Fatalf("blocked Read unblocked with %v, want errors.Is(syscall.ECONNRESET)", err)
+			if err := server.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+				t.Fatal(err)
 			}
-		case <-time.After(time.Second):
-			t.Fatal("blocked Read did not unblock after Reset")
-		}
-	})
+
+			result := make(chan error, 1)
+			go func() {
+				buf := make([]byte, 1)
+				_, err := server.Read(buf)
+				result <- err
+			}()
+
+			// Blocks until every other goroutine in the bubble is durably
+			// blocked, which for the goroutine above means it has reached the
+			// select inside Read -- deterministic, unlike a real sleep.
+			synctest.Wait()
+
+			n.Reset("client", "server")
+
+			select {
+			case err := <-result:
+				if !errors.Is(err, syscall.ECONNRESET) {
+					t.Fatalf("iteration %d: blocked Read unblocked with %v, want errors.Is(syscall.ECONNRESET)", i, err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("blocked Read did not unblock after Reset")
+			}
+		})
+	}
 }
 
 // TestResetConnectionStaysReset asserts a reset connection has no path back

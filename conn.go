@@ -45,7 +45,7 @@ type conn struct {
 	// resetCh and resetOnce are Network.Reset's mechanism (M7-7): always
 	// allocated (even for a conn built without a Network, e.g. by
 	// pipe-level tests) so Read/Write can select on resetCh
-	// unconditionally, but only ever closed by conn.triggerReset, which
+	// unconditionally, but only ever closed by conn.signalReset, which
 	// only Network.Reset calls. Closing it -- once, via resetOnce -- is
 	// what makes a reset stick: every Read/Write after the close observes
 	// the same already-closed channel, so "stays reset" falls out of the
@@ -139,18 +139,19 @@ func newConnPairWithSeedAndTrace(clientAddr, serverAddr *addr, ordinal uint64, n
 	return client, server
 }
 
-// triggerReset closes c.resetCh, idempotently, causing every current and
-// future Read/Write on c to fail with an error satisfying
-// errors.Is(err, syscall.ECONNRESET) (errConnReset; on plan9, which has
-// no ECONNRESET, a plain error with the same message -- see
-// reset_errno_plan9.go) -- Network.Reset's mechanism (M7-7).
-// Unexported: only Network.Reset calls it, never a conn on itself.
-func (c *conn) triggerReset() {
+// signalReset closes c.resetCh idempotently. Network.Reset signals both
+// ends before aborting either pipe, so an in-flight Read cannot mistake
+// the peer's aborted write pipe for a graceful EOF.
+func (c *conn) signalReset() {
 	c.resetOnce.Do(func() {
 		close(c.resetCh)
-		c.writePipe.abort()
-		c.readPipe.abort()
 	})
+}
+
+// abortReset discards queued data after both ends have been signaled.
+func (c *conn) abortReset() {
+	c.writePipe.abort()
+	c.readPipe.abort()
 }
 
 func (c *conn) opError(op string, err error) error {
@@ -190,6 +191,20 @@ func (c *conn) Read(b []byte) (int, error) {
 		}
 		n, ch, err := c.readPipe.tryRead(b)
 		if ch == nil {
+			if err != nil {
+				// Reset or local Close may have aborted the pipe after
+				// the checks above. Their errors take precedence over EOF.
+				select {
+				case <-c.closed:
+					return 0, c.opError("read", net.ErrClosed)
+				default:
+				}
+				select {
+				case <-c.resetCh:
+					return 0, c.opError("read", errConnReset)
+				default:
+				}
+			}
 			return n, err // err is nil or io.EOF, returned bare per net.Pipe/stdlib convention
 		}
 
