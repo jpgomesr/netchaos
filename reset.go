@@ -12,14 +12,13 @@ package netchaos
 // Reset abruptly terminates every currently-established connection between
 // the named peers: both ends' subsequent Read and Write calls, and any
 // already in-flight on another goroutine, fail with an error satisfying
-// errors.Is(err, syscall.ECONNRESET) wrapped in a *net.OpError (matching
-// the uniform error shape M6-2 established). On plan9, whose syscall
+// errors.Is(err, syscall.ECONNRESET) wrapped in a *net.OpError. On plan9, whose syscall
 // package has no ECONNRESET, it is instead a plain error with the same
-// "connection reset by peer" message (#113). A reset connection stays
+// "connection reset by peer" message. A reset connection stays
 // reset -- there is no way to "un-reset" it, unlike a partition, which
 // Heal reverses. The one exception is an end that is also closed locally:
 // in either order, a closed end fails with net.ErrClosed, never
-// ECONNRESET, the same as a real net.Conn closed after an RST (#111).
+// ECONNRESET, the same as a real net.Conn closed after an RST.
 //
 // This is the gap Partition cannot fill: Partition is a deliberately
 // silent black hole (writes accepted and discarded, reads blocking to
@@ -38,18 +37,17 @@ package netchaos
 // there being nothing established to reset is not an error, the same
 // no-op convention Partition and Heal already use for an unrecognized or
 // not-yet-connected pair. peerA and peerB are resolved exactly as
-// Partition/Heal resolve them (peerName strips a port, per M7-1), so the
+// Partition/Heal resolve them (a port is stripped), so the
 // same naming caveat applies: an unnamed dialer's synthesized ephemeral-N
 // identity is not one a caller can predict, so it is not practically
 // targetable here either.
 //
 // Reset takes no random draws and cannot perturb any connection's
-// loss/latency/duplication/corruption sequence -- it is evaluated nowhere
-// near installFaultPolicy's per-unit evaluator.
+// loss/latency/duplication/corruption sequence.
 //
 // peerA and peerB must be non-empty and distinct, the same requirement
 // WithPartition/Partition/Heal already enforce; Reset panics otherwise,
-// naming Reset and the offending value (M9-1, issue #83).
+// naming Reset and the offending value.
 // A returned TCP address's IP aliases the peer name across all ports.
 func (n *Network) Reset(peerA, peerB string) {
 	validatePartitionPair("Reset", partitionPair{peerA, peerB})

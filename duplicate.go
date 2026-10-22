@@ -11,30 +11,20 @@ import (
 // and +/-Inf, makes NewNetwork panic, naming WithDuplication and the
 // offending rate.
 //
-// M7-8 (#53, candidate 3): real TCP hides duplication from the application
-// -- the receiver's stack dedupes -- but netchaos already crossed that line
-// deliberately for packet loss (M0-3: real TCP hides loss too, by
-// retransmitting, and WithPacketLoss injects the silent gap anyway,
-// precisely so a test can exercise what the application sees when the
-// transport does not behave). Duplication is accepted on the same
-// reasoning.
-//
 // The duplicate is delivered with the same timing decision as the
 // original -- whatever WithLatency/WithBandwidth computed for the first
 // copy applies to the second as well, rather than drawing an independent
 // delay for it. Duplicating with a delay between copies is a delivery-
 // timing model latency already owns, and is out of scope here.
 //
-// The unit of duplication is the Write call, matching the fault unit
-// WithPacketLoss and WithLatency already use (M0-3): a dropped unit is
-// never duplicated, but the decision whether to duplicate is still drawn
-// for it -- see the draw discipline on installFaultPolicy (faults.go).
+// The unit of duplication is the Write call. A dropped unit is never
+// duplicated, but the decision whether to duplicate is still drawn for it.
 //
 // A duplicated unit is a second, independent copy: it counts against the
 // pipe's buffer bound like any other delivered bytes, and mutating one
-// copy (e.g. WithCorruption, M7-9) never affects the other.
+// copy (e.g. WithCorruption) never affects the other.
 //
-// This sets the value a Network starts with. Network.SetDuplication (M9-4)
+// This sets the value a Network starts with. Network.SetDuplication
 // changes it mid-test, on connections that already exist as well as future
 // ones -- the same live semantics SetLatency/SetPacketLoss already have.
 func WithDuplication(rate float64) Option {

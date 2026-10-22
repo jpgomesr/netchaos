@@ -9,7 +9,7 @@ import (
 
 // WithBandwidth throttles delivery to the given rate, in bytes per second,
 // applied globally to every connection direction the Network handles (the
-// same scoping as WithLatency and WithPacketLoss -- see M0-2). bytesPerSecond
+// same scoping as WithLatency and WithPacketLoss). bytesPerSecond
 // must be positive; NewNetwork panics otherwise, naming WithBandwidth and the
 // offending value. Not configuring WithBandwidth means unlimited bandwidth,
 // the same distinction WithLatency and WithPacketLoss draw between "never
@@ -31,14 +31,8 @@ import (
 // before the peer sees io.EOF. Closing the reader or calling Network.Reset
 // discards it.
 //
-// This is a construction-time setting; there is no runtime setter. Unlike
-// SetLatency, SetPacketLoss (M7-4), SetDuplication, and SetCorruption
-// (M9-4), a configured rate cannot be changed on a live connection --
-// bandwidth is the one fault kind whose live-setter case was split out and
-// deferred (issue #85, M8-7 finding F6): unlike the other four, it draws
-// nothing, so a setter's interaction with the pipe's serialization clock
-// (pipe.busyUntil) needs its own design pass rather than an assumption that
-// it mirrors SetLatency. See docs/06 § Explicitly out of scope for v1.
+// This is a construction-time setting; there is no runtime setter. A
+// configured rate cannot be changed on an existing Network.
 func WithBandwidth(bytesPerSecond int) Option {
 	return func(c *networkConfig) {
 		c.bandwidthEnabled = true
