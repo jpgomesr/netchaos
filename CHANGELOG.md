@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [v0.4.0] — 2026-10-21
+## [v0.4.0] — 2026-10-22
 
 A minor release after `v0.3.1`: the M11 hardening work, the pre-v1 address and error decisions in #115, and the graceful-close fix in #107. Listener lookup by peer and port and TCP address values require consumers that depend on the old address shape or implicit port matching to update their tests. The Go floor remains 1.25, and the library module has no third-party requirements.
 
