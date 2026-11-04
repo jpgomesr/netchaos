@@ -23,7 +23,7 @@ Each item is covered in depth elsewhere: the connection/listener simulation and 
 
 ## Explicitly out of scope for v1
 
-The README lists most of these directly; reordering was an open question resolved by [M0-1](tasks/m0-decisions-and-foundations.md#m0-1--resolve-whether-reordering-is-in-v1). Now that v1 has shipped, the precondition for revisiting any of these — "once the core is solid" — holds; the two items below genuinely are open for post-v1 consideration, while the rest are excluded on a design principle that doesn't change with time:
+The README lists most of these directly; reordering was an open question resolved by [M0-1](tasks/m0-decisions-and-foundations.md#m0-1--resolve-whether-reordering-is-in-v1). The v1 core is implemented and tested in pre-1.0 releases, so the precondition for revisiting these items — "once the core is solid" — holds. The items below remain contingent on real usage evidence; the rest are excluded on a design principle that doesn't change with time:
 
 **Genuinely open for post-v1 consideration**, contingent on real usage evidence rather than a fixed timeline:
 

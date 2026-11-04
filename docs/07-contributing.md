@@ -22,7 +22,7 @@ How a version is cut — close-out PR, choosing patch vs. minor from the API com
 
 ## What's useful to contribute right now
 
-With v1 shipped, implementation contributions are now the highest-value ones — this inverts the earlier guidance, which deferred them because the API was still unsettled:
+With the v1 implementation complete, implementation contributions are now the highest-value ones — this inverts the earlier guidance, which deferred them because the API was still unsettled:
 
 - **Bug reports.** If netchaos's simulated `net.Conn`/`net.Listener` behaves differently from a real one in a way that isn't documented as a deliberate v1 trade-off (see [06 — Scope & Roadmap](06-scope-and-roadmap.md) and the [determinism contract](04-api-design.md#determinism-contract)), that's a bug — file it.
 - **Implementation PRs.** Fixes, test coverage, and small ergonomic improvements that don't change the exported surface are welcome without prior discussion. A PR that would change an exported signature should still open with an issue first, since that's the kind of change M0-5 froze deliberately and a real justification is needed to reopen it before `v1.0.0`.
